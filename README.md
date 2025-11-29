@@ -71,6 +71,7 @@ Deploy
 ## 🧱 Установка и запуск локально
 
 ```bash
+cp .env.example .env.local # заполнить VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY
 npm install
 npm run dev
 ```
@@ -99,6 +100,7 @@ https://your-project.vercel.app
 
 📌 Статус разработки (MVP DEMO)
 
+- Dev-среда: Vite + React + Tailwind + Supabase SDK (Hello, TPP Portal)
 - Авторизация (Auth)
 - Профиль сотрудника
 - Просмотр смены
