@@ -1,12 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSupabase } from '../context/SupabaseProvider'
 import { useAuth } from './useAuth'
 import { fetchProfileByUserId, upsertProfileLink } from '../api/profiles'
-import { fetchEmployeeById, searchEmployees, updateEmployee } from '../api/employees'
+import {
+  fetchChildrenByEmployee,
+  fetchEmployeeById,
+  insertChild,
+  searchEmployees,
+  deleteChild,
+  updateChild,
+  updateEmployee,
+} from '../api/employees'
 
 export function useProfile() {
   const supabase = useSupabase()
   const { user } = useAuth()
+  const queryClient = useQueryClient()
 
   const [status, setStatus] = useState({ loading: true, error: '', success: '' })
   const [form, setForm] = useState({ employeeId: '' })
@@ -18,98 +28,119 @@ export function useProfile() {
     birth_date: '',
     phone: '',
   })
-  const [employees, setEmployees] = useState([])
-  const [employeesError, setEmployeesError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [isLinked, setIsLinked] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
+  const [children, setChildren] = useState([])
+  const [childrenDraft, setChildrenDraft] = useState([])
+  const [childrenDeleted, setChildrenDeleted] = useState([])
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 400)
+    return () => clearTimeout(id)
+  }, [searchTerm])
+
+  const profileQuery = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: () => fetchProfileByUserId(supabase, user.id),
+    enabled: !!user,
+  })
+
+  const employeeId = profileQuery.data?.data?.employee_id
+
+  const employeeQuery = useQuery({
+    queryKey: ['employee', employeeId],
+    queryFn: () => fetchEmployeeById(supabase, employeeId),
+    enabled: !!employeeId,
+  })
+
+  const employeesSearchQuery = useQuery({
+    queryKey: ['employees-search', debouncedSearch],
+    queryFn: async () => {
+      const { data, error } = await searchEmployees(supabase, debouncedSearch)
+      if (error) throw new Error(error.message)
+      return data || []
+    },
+    enabled: !isLinked && !!user,
+    staleTime: 1000 * 30,
+  })
+
+  const childrenQuery = useQuery({
+    queryKey: ['employee-children', employeeId],
+    queryFn: async () => {
+      const { data, error } = await fetchChildrenByEmployee(supabase, employeeId)
+      if (error) throw new Error(error.message)
+      return data || []
+    },
+    enabled: !!employeeId,
+    staleTime: 1000 * 60,
+  })
 
   useEffect(() => {
     if (!user) {
       setInitialLoading(false)
+      setStatus({ loading: false, error: '', success: '' })
       return
     }
-    let active = true
-    async function loadProfile() {
+    if (profileQuery.isLoading) {
       setInitialLoading(true)
       setStatus({ loading: true, error: '', success: '' })
-      const { data: profileData, error: profileError } = await fetchProfileByUserId(supabase, user.id)
-      if (!active) return
-      if (profileError) {
-        setStatus({ loading: false, error: profileError.message, success: '' })
-        setInitialLoading(false)
-        return
-      }
-
-      if (profileData?.employee_id) {
-        const { data: emp, error: empErr } = await fetchEmployeeById(supabase, profileData.employee_id)
-        if (!active) return
-        if (empErr) {
-          setStatus({ loading: false, error: empErr.message, success: '' })
-          setInitialLoading(false)
-          return
-        }
-        setEmployee(emp || null)
-        setEmployeeForm({
-          last_name: emp?.last_name || '',
-          first_name: emp?.first_name || '',
-          middle_name: emp?.middle_name || '',
-          birth_date: emp?.birth_date || '',
-          phone: emp?.phone || '',
-        })
-        setForm({ employeeId: profileData.employee_id })
-        setIsLinked(true)
-        setEditMode(false)
-      } else {
-        setForm({ employeeId: '' })
-        setEmployee(null)
-        setEmployeeForm({ last_name: '', first_name: '', middle_name: '', birth_date: '', phone: '' })
-        setIsLinked(false)
-        setEditMode(false)
-      }
-      setStatus({ loading: false, error: '', success: '' })
-      setInitialLoading(false)
-    }
-    loadProfile()
-    return () => {
-      active = false
-    }
-  }, [supabase, user])
-
-  useEffect(() => {
-    if (!user) return
-    let active = true
-    async function loadList() {
-      const term = searchTerm.trim()
-      const { data, error } = await searchEmployees(supabase, term)
-      if (!active) return
-      if (error) {
-        setEmployeesError(error.message)
-        setEmployees([])
-      } else {
-        setEmployeesError('')
-        setEmployees(data || [])
-      }
-    }
-    loadList()
-    return () => {
-      active = false
-    }
-  }, [searchTerm, supabase, user])
-
-  const handleSave = async () => {
-    if (!user) return
-    setStatus({ loading: true, error: '', success: '' })
-    const { error } = await upsertProfileLink(supabase, user.id, form.employeeId)
-    if (error) {
-      setStatus({ loading: false, error: error.message, success: '' })
       return
     }
+    if (profileQuery.error) {
+      setStatus({ loading: false, error: profileQuery.error.message, success: '' })
+      setInitialLoading(false)
+      return
+    }
+    const linkedId = employeeId || ''
+    setForm({ employeeId: linkedId })
+    setIsLinked(!!linkedId)
+    setEditMode(false)
+    setStatus({ loading: false, error: '', success: '' })
+    setInitialLoading(false)
+  }, [employeeId, profileQuery.error, profileQuery.isLoading, user])
 
-    if (form.employeeId) {
-      const current = employee || {}
-      if (editMode) {
+  useEffect(() => {
+    if (employeeQuery.isLoading) return
+    if (employeeQuery.error) {
+      setStatus({ loading: false, error: employeeQuery.error.message, success: '' })
+      return
+    }
+    const emp = employeeQuery.data?.data || null
+    setEmployee(emp)
+    setEmployeeForm({
+      last_name: emp?.last_name || '',
+      first_name: emp?.first_name || '',
+      middle_name: emp?.middle_name || '',
+      birth_date: emp?.birth_date || '',
+      phone: emp?.phone || '',
+    })
+  }, [employeeQuery.data, employeeQuery.error, employeeQuery.isLoading])
+
+  useEffect(() => {
+    if (childrenQuery.isLoading || childrenQuery.error) return
+    setChildren(childrenQuery.data || [])
+    setChildrenDraft(
+      (childrenQuery.data || []).map((child) => ({
+        id: child.id,
+        first_name: child.first_name || '',
+        last_name: child.last_name || '',
+        middle_name: child.middle_name || '',
+        birth_date: child.birth_date || '',
+      })),
+    )
+    setChildrenDeleted([])
+  }, [childrenQuery.data, childrenQuery.error, childrenQuery.isLoading])
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const { error: linkError } = await upsertProfileLink(supabase, user.id, form.employeeId)
+      if (linkError) throw new Error(linkError.message)
+
+      if (form.employeeId && editMode) {
+        const current = employee || {}
         const payload = {
           last_name: employeeForm.last_name || current.last_name || null,
           first_name: employeeForm.first_name || current.first_name || null,
@@ -118,52 +149,70 @@ export function useProfile() {
           phone: employeeForm.phone || current.phone || null,
         }
         const { error: empErr } = await updateEmployee(supabase, Number(form.employeeId), payload)
-        if (empErr) {
-          setStatus({ loading: false, error: `Сотрудник не обновлён: ${empErr.message}`, success: '' })
-          return
+        if (empErr) throw new Error(`Сотрудник не обновлён: ${empErr.message}`)
+
+        if (childrenDraft && childrenDraft.length) {
+          if (childrenDeleted && childrenDeleted.length) {
+            for (const delId of childrenDeleted) {
+              const { error: delErr } = await deleteChild(supabase, Number(delId))
+              if (delErr) throw new Error(`Ребёнок не удалён: ${delErr.message}`)
+            }
+          }
+          for (const child of childrenDraft) {
+            const commonPayload = {
+              first_name: child.first_name || null,
+              last_name: child.last_name || null,
+              middle_name: child.middle_name || null,
+              birth_date: child.birth_date || null,
+              id_employees: Number(form.employeeId),
+            }
+            if (String(child.id || '').startsWith('new-')) {
+              const { error: insErr } = await insertChild(supabase, commonPayload)
+              if (insErr) throw new Error(`Ребёнок не добавлен: ${insErr.message}`)
+            } else if (child.id) {
+              const { error: updErr } = await updateChild(supabase, Number(child.id), commonPayload)
+              if (updErr) throw new Error(`Ребёнок не обновлён: ${updErr.message}`)
+            }
+          }
         }
       }
-      const { data: refreshedEmp } = await supabase
-        .from('employees')
-        .select(
-          `
-          id,
-          first_name,
-          last_name,
-          middle_name,
-          position_id,
-          birth_date,
-          phone,
-          positions:position_id ( name, departament_name, devision_name )
-        `,
-        )
-        .eq('id', Number(form.employeeId))
-        .maybeSingle()
-      setEmployee(refreshedEmp || null)
-      setEmployeeForm({
-        last_name: refreshedEmp?.last_name || '',
-        first_name: refreshedEmp?.first_name || '',
-        middle_name: refreshedEmp?.middle_name || '',
-        birth_date: refreshedEmp?.birth_date || '',
-        phone: refreshedEmp?.phone || '',
-      })
-      setIsLinked(true)
+      return form.employeeId
+    },
+    onMutate: () => setStatus({ loading: true, error: '', success: '' }),
+    onError: (err) => setStatus({ loading: false, error: err.message, success: '' }),
+    onSuccess: async (empId) => {
+      await queryClient.invalidateQueries({ queryKey: ['profile', user?.id] })
+      if (empId) {
+        await queryClient.invalidateQueries({ queryKey: ['employee', Number(empId)] })
+        await queryClient.invalidateQueries({ queryKey: ['employee-children', Number(empId)] })
+        setIsLinked(true)
+      } else {
+        setIsLinked(false)
+      }
       setEditMode(false)
       setStatus({ loading: false, error: '', success: 'Сохранено' })
-      return
-    }
+      setChildrenDeleted([])
+    },
+  })
 
-    setStatus({ loading: false, error: '', success: 'Сохранено' })
-    setEditMode(false)
+  const handleSave = () => {
+    if (!user) return
+    saveMutation.mutate()
   }
 
   const handleUnlink = () => {
+    if (!user) return
     setForm({ employeeId: '' })
     setEmployee(null)
     setEmployeeForm({ last_name: '', first_name: '', middle_name: '', birth_date: '', phone: '' })
     setIsLinked(false)
     setEditMode(false)
     setStatus({ loading: false, error: '', success: '' })
+    upsertProfileLink(supabase, user.id, null).finally(() => {
+      queryClient.invalidateQueries({ queryKey: ['profile', user?.id] })
+    })
+    setChildren([])
+    setChildrenDraft([])
   }
 
   const resetEmployeeForm = () => {
@@ -196,8 +245,8 @@ export function useProfile() {
     employee,
     employeeForm,
     setEmployeeForm,
-    employees,
-    employeesError,
+    employees: employeesSearchQuery.data || [],
+    employeesError: employeesSearchQuery.error?.message || '',
     searchTerm,
     setSearchTerm,
     isLinked,
@@ -209,5 +258,10 @@ export function useProfile() {
     resetEmployeeForm,
     fio,
     divisionText,
+    children,
+    childrenLoading: childrenQuery.isLoading,
+    childrenDraft,
+    setChildrenDraft,
+    setChildrenDeleted,
   }
 }

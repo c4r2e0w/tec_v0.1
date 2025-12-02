@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App.jsx'
 import StartPage from './pages/StartPage.jsx'
@@ -12,58 +13,71 @@ import ProtectedRoute from './components/ProtectedRoute.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
 import UnitSectionPage from './pages/UnitSectionPage.jsx'
 import UnitLandingPage from './pages/UnitLandingPage.jsx'
+import UnionPage from './pages/UnionPage.jsx'
+
+const queryClient = new QueryClient()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <SupabaseProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<App />}>
-            <Route index element={<StartPage />} />
-            <Route path="login" element={<LoginPage />} />
-            <Route
-              path="equipment"
-              element={
-                <ProtectedRoute>
-                  <EquipmentPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="roster"
-              element={
-                <ProtectedRoute>
-                  <RosterPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="profile"
-              element={
-                <ProtectedRoute>
-                  <ProfilePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path=":unit"
-              element={
-                <ProtectedRoute>
-                  <UnitLandingPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path=":unit/:section"
-              element={
-                <ProtectedRoute>
-                  <UnitSectionPage />
-                </ProtectedRoute>
-              }
-            />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </SupabaseProvider>
+    <QueryClientProvider client={queryClient}>
+      <SupabaseProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<App />}>
+              <Route index element={<StartPage />} />
+              <Route path="login" element={<LoginPage />} />
+              <Route
+                path="equipment"
+                element={
+                  <ProtectedRoute>
+                    <EquipmentPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="roster"
+                element={
+                  <ProtectedRoute>
+                    <RosterPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="profile"
+                element={
+                  <ProtectedRoute>
+                    <ProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="union"
+                element={
+                  <ProtectedRoute>
+                    <UnionPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path=":unit"
+                element={
+                  <ProtectedRoute>
+                    <UnitLandingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path=":unit/:section"
+                element={
+                  <ProtectedRoute>
+                    <UnitSectionPage />
+                  </ProtectedRoute>
+                }
+              />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </SupabaseProvider>
+    </QueryClientProvider>
   </StrictMode>,
 )

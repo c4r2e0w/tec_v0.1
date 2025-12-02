@@ -22,14 +22,25 @@
 - Auth: Supabase Auth.
 - Таблицы (Supabase):
   - `profiles` (id=auth.uid, full_name, department, role_id) → внеш. ключ на `roles`
-  - `roles` (id: operator|supervisor|admin, name, description)
-  - `employees` (first_name, last_name, middle_name, position_id → positions.id, control_point, auth_user_id)
-  - `positions` (справочник должностей)
-  - `equipment` (основной реестр)
-  - `roster` (состав смены)
-  - `orders` (журналы КТЦ: unit='ktc', section='docs', type: admin|turbine|boiler|daily, title, body, author_name, control_point)
+- `roles` (id: operator|supervisor|admin, name, description)
+- `employees` (first_name, last_name, middle_name, position_id → positions.id, control_point, auth_user_id)
+- `positions` (справочник должностей)
+- `equipment` (основной реестр)
+- `roster` (состав смены)
+- `orders` (журналы КТЦ: unit='ktc', section='docs', type: admin|turbine|boiler|daily, title, body, author_name, control_point)
+- `journals/entries` (директивы/дефекты/ведомости + ознакомления `entry_receipts`/`entry_reads`, см. docs/journals-schema.md)
+- `schedule` + `schedule_overrides` + `absence_requests` + `time_balances` (график смен, отпуска, больничные, донорские, переработки; см. docs/schedule-schema.md)
 - RLS: включен для profiles/employees/orders (доступ к своим записям, оператор/супервизор/админ — по ролям).
 - Deployment: GitHub + Vercel (CI/CD). Env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+
+---
+
+## 📚 Журналы / директивы / дефекты
+
+- Базовая схема: `journals` → `entries` → `entry_receipts`/`entry_reads` (ознакомления и «всё прочитано»), автор подтягивается автоматически из `auth.uid()` + `profiles.employee_id`.
+- Для типов/подтипов используем `journals.code` (directive/defect/daily/ktc-docs) и `entries.type` (admin/turbine/boiler/…); теги — в `entries.tags`.
+- RLS: SELECT по роли/доступному unit, INSERT только автор, UPDATE/DELETE — автор или админ; для receipts/reads разрешено только своему `profile_id`.
+- Подробное описание (DDL, триггер автора, политики, индексы, запросы для счётчиков): `docs/journals-schema.md`.
 
 ---
 

@@ -5,11 +5,11 @@ import { useSupabase } from '../context/SupabaseProvider'
 import WeatherWidget from './WeatherWidget'
 
 const units = [
-  { key: 'ktc', title: 'Котлотурбинный цех' },
-  { key: 'chem', title: 'Химический цех' },
-  { key: 'electro', title: 'Электроцех' },
-  { key: 'sai', title: 'Цех автоматики и измерений' },
-  { key: 'fuel', title: 'Цех топливоподачи' },
+  { key: 'ktc', title: 'Котлотурбинный цех', icon: '🔥' },
+  { key: 'chem', title: 'Химический цех', icon: '⚗️' },
+  { key: 'electro', title: 'Электроцех', icon: '⚡️' },
+  { key: 'sai', title: 'Цех автоматики и измерений', icon: '📡' },
+  { key: 'fuel', title: 'Цех топливоподачи', icon: '⛽️' },
 ]
 
 function Layout({ children }) {
@@ -24,6 +24,8 @@ function Layout({ children }) {
     const pathUnit = location.pathname.split('/').filter(Boolean)[0]
     return unitMap[pathUnit] || null
   }, [location.pathname, unitMap])
+  const sidebarWidth = 'w-64'
+  const mainOffset = 'md:ml-64'
 
   const handleLogin = () => navigate('/login')
   const handleProfile = () => navigate('/profile')
@@ -53,7 +55,7 @@ function Layout({ children }) {
         <div className="absolute right-10 top-24 h-72 w-72 rounded-full bg-emerald-500/10 blur-3xl" />
       </div>
 
-      <aside className="relative z-10 hidden min-h-screen w-64 flex-col gap-6 border-r border-white/5 bg-slate-900/70 px-6 py-8 shadow-lg shadow-sky-900/10 backdrop-blur md:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col gap-6 border-r border-white/5 bg-slate-900/80 px-6 py-8 shadow-lg shadow-sky-900/10 backdrop-blur md:flex">
         <div
           onClick={() => navigate('/')}
           className="flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-2 py-1 transition hover:border-sky-500/40"
@@ -66,7 +68,7 @@ function Layout({ children }) {
             <p className="text-sm font-semibold">Инфо · Соц · Работа</p>
           </div>
         </div>
-        <nav className="flex flex-col gap-3 text-sm text-slate-300">
+        <nav className="flex flex-col gap-5 text-sm text-slate-300">
           {user && (
             <div className="space-y-2">
               <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Подразделения</p>
@@ -81,7 +83,10 @@ function Layout({ children }) {
                       }}
                       className="flex w-full items-center justify-between px-4 py-2 text-left text-slate-100 transition hover:border-sky-400/40 hover:text-white"
                     >
-                      <span>{unit.title}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="w-6 text-center text-base">{unit.icon}</span>
+                        <span>{unit.title}</span>
+                      </span>
                       <span className="text-xs text-slate-400">{expanded ? '–' : '+'}</span>
                     </button>
                     {expanded && (
@@ -113,36 +118,49 @@ function Layout({ children }) {
           )}
 
           {user && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Аккаунт</p>
-              <NavLink
-                to="/profile"
-                className={({ isActive }) =>
-                  [
-                    'rounded-xl px-4 py-2 transition',
-                    isActive
-                      ? 'bg-sky-500/15 text-white border border-sky-400/60 shadow-sm shadow-sky-900/30'
-                      : 'border border-white/5 hover:border-sky-400/40 hover:text-white',
-                  ].join(' ')
-                }
-              >
-                Профиль
-              </NavLink>
+              <div className="flex flex-col gap-2">
+                <NavLink
+                  to="/profile"
+                  className={({ isActive }) =>
+                    [
+                      'rounded-xl px-4 py-2 transition',
+                      isActive
+                        ? 'bg-sky-500/15 text-white border border-sky-400/60 shadow-sm shadow-sky-900/30'
+                        : 'border border-white/5 hover:border-sky-400/40 hover:text-white',
+                    ].join(' ')
+                  }
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="w-6 text-center text-base">👤</span>
+                    <span>Профиль</span>
+                  </span>
+                </NavLink>
+                <NavLink
+                  to="/union"
+                  className={({ isActive }) =>
+                    [
+                      'rounded-xl px-4 py-2 transition',
+                      isActive
+                        ? 'bg-emerald-500/15 text-white border border-emerald-400/60 shadow-sm shadow-emerald-900/30'
+                        : 'border border-white/5 hover:border-emerald-400/40 hover:text-white',
+                    ].join(' ')
+                  }
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="w-6 text-center text-base">🏅</span>
+                    <span>Профсоюз</span>
+                  </span>
+                </NavLink>
+              </div>
             </div>
           )}
         </nav>
-        <div className="mt-auto space-y-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-300">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Смена</p>
-          <p className="text-sm font-semibold text-white">S-24 · Ночной поток</p>
-          <p>Диспетчер: М. Осипов</p>
-          <button className="mt-2 w-full rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-400">
-            Обновить статус
-          </button>
-        </div>
       </aside>
 
-      <div className="relative z-10 flex flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 bg-slate-900/60 px-5 py-4 backdrop-blur">
+      <div className={`relative z-10 flex flex-1 flex-col ${mainOffset}`}>
+        <header className="sticky top-0 flex flex-wrap items-center justify-between gap-3 border-b border-white/5 bg-slate-900/80 px-5 py-4 backdrop-blur md:z-10">
           <p className="text-sm font-semibold text-white">{currentUnit || 'УИ-ТЭЦ'}</p>
           <div className="flex flex-1 flex-wrap items-center justify-end gap-2 text-xs text-slate-300">
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-200">
