@@ -15,7 +15,7 @@
 - [x] Подключить Tailwind CSS
 - [x] Создать .env.local и подключить переменные Supabase
 - [x] Создать минимальный компонент: “Hello, TPP Portal!”
-- [ ] Первый деплой Hello World на Vercel
+- [x] Первый деплой на Vercel
 
 ---
 
@@ -27,7 +27,7 @@
 - [x] Создать supabaseClient.js
 - [x] Проверить Auth (sign in → sign out)
 - [x] Проверить доступность таблиц (employees, workplaces…)
-- [ ] Настроить RLS (operator / supervisor / admin)
+- [x] Настроить RLS (operator / supervisor / admin)
 - [ ] Создать и протестировать триггер `on_auth_user_created`
 - [ ] Проверить запросы к базе через console.log
 
@@ -82,8 +82,11 @@
 - [x] Мини-логотип УИ-ТЭЦ
 - [x] Добавить погоду и время (Усть-Илимск) в хедер
 - [x] Навигация-аккордеон по подразделениям
-- [ ] Финальная проверка работы в Vercel
+- [x] Финальная проверка работы в Vercel/online beta
+- [x] Настроены ENV (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)
 - [ ] Автодеплой из GitHub
+- [x] Страница подразделений (/:unit) и секций (/:unit/:section)
+- [x] Журналы КТЦ (orders) с формой создания и фильтрами
 
 ---
 

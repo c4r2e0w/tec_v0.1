@@ -55,16 +55,7 @@ function StartPage() {
       setEmployeesError('')
       const { data, error } = await supabase
         .from('employees')
-        .select(
-          `
-          id,
-          first_name,
-          last_name,
-          middle_name,
-          position_id,
-          positions:position_id ( name )
-        `,
-        )
+        .select('id, first_name, last_name, middle_name, position_id')
         .limit(6)
       if (!active) return
       if (error) setEmployeesError(error.message)
@@ -101,28 +92,28 @@ function StartPage() {
               </span>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <p className="text-xs text-slate-400">Статус смены</p>
-              <p className="text-lg font-semibold text-emerald-200">Смена S-24 активна</p>
-              <p className="text-xs text-slate-400">Диспетчер: М. Осипов</p>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs text-slate-400">Статус смены</p>
+                <p className="text-lg font-semibold text-emerald-200">Смена S-24 активна</p>
+                <p className="text-xs text-slate-400">Диспетчер: М. Осипов</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs text-slate-400">Коммуникации</p>
+                <p className="text-lg font-semibold">49 сообщений</p>
+                <p className="text-xs text-slate-400">Новых за час: 7</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs text-slate-400">Документы</p>
+                <p className="text-lg font-semibold">+3 обновления</p>
+                <p className="text-xs text-slate-400">В работе: ППР, ОТиПБ</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs text-slate-400">Серверы</p>
+                <p className="text-lg font-semibold text-emerald-200">Все системы стабильны</p>
+                <p className="text-xs text-slate-400">API · База · VPN</p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <p className="text-xs text-slate-400">Коммуникации</p>
-              <p className="text-lg font-semibold">49 сообщений</p>
-              <p className="text-xs text-slate-400">Новых за час: 7</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <p className="text-xs text-slate-400">Документы</p>
-              <p className="text-lg font-semibold">+3 обновления</p>
-              <p className="text-xs text-slate-400">В работе: ППР, ОТиПБ</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <p className="text-xs text-slate-400">Серверы</p>
-              <p className="text-lg font-semibold text-emerald-200">Все системы стабильны</p>
-              <p className="text-xs text-slate-400">API · База · VPN</p>
-            </div>
-          </div>
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
           <button className="rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-400">
@@ -233,18 +224,18 @@ function StartPage() {
       <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-sm text-slate-200">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Ваш профиль (employees)</p>
-            <p className="text-base font-semibold text-white">Роль и место</p>
+            <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Ваш профиль</p>
+            <p className="text-base font-semibold text-white">Связь с кадровой записью</p>
           </div>
           {employeeProfile.loading && <span className="text-xs text-slate-400">загрузка…</span>}
         </div>
         {employeeProfile.error && <p className="text-xs text-orange-300">Ошибка: {employeeProfile.error}</p>}
-        {employeeProfile.profile && (
+        {employeeProfile.employee && (
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <div className="rounded-xl border border-white/5 bg-white/5 p-3">
               <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">ФИО</p>
               <p className="text-sm font-semibold text-white">
-                {[employeeProfile.profile.last_name, employeeProfile.profile.first_name, employeeProfile.profile.middle_name]
+                {[employeeProfile.employee.last_name, employeeProfile.employee.first_name, employeeProfile.employee.middle_name]
                   .filter(Boolean)
                   .join(' ') || '—'}
               </p>
@@ -252,17 +243,17 @@ function StartPage() {
             <div className="rounded-xl border border-white/5 bg-white/5 p-3">
               <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Должность</p>
               <p className="text-sm font-semibold text-white">
-                {employeeProfile.profile.positions?.name || employeeProfile.profile.position_id || '—'}
+                {employeeProfile.employee.positions?.name || employeeProfile.employee.position_id || '—'}
               </p>
             </div>
             <div className="rounded-xl border border-white/5 bg-white/5 p-3">
               <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Пост / участок</p>
-              <p className="text-sm font-semibold text-white">{employeeProfile.profile.control_point || '—'}</p>
+              <p className="text-sm font-semibold text-white">—</p>
             </div>
           </div>
         )}
-        {!employeeProfile.loading && !employeeProfile.profile && !employeeProfile.error && (
-          <p className="mt-2 text-xs text-slate-400">Нет профиля для текущего пользователя.</p>
+        {!employeeProfile.loading && !employeeProfile.employee && !employeeProfile.error && (
+          <p className="mt-2 text-xs text-slate-400">Нет привязки к сотруднику. Обновите в профиле.</p>
         )}
       </div>
 

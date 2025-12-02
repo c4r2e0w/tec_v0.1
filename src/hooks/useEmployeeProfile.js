@@ -5,36 +5,61 @@ import { useAuth } from './useAuth'
 export function useEmployeeProfile() {
   const { user } = useAuth()
   const supabase = useSupabase()
-  const [state, setState] = useState({ loading: true, error: '', profile: null })
+  const [state, setState] = useState({ loading: true, error: '', profile: null, employee: null })
 
   useEffect(() => {
     if (!user) {
-      setState({ loading: false, error: '', profile: null })
+      setState({ loading: false, error: '', profile: null, employee: null })
       return
     }
     let active = true
     async function fetchProfile() {
-      setState({ loading: true, error: '', profile: null })
-      const { data, error } = await supabase
-        .from('employees')
+      setState({ loading: true, error: '', profile: null, employee: null })
+
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
         .select(
           `
           id,
-          first_name,
-          last_name,
-          middle_name,
-          control_point,
-          position_id,
-          positions:position_id ( name )
+          employee_id,
+          employee:employee_id (
+            id,
+            first_name,
+            last_name,
+            middle_name,
+            position_id,
+            positions:position_id ( name )
+          )
         `,
         )
-        .eq('auth_user_id', user.id)
+        .eq('id', user.id)
         .maybeSingle()
+
       if (!active) return
-      if (error) {
-        setState({ loading: false, error: error.message, profile: null })
+      if (profileError) {
+        setState({ loading: false, error: profileError.message, profile: null, employee: null })
+        return
+      }
+
+      // fallback: если нет employee_id, попробуем по auth_user_id
+      if (!profileData?.employee && profileData?.employee_id == null) {
+        const { data: fallbackEmp } = await supabase
+          .from('employees')
+          .select(
+            `
+            id,
+            first_name,
+            last_name,
+            middle_name,
+            position_id,
+            positions:position_id ( name )
+          `,
+          )
+          .eq('auth_user_id', user.id)
+          .maybeSingle()
+        setState({ loading: false, error: '', profile: profileData, employee: fallbackEmp || null })
       } else {
-        setState({ loading: false, error: '', profile: data })
+        setState({ loading: false, error: '', profile: profileData, employee: profileData?.employee ?? null })
       }
     }
     fetchProfile()

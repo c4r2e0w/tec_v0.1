@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useSupabase } from '../context/SupabaseProvider'
 import WeatherWidget from './WeatherWidget'
@@ -18,6 +18,12 @@ function Layout({ children }) {
   const navigate = useNavigate()
   const [now, setNow] = useState(new Date())
   const [openUnit, setOpenUnit] = useState(null)
+  const location = useLocation()
+  const unitMap = useMemo(() => Object.fromEntries(units.map((u) => [u.key, u.title])), [])
+  const currentUnit = useMemo(() => {
+    const pathUnit = location.pathname.split('/').filter(Boolean)[0]
+    return unitMap[pathUnit] || null
+  }, [location.pathname, unitMap])
 
   const handleLogin = () => navigate('/login')
   const handleProfile = () => navigate('/profile')
@@ -48,7 +54,10 @@ function Layout({ children }) {
       </div>
 
       <aside className="relative z-10 hidden min-h-screen w-64 flex-col gap-6 border-r border-white/5 bg-slate-900/70 px-6 py-8 shadow-lg shadow-sky-900/10 backdrop-blur md:flex">
-        <div className="flex items-center gap-3">
+        <div
+          onClick={() => navigate('/')}
+          className="flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-2 py-1 transition hover:border-sky-500/40"
+        >
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-cyan-400 text-lg font-semibold text-slate-950">
             УИ
           </div>
@@ -58,23 +67,6 @@ function Layout({ children }) {
           </div>
         </div>
         <nav className="flex flex-col gap-3 text-sm text-slate-300">
-          <div className="space-y-2">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">УИ-ТЭЦ</p>
-            <NavLink
-              to="/"
-              className={({ isActive }) =>
-                [
-                  'rounded-xl px-4 py-2 transition',
-                  isActive
-                    ? 'bg-sky-500/15 text-white border border-sky-400/60 shadow-sm shadow-sky-900/30'
-                    : 'border border-white/5 hover:border-sky-400/40 hover:text-white',
-                ].join(' ')
-              }
-            >
-              Главная
-            </NavLink>
-          </div>
-
           {user && (
             <div className="space-y-2">
               <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Подразделения</p>
@@ -151,15 +143,7 @@ function Layout({ children }) {
 
       <div className="relative z-10 flex flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 bg-slate-900/60 px-5 py-4 backdrop-blur">
-          <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-cyan-400 text-base font-semibold text-slate-950">
-              УИ
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">ТПП</p>
-              <p className="text-sm font-semibold">Портал</p>
-            </div>
-          </div>
+          <p className="text-sm font-semibold text-white">{currentUnit || 'УИ-ТЭЦ'}</p>
           <div className="flex flex-1 flex-wrap items-center justify-end gap-2 text-xs text-slate-300">
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-200">
               {dateFormatter.format(now)} (UTC+8)

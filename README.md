@@ -16,30 +16,20 @@
 
 ---
 
-## 📦 Технологии
+## 📦 Технологии и данные
 
-### Frontend
-- Vite + React
-- React Router
-- Tailwind CSS
-- Supabase JS SDK
-
-### Backend (BaaS)
-- Supabase Auth
-- Postgres + таблицы:
-  - employees  
-  - divisions / departments  
-  - workplaces / workplace_assignments  
-  - equipment
-- RLS (ролевой доступ)
-- Edge Functions (cron-задачи в будущем)
-
-### Deployment
-- GitHub repository
-- Vercel (CI/CD)
-- Env:  
-  - `VITE_SUPABASE_URL`  
-  - `VITE_SUPABASE_ANON_KEY`
+- Frontend: Vite + React + React Router + Tailwind CSS, Supabase JS SDK.
+- Auth: Supabase Auth.
+- Таблицы (Supabase):
+  - `profiles` (id=auth.uid, full_name, department, role_id) → внеш. ключ на `roles`
+  - `roles` (id: operator|supervisor|admin, name, description)
+  - `employees` (first_name, last_name, middle_name, position_id → positions.id, control_point, auth_user_id)
+  - `positions` (справочник должностей)
+  - `equipment` (основной реестр)
+  - `roster` (состав смены)
+  - `orders` (журналы КТЦ: unit='ktc', section='docs', type: admin|turbine|boiler|daily, title, body, author_name, control_point)
+- RLS: включен для profiles/employees/orders (доступ к своим записям, оператор/супервизор/админ — по ролям).
+- Deployment: GitHub + Vercel (CI/CD). Env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 
 ---
 
