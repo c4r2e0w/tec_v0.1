@@ -337,15 +337,7 @@ function UnitSectionPage() {
       setLoadingStaff(false)
       return
     }
-    const unitKey = unit.toLowerCase()
-    const unitName = (unitsMap[unit]?.name || '').toLowerCase()
-    const filtered = (data || []).filter((e) => {
-      const div = (e.positions?.devision_name || '').toLowerCase()
-      if (!unitKey) return true
-      if (!div) return false
-      return div === unitKey || (unitName && div === unitName)
-    })
-    setStaff(filtered)
+    setStaff(data || [])
     setLoadingStaff(false)
   }, [scheduleService, section, unit, user])
 
