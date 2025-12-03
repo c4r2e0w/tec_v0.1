@@ -1,33 +1,22 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { acknowledgeEntry, createEntry, fetchEntries, fetchJournalRead, markJournalRead } from '../api/entries'
-import { createOverride, createScheduleEntry, fetchEmployeesByUnit, fetchOverridesRange, fetchScheduleRange, fetchShiftTemplates } from '../api/schedule'
 import { useSupabase } from '../context/SupabaseProvider'
 import { useProfile } from '../hooks/useProfile'
 import { useAuth } from '../hooks/useAuth'
 import PillButton from '../components/PillButton'
 import Badge from '../components/Badge'
-
-const units = {
-  ktc: { name: 'Котлотурбинный цех', color: 'from-orange-500/20 to-slate-900' },
-  chem: { name: 'Химический цех', color: 'from-cyan-500/20 to-slate-900' },
-  electro: { name: 'Электроцех', color: 'from-emerald-500/20 to-slate-900' },
-  sai: { name: 'Цех автоматики и измерений', color: 'from-sky-500/20 to-slate-900' },
-  fuel: { name: 'Цех топливоподачи', color: 'from-amber-500/20 to-slate-900' },
-}
-
-const sections = {
-  personnel: 'Персонал',
-  equipment: 'Оборудование',
-  docs: 'Документация',
-}
+import { unitsMap, sectionsMap } from '../constants/units'
+import { createEntriesService } from '../services/entriesService'
+import { createScheduleService } from '../services/scheduleService'
 
 function UnitSectionPage() {
   const { unit, section } = useParams()
-  const unitData = units[unit]
-  const sectionLabel = sections[section]
+  const unitData = unitsMap[unit]
+  const sectionLabel = sectionsMap[section]
   const isKtc = unit === 'ktc'
   const supabase = useSupabase()
+  const entriesService = useMemo(() => createEntriesService(supabase), [supabase])
+  const scheduleService = useMemo(() => createScheduleService(supabase), [supabase])
   const { user } = useAuth()
   const profile = useProfile()
   const journalCode = 'ktc-docs'
@@ -272,8 +261,7 @@ function UnitSectionPage() {
     if (!isKtc || section !== 'docs' || !user) return
     setLoadingEntries(true)
     setEntriesError('')
-    const { data, error, journalId: resolvedId } = await fetchEntries({
-      supabase,
+    const { data, error, journalId: resolvedId } = await entriesService.list({
       journalCode,
       journalName,
       profileId: user.id,
@@ -288,8 +276,7 @@ function UnitSectionPage() {
     setEntries(data || [])
     setJournalId(resolvedId || null)
 
-    const { data: readData, error: readError } = await fetchJournalRead({
-      supabase,
+    const { data: readData, error: readError } = await entriesService.lastRead({
       journalId: resolvedId,
       profileId: user.id,
       journalCode,
@@ -300,7 +287,7 @@ function UnitSectionPage() {
     }
     setLoadingEntries(false)
     setRefreshing(false)
-  }, [isKtc, journalCode, journalName, section, supabase, user])
+  }, [entriesService, isKtc, journalCode, journalName, section, user])
 
   useEffect(() => {
     loadEntries()
@@ -314,7 +301,7 @@ function UnitSectionPage() {
       setScheduleError('')
       const from = monthDates[0]
       const to = monthDates[monthDates.length - 1]
-      const { data, error } = await fetchScheduleRange({ supabase, from, to, unit })
+      const { data, error } = await scheduleService.fetchRange({ from, to, unit })
       if (error) {
         setScheduleError(error.message)
         setScheduleRows([])
@@ -323,7 +310,7 @@ function UnitSectionPage() {
         return
       }
       setScheduleRows(data || [])
-      const { data: ovData, error: ovErr } = await fetchOverridesRange({ supabase, from, to, unit })
+      const { data: ovData, error: ovErr } = await scheduleService.fetchOverrides({ from, to, unit })
       if (ovErr) {
         setScheduleError(ovErr.message)
         setOverrideRows([])
@@ -333,7 +320,7 @@ function UnitSectionPage() {
       setOverrideRows(ovData || [])
       setLoadingSchedule(false)
     },
-    [section, unit, supabase, user, monthDates],
+    [section, unit, user, monthDates, scheduleService],
   )
 
   useEffect(() => {
@@ -344,14 +331,14 @@ function UnitSectionPage() {
     if (!unit || section !== 'personnel' || !user) return
     setLoadingStaff(true)
     setStaffError('')
-    const { data, error } = await fetchEmployeesByUnit({ supabase, unit })
+    const { data, error } = await scheduleService.fetchEmployeesByUnit(unit)
     if (error) {
       setStaffError(error.message)
       setLoadingStaff(false)
       return
     }
     const unitKey = unit.toLowerCase()
-    const unitName = (units[unit]?.name || '').toLowerCase()
+    const unitName = (unitsMap[unit]?.name || '').toLowerCase()
     const filtered = (data || []).filter((e) => {
       const div = (e.positions?.devision_name || '').toLowerCase()
       if (!unitKey) return true
@@ -360,12 +347,12 @@ function UnitSectionPage() {
     })
     setStaff(filtered)
     setLoadingStaff(false)
-  }, [section, supabase, unit, user])
+  }, [scheduleService, section, unit, user])
 
   const loadShiftTemplates = useCallback(async () => {
-    const { data, error } = await fetchShiftTemplates({ supabase })
+    const { data, error } = await scheduleService.fetchShiftTemplates()
     if (!error) setShiftTemplates(data || [])
-  }, [supabase])
+  }, [scheduleService])
 
   useEffect(() => {
     loadStaff()
@@ -386,8 +373,7 @@ function UnitSectionPage() {
     }
     setSaving(true)
     setEntriesError('')
-    const { data, error } = await createEntry({
-      supabase,
+    const { data, error } = await entriesService.create({
       journalCode: 'ktc-docs',
       journalName,
       journalId,
@@ -414,7 +400,7 @@ function UnitSectionPage() {
   const handleAcknowledge = async (entryId) => {
     if (!user) return
     setAckLoadingId(entryId)
-    const { error } = await acknowledgeEntry({ supabase, entryId, profileId: user.id })
+    const { error } = await entriesService.acknowledge({ entryId, profileId: user.id })
     if (error) {
       setEntriesError(error.message)
     } else {
@@ -441,8 +427,7 @@ function UnitSectionPage() {
   const handleMarkAllRead = async () => {
     if (!user) return
     setMarkAllLoading(true)
-    const { error } = await markJournalRead({
-      supabase,
+    const { error } = await entriesService.markRead({
       journalId,
       journalCode,
       journalName,
@@ -472,7 +457,7 @@ function UnitSectionPage() {
         source: 'manual',
         note: 'Выходной',
       }
-      await createScheduleEntry({ supabase, payload })
+      await scheduleService.createEntry(payload)
       loadSchedule({ silent: true })
       return
     }
@@ -489,7 +474,7 @@ function UnitSectionPage() {
       source: tmpl.code || 'template',
       template_id: tmpl.id,
     }
-    await createScheduleEntry({ supabase, payload })
+    await scheduleService.createEntry(payload)
     loadSchedule({ silent: true })
   }
 
@@ -502,7 +487,7 @@ function UnitSectionPage() {
       unit: unit,
       created_by: user.id,
     }
-    await createOverride({ supabase, payload })
+    await scheduleService.createOverride(payload)
     loadSchedule({ silent: true })
   }
 
