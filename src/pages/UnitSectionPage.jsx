@@ -878,8 +878,17 @@ function UnitSectionPage() {
                         {!collapsed &&
                           group.list.map((emp) => (
                             <tr key={`${group.position}-${emp.id}`} className="border-t border-white/5">
-                              <td className="sticky left-0 z-20 bg-slate-900/95 px-3 py-2 text-left text-sm font-semibold text-white">
-                                {emp.label}
+                              <td className="sticky left-0 z-20 max-w-[220px] bg-slate-900/95 px-3 py-2 text-left text-sm font-semibold text-white">
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate" title={emp.label}>
+                                    {emp.label}
+                                  </span>
+                                  {emp.position && (
+                                    <Badge variant="neutral" className="text-[10px] px-1.5 normal-case">
+                                      {emp.position}
+                                    </Badge>
+                                  )}
+                                </div>
                               </td>
                               {monthDates.map((d) => {
                                 const shift = scheduleMap.get(`${emp.id}-${d}`)
