@@ -36,6 +36,7 @@ function UnitSectionPage() {
   const [scheduleError, setScheduleError] = useState('')
   const [loadingSchedule, setLoadingSchedule] = useState(false)
   const [selectedCell, setSelectedCell] = useState(null)
+  const [menuCell, setMenuCell] = useState(null)
   const [selectionAnchor, setSelectionAnchor] = useState(null)
   const [shiftTemplates, setShiftTemplates] = useState([])
   const [staff, setStaff] = useState([])
@@ -245,7 +246,16 @@ function UnitSectionPage() {
     return list
   }, [staffWithLabels, scheduleRows, positionFilter, divisionFilter, positionTypeFilter, pinnedEmployees, hiddenEmployees])
 
-  const employeeIndexMap = useMemo(() => new Map(employeesFromSchedule.map((e, idx) => [e.id, idx])), [employeesFromSchedule])
+  const visibleRows = useMemo(() => {
+    const list = []
+    groupedByPosition.forEach((group) => {
+      if (collapsedPositions.includes(group.position)) return
+      group.list.forEach((emp) => list.push(emp))
+    })
+    return list
+  }, [collapsedPositions, groupedByPosition])
+
+  const employeeIndexMap = useMemo(() => new Map(visibleRows.map((e, idx) => [e.id, idx])), [visibleRows])
 
   const scheduleMap = useMemo(() => {
     const m = new Map()
@@ -482,10 +492,7 @@ function UnitSectionPage() {
           anchorCol !== -1 &&
           targetCol !== -1
         ) {
-          const rowSlice = employeesFromSchedule.slice(
-            Math.min(anchorRow, targetRow),
-            Math.max(anchorRow, targetRow) + 1,
-          )
+          const rowSlice = visibleRows.slice(Math.min(anchorRow, targetRow), Math.max(anchorRow, targetRow) + 1)
           const colSlice = monthDates.slice(Math.min(anchorCol, targetCol), Math.max(anchorCol, targetCol) + 1)
           const rect = []
           rowSlice.forEach((r) => colSlice.forEach((c) => rect.push({ employeeId: r.id, date: c })))
@@ -493,12 +500,14 @@ function UnitSectionPage() {
         }
         setSelectedCell({ employeeId, date })
         setSelectionAnchor(anchor)
+        setMenuCell({ employeeId, date })
         return
       }
 
       if (isMeta) {
         setSelectionAnchor(selectionAnchor || { employeeId, date })
         setSelectedCell({ employeeId, date })
+        setMenuCell({ employeeId, date })
         setSelectedCells((prev) => {
           const exists = prev.some((c) => c.employeeId === employeeId && c.date === date)
           if (exists) return prev.filter((c) => !(c.employeeId === employeeId && c.date === date))
@@ -510,8 +519,9 @@ function UnitSectionPage() {
       setSelectionAnchor({ employeeId, date })
       setSelectedCell({ employeeId, date })
       setSelectedCells([{ employeeId, date }])
+      setMenuCell({ employeeId, date })
     },
-    [employeeIndexMap, employeesFromSchedule, monthDates, selectionAnchor],
+    [employeeIndexMap, monthDates, selectionAnchor, visibleRows],
   )
 
   const handleApplyShift = async (employeeId, date, shiftIdArg) => {
@@ -1110,7 +1120,7 @@ function UnitSectionPage() {
                                         ✓
                                       </span>
                                     ) : null}
-                                    {selectedCells.length <= 1 && selectedCell?.employeeId === emp.id && selectedCell?.date === d && (
+                                    {menuCell?.employeeId === emp.id && menuCell?.date === d && (
                                       <div className="absolute left-1 top-9 z-50 w-52 rounded-xl border border-white/10 bg-slate-900/95 p-2 text-[11px] text-slate-100 shadow-xl">
                                         <p className="mb-1 text-[10px] uppercase tracking-[0.15em] text-slate-400">Выбрать смену</p>
                                         <div className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
