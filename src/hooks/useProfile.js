@@ -121,9 +121,10 @@ export function useProfile() {
 
   useEffect(() => {
     if (childrenQuery.isLoading || childrenQuery.error) return
-    setChildren(childrenQuery.data || [])
+    const list = childrenQuery.data || []
+    setChildren(list)
     setChildrenDraft(
-      (childrenQuery.data || []).map((child) => ({
+      list.map((child) => ({
         id: child.id,
         first_name: child.first_name || '',
         last_name: child.last_name || '',
@@ -132,7 +133,7 @@ export function useProfile() {
       })),
     )
     setChildrenDeleted([])
-  }, [childrenQuery.data, childrenQuery.error, childrenQuery.isLoading])
+  }, [childrenQuery.data, childrenQuery.error, childrenQuery.isLoading, editMode])
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -151,13 +152,14 @@ export function useProfile() {
         const { error: empErr } = await updateEmployee(supabase, Number(form.employeeId), payload)
         if (empErr) throw new Error(`Сотрудник не обновлён: ${empErr.message}`)
 
-        if (childrenDraft && childrenDraft.length) {
-          if (childrenDeleted && childrenDeleted.length) {
-            for (const delId of childrenDeleted) {
-              const { error: delErr } = await deleteChild(supabase, Number(delId))
-              if (delErr) throw new Error(`Ребёнок не удалён: ${delErr.message}`)
-            }
+        if (childrenDeleted && childrenDeleted.length) {
+          for (const delId of childrenDeleted) {
+            const { error: delErr } = await deleteChild(supabase, Number(delId))
+            if (delErr) throw new Error(`Ребёнок не удалён: ${delErr.message}`)
           }
+        }
+
+        if (childrenDraft) {
           for (const child of childrenDraft) {
             const commonPayload = {
               first_name: child.first_name || null,
