@@ -6,6 +6,7 @@ import { useSupabase } from '../context/SupabaseProvider'
 import { useProfile } from '../hooks/useProfile'
 import { useAuth } from '../hooks/useAuth'
 import PillButton from '../components/PillButton'
+import Badge from '../components/Badge'
 
 const units = {
   ktc: { name: 'Котлотурбинный цех', color: 'from-orange-500/20 to-slate-900' },
@@ -668,14 +669,8 @@ function UnitSectionPage() {
                     {item.type ? ` · ${item.type}` : ''}
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-block rounded-full border border-sky-400/40 bg-sky-500/10 px-2 py-0.5 text-[11px] uppercase text-sky-100">
-                      {item.type}
-                    </span>
-                    {!item.acknowledged && (
-                      <span className="inline-block rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] uppercase text-emerald-100">
-                        Новое
-                      </span>
-                    )}
+                    <Badge variant="sky">{item.type}</Badge>
+                    {!item.acknowledged && <Badge variant="emerald">Новое</Badge>}
                   </div>
                   {item.body && <p className="text-xs text-slate-300">{item.body}</p>}
                   <div className="mt-2 flex items-center gap-2">
@@ -897,9 +892,9 @@ function UnitSectionPage() {
                             >
                               <span className="text-base">{collapsed ? '▸' : '▾'}</span>
                               <span>{group.position}</span>
-                              <span className="rounded-full border border-white/10 bg-white/10 px-1.5 py-0.5 text-[10px]">
-                                {group.list.length}
-                              </span>
+                      <Badge variant="neutral" className="px-1.5 text-[10px]">
+                        {group.list.length}
+                      </Badge>
                             </button>
                           </td>
                         </tr>
@@ -933,31 +928,28 @@ function UnitSectionPage() {
                                       )}
                                       {overrides.length > 0 && (
                                         <div className="mt-1 flex flex-wrap gap-1">
-                                          {overrides.map((o) => {
-                                            const kind = (o.kind || '').toLowerCase()
-                                            const map = {
-                                              vacation: 'Отп',
-                                              sick: 'Бол',
-                                              training: 'Уч',
-                                              donor: 'Дон',
-                                              comp_day_off: 'Отг',
-                                              overtime: 'Пер',
-                                              debt: 'Долг',
-                                              holiday_work: 'Празд',
-                                            }
-                                            const label = map[kind] || kind || 'др.'
-                                            return (
-                                              <span
-                                                key={o.id}
-                                                className="rounded-full border border-orange-300/40 bg-orange-500/10 px-1.5 py-0.5 text-[9px] text-orange-100"
-                                              >
-                                                {label}
-                                              </span>
-                                            )
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
+                      {overrides.map((o) => {
+                        const kind = (o.kind || '').toLowerCase()
+                        const map = {
+                          vacation: 'Отп',
+                          sick: 'Бол',
+                          training: 'Уч',
+                          donor: 'Дон',
+                          comp_day_off: 'Отг',
+                          overtime: 'Пер',
+                          debt: 'Долг',
+                          holiday_work: 'Празд',
+                        }
+                        const label = map[kind] || kind || 'др.'
+                        return (
+                          <Badge key={o.id} variant="orange" className="text-[9px] px-1.5">
+                            {label}
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
                                   </td>
                                 )
                               })}
