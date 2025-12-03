@@ -378,6 +378,8 @@ function UnitSectionPage() {
       return
     }
     setStaff(data || [])
+    setSelectedCells([])
+    setSelectionAnchor(null)
     setLoadingStaff(false)
   }, [scheduleService, section, unit, user])
 
