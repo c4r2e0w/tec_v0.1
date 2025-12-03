@@ -200,19 +200,23 @@ export function useProfile() {
     saveMutation.mutate()
   }
 
-  const handleUnlink = () => {
+  const handleUnlink = async () => {
     if (!user) return
+    setStatus({ loading: true, error: '', success: '' })
+    const { error } = await upsertProfileLink(supabase, user.id, null)
+    if (error) {
+      setStatus({ loading: false, error: error.message, success: '' })
+      return
+    }
     setForm({ employeeId: '' })
     setEmployee(null)
     setEmployeeForm({ last_name: '', first_name: '', middle_name: '', birth_date: '', phone: '' })
     setIsLinked(false)
     setEditMode(false)
-    setStatus({ loading: false, error: '', success: '' })
-    upsertProfileLink(supabase, user.id, null).finally(() => {
-      queryClient.invalidateQueries({ queryKey: ['profile', user?.id] })
-    })
     setChildren([])
     setChildrenDraft([])
+    setStatus({ loading: false, error: '', success: 'Привязка удалена' })
+    queryClient.invalidateQueries({ queryKey: ['profile', user?.id] })
   }
 
   const resetEmployeeForm = () => {
