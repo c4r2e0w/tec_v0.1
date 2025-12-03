@@ -621,20 +621,17 @@ function UnitSectionPage() {
     loadSchedule({ silent: true })
   }
 
-  const applyShiftAndClose = async (employeeId, date, shiftId) => {
-    setSelectedShiftId(shiftId)
-    await handleApplyShift(employeeId, date, shiftId)
-    setSelectedCell(null)
-  }
-
   const applyShiftToSelected = async (shiftId) => {
     if (!shiftId || !selectedCells.length) return
     setSelectedShiftId(shiftId)
-    for (const cell of selectedCells) {
+    const unique = new Map()
+    selectedCells.forEach((c) => unique.set(`${c.employeeId}-${c.date}`, c))
+    for (const cell of unique.values()) {
       // eslint-disable-next-line no-await-in-loop
       await handleApplyShift(cell.employeeId, cell.date, shiftId)
     }
     setSelectedCells([])
+    setMenuCell(null)
   }
 
   const handleApplyOverride = async (employeeId, date) => {
@@ -1131,7 +1128,7 @@ function UnitSectionPage() {
                                               key={opt.value}
                                               onClick={(e) => {
                                                 e.stopPropagation()
-                                                applyShiftAndClose(emp.id, d, opt.value)
+                                                applyShiftToSelected(opt.value)
                                               }}
                                               className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-slate-800/80 px-2 py-1 text-left transition hover:border-sky-400/60 hover:bg-slate-800"
                                             >
@@ -1175,27 +1172,16 @@ function UnitSectionPage() {
                     Скрыто сотрудников: {hiddenEmployees.length}
                   </span>
                 )}
-                <div className="flex flex-wrap gap-1">
-                  {shiftOptions.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => applyShiftToSelected(opt.value)}
-                      disabled={!selectedCells.length}
-                      className="rounded-full border border-white/10 bg-slate-800 px-3 py-1 text-[11px] text-slate-100 transition hover:border-sky-400/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {opt.label} ({opt.meta})
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => {
-                      setSelectedCells([])
-                      setSelectionAnchor(null)
-                    }}
-                    className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-slate-100 transition hover:border-red-400/60 hover:text-white"
-                  >
-                    Очистить выделение
-                  </button>
-                </div>
+                <button
+                  onClick={() => {
+                    setSelectedCells([])
+                    setSelectionAnchor(null)
+                    setMenuCell(null)
+                  }}
+                  className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-slate-100 transition hover:border-red-400/60 hover:text-white"
+                >
+                  Очистить выделение
+                </button>
               </div>
             )}
             {selectedCell && (
