@@ -1,6 +1,7 @@
 import {
   createOverride,
   createScheduleEntry,
+  deleteScheduleEntry,
   fetchEmployeesByUnit,
   fetchOverridesRange,
   fetchScheduleRange,
@@ -17,6 +18,7 @@ export function createScheduleService(supabase) {
     fetchEmployeesByUnit: (unit) => fetchEmployeesByUnit({ supabase, unit }),
     fetchShiftTemplates: () => fetchShiftTemplates({ supabase }),
     createEntry: (payload) => createScheduleEntry({ supabase, payload }),
+    deleteEntry: ({ employeeId, date }) => deleteScheduleEntry({ supabase, employeeId, date }),
     createOverride: (payload) => createOverride({ supabase, payload }),
   }
 }

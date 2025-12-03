@@ -33,10 +33,10 @@ function UnitSectionPage() {
   const [markAllLoading, setMarkAllLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [scheduleRows, setScheduleRows] = useState([])
-  const [overrideRows, setOverrideRows] = useState([])
   const [scheduleError, setScheduleError] = useState('')
   const [loadingSchedule, setLoadingSchedule] = useState(false)
   const [selectedCell, setSelectedCell] = useState(null)
+  const [selectionAnchor, setSelectionAnchor] = useState(null)
   const [shiftTemplates, setShiftTemplates] = useState([])
   const [staff, setStaff] = useState([])
   const [staffError, setStaffError] = useState('')
@@ -46,14 +46,32 @@ function UnitSectionPage() {
   const [positionTypeFilter, setPositionTypeFilter] = useState(['admin', 'operational']) // массив типов
   const [positionsOpen, setPositionsOpen] = useState(false)
   const [collapsedPositions, setCollapsedPositions] = useState([])
+  const [pinnedEmployees, setPinnedEmployees] = useState([])
+  const [hiddenEmployees, setHiddenEmployees] = useState([])
+  const [selectedCells, setSelectedCells] = useState([])
+  const MAX_DAY_HOURS = 12
+
+  const clampPositiveHours = (value) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return 0
+    const num = Number(value)
+    if (num <= 0) return num
+    return Math.min(num, MAX_DAY_HOURS)
+  }
+
+  const addDays = (dateStr, days) => {
+    const d = new Date(dateStr)
+    d.setDate(d.getDate() + days)
+    return d.toISOString().slice(0, 10)
+  }
 
   const resetFilters = () => {
     setPositionTypeFilter(['admin', 'operational'])
     setDivisionFilter([])
     setPositionFilter([])
+    setPinnedEmployees([])
+    setHiddenEmployees([])
   }
   const [selectedShiftId, setSelectedShiftId] = useState('')
-  const [selectedOverrideKind, setSelectedOverrideKind] = useState('vacation')
 
   const dateFormatter = useMemo(
     () =>
@@ -126,6 +144,41 @@ function UnitSectionPage() {
   }, [monthStart])
 
   const shiftTemplateMap = useMemo(() => Object.fromEntries((shiftTemplates || []).map((t) => [t.id, t])), [shiftTemplates])
+  const customShiftOptions = useMemo(
+    () => [
+      { value: 'clear', label: 'Очистить ячейку', meta: 'нет смены', type: 'meta', hours: null, note: '' },
+      { value: 'day8', label: 'День (8ч)', meta: '+8 ч', type: 'status', hours: 8, note: 'Дневная смена 8ч' },
+      { value: 'day12', label: 'День (12ч)', meta: '+12 ч', type: 'status', hours: 12, note: 'Дневная смена 12ч' },
+      { value: 'night12', label: 'Ночь (12ч)', meta: '+12 ч', type: 'status', hours: 12, note: 'Ночная смена 3+9' },
+      { value: 'training', label: 'Техучёба', meta: '+4 ч', type: 'status', hours: 4, note: 'Техучёба' },
+      { value: 'emergency', label: 'Противоаварийка', meta: '+4 ч', type: 'status', hours: 4, note: 'Противоаварийка' },
+      { value: 'donor', label: 'Донорский', meta: '+8 ч', type: 'status', hours: 8, note: 'Донорский день' },
+      { value: 'business_trip', label: 'Командировка', meta: '+8 ч', type: 'status', hours: 8, note: 'Командировка' },
+      { value: 'maternity', label: 'Декрет/уход', meta: '0 ч', type: 'status', hours: 0, note: 'Декрет/уход' },
+      { value: 'vacation', label: 'Отпуск', meta: 'снижает норму', type: 'status', hours: 0, note: 'Отпуск (норма ↓)' },
+      { value: 'sick', label: 'Больничный', meta: 'снижает норму', type: 'status', hours: 0, note: 'Больничный (норма ↓)' },
+      { value: 'comp_day_off', label: 'Отгул', meta: '-8 ч', type: 'status', hours: -8, note: 'Отгул' },
+      { value: 'off', label: 'Выходной', meta: '0 ч', type: 'rest', hours: 0, note: 'Выходной' },
+    ],
+    [],
+  )
+  const customShiftMap = useMemo(() => Object.fromEntries(customShiftOptions.map((o) => [o.value, o])), [customShiftOptions])
+  const shiftOptions = useMemo(() => {
+    const templates = shiftTemplates.map((t) => ({
+      value: t.id,
+      label: t.name || t.code,
+      meta: `${t.start_time}–${t.end_time} · ${t.duration_hours}ч`,
+      type: 'work',
+    }))
+    return customShiftOptions.concat(templates)
+  }, [customShiftOptions, shiftTemplates])
+
+  const isNightSplitTemplate = (tmpl) => {
+    if (!tmpl) return false
+    if (!tmpl.start_time || !tmpl.end_time) return false
+    // Ночная смена: начало вечером, окончание утром (переворот через полночь)
+    return tmpl.start_time > tmpl.end_time
+  }
 
   const staffWithLabels = useMemo(() => {
     const src = staff.length ? staff : []
@@ -146,7 +199,9 @@ function UnitSectionPage() {
     staffWithLabels.forEach((e) => map.set(e.id, e))
     if (!map.size) {
       scheduleRows.forEach((row) => {
-        const label = row.employees ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ') : `ID ${row.employee_id}`
+        const label = row.employees
+          ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ')
+          : `ID ${row.employee_id}`
         map.set(row.employee_id, {
           id: row.employee_id,
           label,
@@ -157,19 +212,6 @@ function UnitSectionPage() {
         })
       })
     }
-    overrideRows.forEach((row) => {
-      if (!map.has(row.employee_id)) {
-        const label = row.employees ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ') : `ID ${row.employee_id}`
-        map.set(row.employee_id, {
-          id: row.employee_id,
-          label,
-          position: row.employees?.positions?.name || '',
-          division: row.employees?.positions?.devision_name || '',
-          department: row.employees?.positions?.departament_name || '',
-          positionType: row.employees?.positions?.type || '',
-        })
-      }
-    })
     let list = Array.from(map.values())
     if (divisionFilter && divisionFilter.length) {
       const set = new Set(divisionFilter.map((d) => d.toLowerCase()))
@@ -193,8 +235,17 @@ function UnitSectionPage() {
       const set = new Set(positionFilter)
       list = list.filter((e) => set.has(e.position))
     }
+    const pinnedSet = new Set(pinnedEmployees)
+    const hiddenSet = new Set(hiddenEmployees)
+    if (pinnedSet.size) {
+      list = list.filter((e) => pinnedSet.has(e.id))
+    } else if (hiddenSet.size) {
+      list = list.filter((e) => !hiddenSet.has(e.id))
+    }
     return list
-  }, [staffWithLabels, scheduleRows, overrideRows, positionFilter, divisionFilter, positionTypeFilter])
+  }, [staffWithLabels, scheduleRows, positionFilter, divisionFilter, positionTypeFilter, pinnedEmployees, hiddenEmployees])
+
+  const employeeIndexMap = useMemo(() => new Map(employeesFromSchedule.map((e, idx) => [e.id, idx])), [employeesFromSchedule])
 
   const scheduleMap = useMemo(() => {
     const m = new Map()
@@ -203,16 +254,6 @@ function UnitSectionPage() {
     })
     return m
   }, [scheduleRows])
-
-  const overridesByKey = useMemo(() => {
-    const m = new Map()
-    overrideRows.forEach((o) => {
-      const key = `${o.employee_id}-${o.date}`
-      if (!m.has(key)) m.set(key, [])
-      m.get(key).push(o)
-    })
-    return m
-  }, [overrideRows])
 
   const groupedByPosition = useMemo(() => {
     const map = new Map()
@@ -243,19 +284,17 @@ function UnitSectionPage() {
     }
     staffWithLabels.forEach((s) => addPos(s.position, s.positionType, s.department))
     scheduleRows.forEach((r) => addPos(r.employees?.positions?.name, r.employees?.positions?.type, r.employees?.positions?.departament_name))
-    overrideRows.forEach((r) => addPos(r.employees?.positions?.name, r.employees?.positions?.type, r.employees?.positions?.departament_name))
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'))
-  }, [divisionFilter, overrideRows, positionTypeFilter, scheduleRows, staffWithLabels])
+  }, [divisionFilter, positionTypeFilter, scheduleRows, staffWithLabels])
 
   const divisionOptions = useMemo(() => {
     const set = new Set()
     staffWithLabels.forEach((s) => s.department && set.add(s.department))
     scheduleRows.forEach((r) => r.employees?.positions?.departament_name && set.add(r.employees.positions.departament_name))
-    overrideRows.forEach((r) => r.employees?.positions?.departament_name && set.add(r.employees.positions.departament_name))
     return Array.from(set)
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b, 'ru'))
-  }, [overrideRows, scheduleRows, staffWithLabels])
+  }, [scheduleRows, staffWithLabels])
 
   const loadEntries = useCallback(async () => {
     if (!isKtc || section !== 'docs' || !user) return
@@ -305,19 +344,10 @@ function UnitSectionPage() {
       if (error) {
         setScheduleError(error.message)
         setScheduleRows([])
-        setOverrideRows([])
         setLoadingSchedule(false)
         return
       }
       setScheduleRows(data || [])
-      const { data: ovData, error: ovErr } = await scheduleService.fetchOverrides({ from, to, unit })
-      if (ovErr) {
-        setScheduleError(ovErr.message)
-        setOverrideRows([])
-        setLoadingSchedule(false)
-        return
-      }
-      setOverrideRows(ovData || [])
       setLoadingSchedule(false)
     },
     [section, unit, user, monthDates, scheduleService],
@@ -434,10 +464,66 @@ function UnitSectionPage() {
     setMarkAllLoading(false)
   }
 
-  const handleApplyShift = async (employeeId, date) => {
+  const handleCellClick = useCallback(
+    (employeeId, date, event) => {
+      const isMeta = event?.metaKey || event?.ctrlKey
+      const isShift = event?.shiftKey
+      const anchor = selectionAnchor || { employeeId, date }
+
+      if (isShift && anchor) {
+        const anchorRow = employeeIndexMap.get(anchor.employeeId)
+        const targetRow = employeeIndexMap.get(employeeId)
+        const anchorCol = monthDates.indexOf(anchor.date)
+        const targetCol = monthDates.indexOf(date)
+
+        if (
+          anchorRow !== undefined &&
+          targetRow !== undefined &&
+          anchorCol !== -1 &&
+          targetCol !== -1
+        ) {
+          const rowSlice = employeesFromSchedule.slice(
+            Math.min(anchorRow, targetRow),
+            Math.max(anchorRow, targetRow) + 1,
+          )
+          const colSlice = monthDates.slice(Math.min(anchorCol, targetCol), Math.max(anchorCol, targetCol) + 1)
+          const rect = []
+          rowSlice.forEach((r) => colSlice.forEach((c) => rect.push({ employeeId: r.id, date: c })))
+          setSelectedCells(rect)
+        }
+        setSelectedCell({ employeeId, date })
+        setSelectionAnchor(anchor)
+        return
+      }
+
+      if (isMeta) {
+        setSelectionAnchor(selectionAnchor || { employeeId, date })
+        setSelectedCell({ employeeId, date })
+        setSelectedCells((prev) => {
+          const exists = prev.some((c) => c.employeeId === employeeId && c.date === date)
+          if (exists) return prev.filter((c) => !(c.employeeId === employeeId && c.date === date))
+          return [...prev, { employeeId, date }]
+        })
+        return
+      }
+
+      setSelectionAnchor({ employeeId, date })
+      setSelectedCell({ employeeId, date })
+      setSelectedCells([{ employeeId, date }])
+    },
+    [employeeIndexMap, employeesFromSchedule, monthDates, selectionAnchor],
+  )
+
+  const handleApplyShift = async (employeeId, date, shiftIdArg) => {
     if (!user || !employeeId || !date) return
-    if (!selectedShiftId) return
-    if (selectedShiftId === 'off') {
+    const shiftId = shiftIdArg ?? selectedShiftId
+    if (!shiftId) return
+    if (shiftId === 'clear') {
+      await scheduleService.deleteEntry({ employeeId: Number(employeeId), date })
+      loadSchedule({ silent: true })
+      return
+    }
+    if (shiftId === 'off') {
       const payload = {
         employee_id: Number(employeeId),
         date,
@@ -453,34 +539,94 @@ function UnitSectionPage() {
       loadSchedule({ silent: true })
       return
     }
-    const tmpl = shiftTemplateMap[selectedShiftId]
+
+    const custom = customShiftMap[shiftId]
+    if (custom) {
+      const payload = {
+        employee_id: Number(employeeId),
+        date,
+        start_time: null,
+        end_time: null,
+        planned_hours: clampPositiveHours(custom.hours ?? 0),
+        unit: unit,
+        created_by: user.id,
+        source: 'status',
+        note: custom.note || custom.label || 'Статус',
+      }
+      await scheduleService.createEntry(payload)
+      loadSchedule({ silent: true })
+      return
+    }
+
+    const tmpl = shiftTemplateMap[shiftId]
     if (!tmpl) return
+    if (isNightSplitTemplate(tmpl)) {
+      const dayOneHours = clampPositiveHours(3)
+      const dayTwoHours = clampPositiveHours((tmpl.duration_hours || 12) - 3)
+      const nextDate = addDays(date, 1)
+      const baseNote = tmpl.name || tmpl.code || 'Ночная смена'
+      await scheduleService.createEntry({
+        employee_id: Number(employeeId),
+        date,
+        start_time: tmpl.start_time,
+        end_time: tmpl.end_time,
+        planned_hours: dayOneHours,
+        unit: unit,
+        created_by: user.id,
+        source: 'template-night',
+        template_id: tmpl.id,
+        note: `${baseNote} (часть 1 · ${dayOneHours}ч)`,
+      })
+      await scheduleService.createEntry({
+        employee_id: Number(employeeId),
+        date: nextDate,
+        start_time: null,
+        end_time: null,
+        planned_hours: dayTwoHours,
+        unit: unit,
+        created_by: user.id,
+        source: 'template-night',
+        template_id: tmpl.id,
+        note: scheduleMap.has(`${employeeId}-${nextDate}`) ? `${baseNote} (часть 2 · ${dayTwoHours}ч)` : `Отсыпной после ночи (${dayTwoHours}ч)`,
+      })
+      loadSchedule({ silent: true })
+      return
+    }
+
     const payload = {
       employee_id: Number(employeeId),
       date,
       start_time: tmpl.start_time,
       end_time: tmpl.end_time,
-      planned_hours: tmpl.duration_hours,
+      planned_hours: clampPositiveHours(tmpl.duration_hours),
       unit: unit,
       created_by: user.id,
       source: tmpl.code || 'template',
       template_id: tmpl.id,
+      note: tmpl.name || tmpl.code || 'Смена',
     }
     await scheduleService.createEntry(payload)
     loadSchedule({ silent: true })
   }
 
-  const handleApplyOverride = async (employeeId, date) => {
-    if (!user || !employeeId || !date) return
-    const payload = {
-      employee_id: Number(employeeId),
-      date,
-      kind: selectedOverrideKind || 'vacation',
-      unit: unit,
-      created_by: user.id,
+  const applyShiftAndClose = async (employeeId, date, shiftId) => {
+    setSelectedShiftId(shiftId)
+    await handleApplyShift(employeeId, date, shiftId)
+    setSelectedCell(null)
+  }
+
+  const applyShiftToSelected = async (shiftId) => {
+    if (!shiftId || !selectedCells.length) return
+    setSelectedShiftId(shiftId)
+    for (const cell of selectedCells) {
+      // eslint-disable-next-line no-await-in-loop
+      await handleApplyShift(cell.employeeId, cell.date, shiftId)
     }
-    await scheduleService.createOverride(payload)
-    loadSchedule({ silent: true })
+    setSelectedCells([])
+  }
+
+  const handleApplyOverride = async (employeeId, date) => {
+    return
   }
 
   if (!unitData || !sectionLabel) {
@@ -709,11 +855,11 @@ function UnitSectionPage() {
                   })}
                 </div>
 
-                <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5">
-                  <span className="text-[10px] text-slate-400">Отделение:</span>
-                  {divisionOptions.map((div) => {
-                    const active = divisionFilter.includes(div)
-                    return (
+              <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5">
+                <span className="text-[10px] text-slate-400">Отделение:</span>
+                {divisionOptions.map((div) => {
+                  const active = divisionFilter.includes(div)
+                  return (
                       <PillButton
                         key={div}
                         active={active}
@@ -739,7 +885,7 @@ function UnitSectionPage() {
                     {positionFilter.length ? `Выбрано: ${positionFilter.length}` : 'Выбрать'}
                   </button>
                   {positionsOpen && (
-                    <div className="absolute left-0 top-7 z-20 w-52 rounded-xl border border-white/10 bg-slate-900/95 p-2 text-[10px] text-slate-100 shadow-lg">
+                    <div className="absolute left-0 top-7 z-50 w-52 rounded-xl border border-white/10 bg-slate-900/95 p-2 text-[10px] text-slate-100 shadow-lg">
                       <div className="flex max-h-36 flex-col gap-1 overflow-y-auto pr-1">
                         {positionOptions.map((pos) => {
                           const checked = positionFilter.includes(pos)
@@ -794,7 +940,7 @@ function UnitSectionPage() {
             {loadingSchedule && <p className="mt-2 text-xs text-slate-400">Загрузка...</p>}
           </div>
             {scheduleError && <p className="mt-3 text-xs text-orange-300">Ошибка: {scheduleError}</p>}
-            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-200">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-200">
               <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5">
                 <button
                   onClick={() => {
@@ -831,9 +977,22 @@ function UnitSectionPage() {
                   →
                 </button>
               </div>
-              <span className="text-[11px] text-slate-400">{monthDates.length} дней</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-slate-400">{monthDates.length} дней</span>
+                {!!pinnedEmployees.length && (
+                  <span className="rounded-full border border-emerald-400/40 bg-emerald-500/20 px-2 py-1 text-[11px] text-emerald-100">
+                    Показаны только закреплённые ({pinnedEmployees.length})
+                  </span>
+                )}
+                {!!hiddenEmployees.length && !pinnedEmployees.length && (
+                  <span className="rounded-full border border-orange-400/40 bg-orange-500/10 px-2 py-1 text-[11px] text-orange-100">
+                    Скрыто: {hiddenEmployees.length}
+                  </span>
+                )}
+                <span className="text-[11px] text-slate-400">Шифты: Cmd/Ctrl для точечного выбора, Shift для диапазона.</span>
+              </div>
             </div>
-            <div className="mt-2 relative max-h-[70vh] overflow-auto rounded-2xl border border-white/10">
+            <div className="mt-2 relative isolate max-h-[70vh] overflow-auto rounded-2xl border border-white/10">
               <table className="w-max min-w-full table-fixed border-separate border-spacing-0 text-xs text-slate-200">
                 <thead className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur">
                   <tr>
@@ -878,64 +1037,99 @@ function UnitSectionPage() {
                         {!collapsed &&
                           group.list.map((emp) => (
                             <tr key={`${group.position}-${emp.id}`} className="border-t border-white/5">
-                              <td className="sticky left-0 z-20 max-w-[220px] bg-slate-900/95 px-3 py-2 text-left text-sm font-semibold text-white">
+                              <td className="sticky left-0 z-20 max-w-[240px] bg-slate-900/95 px-3 py-2 text-left text-sm font-semibold text-white">
                                 <div className="flex items-center gap-2">
                                   <span className="truncate" title={emp.label}>
                                     {emp.label}
                                   </span>
-                                  {emp.position && (
-                                    <Badge variant="neutral" className="text-[10px] px-1.5 normal-case">
-                                      {emp.position}
-                                    </Badge>
-                                  )}
+                                  <div className="flex items-center gap-1 text-[10px] font-normal">
+                                    <button
+                                      title={pinnedEmployees.includes(emp.id) ? 'Убрать закрепление' : 'Закрепить (показать только его)'}
+                                      onClick={() =>
+                                        setPinnedEmployees((prev) =>
+                                          prev.includes(emp.id) ? prev.filter((id) => id !== emp.id) : [...prev, emp.id],
+                                        )
+                                      }
+                                      className={`rounded-full px-2 py-0.5 transition ${
+                                        pinnedEmployees.includes(emp.id)
+                                          ? 'bg-emerald-500 text-slate-900'
+                                          : 'border border-white/15 bg-white/5 text-slate-200 hover:border-emerald-400/60'
+                                      }`}
+                                    >
+                                      Закр
+                                    </button>
+                                    <button
+                                      title={hiddenEmployees.includes(emp.id) ? 'Показать сотрудника' : 'Скрыть сотрудника'}
+                                      onClick={() =>
+                                        setHiddenEmployees((prev) =>
+                                          prev.includes(emp.id) ? prev.filter((id) => id !== emp.id) : [...prev, emp.id],
+                                        )
+                                      }
+                                      className={`rounded-full px-2 py-0.5 transition ${
+                                        hiddenEmployees.includes(emp.id)
+                                          ? 'bg-slate-700 text-slate-300'
+                                          : 'border border-white/15 bg-white/5 text-slate-200 hover:border-orange-400/60'
+                                      }`}
+                                    >
+                                      Скрыть
+                                    </button>
+                                  </div>
                                 </div>
                               </td>
                               {monthDates.map((d) => {
                                 const shift = scheduleMap.get(`${emp.id}-${d}`)
-                                const overrides = overridesByKey.get(`${emp.id}-${d}`) || []
                                 return (
                                   <td
                                     key={`${emp.id}-${d}`}
-                                    onClick={() => setSelectedCell({ employeeId: emp.id, date: d })}
-                                    className={`cursor-pointer px-1 py-1 align-top transition hover:bg-sky-500/10 ${
+                                    onClick={(e) => handleCellClick(emp.id, d, e)}
+                                    className={`relative cursor-pointer px-1 py-1 align-top transition hover:bg-sky-500/10 ${
                                       selectedCell?.employeeId === emp.id && selectedCell?.date === d ? 'bg-sky-500/10' : ''
                                     }`}
                                   >
                                     <div className="rounded border border-white/10 bg-white/5 p-1 text-[10px] text-slate-300">
                                       {shift ? (
-                                        <div className="flex flex-col gap-0.5">
+                                        <div className="flex min-h-[32px] flex-col gap-0.5">
                                           <span className="truncate">
-                                            {(shift.start_time || '').slice(0, 5)}–{(shift.end_time || '').slice(0, 5)}
+                                            {shift.start_time && shift.end_time
+                                              ? `${(shift.start_time || '').slice(0, 5)}–${(shift.end_time || '').slice(0, 5)}`
+                                              : shift.note || 'Смена'}
                                           </span>
-                                          <span className="text-[10px] text-slate-100">{shift.planned_hours ? `${Number(shift.planned_hours)} ч` : '—'}</span>
+                                          <span className="text-[10px] text-slate-100">
+                                            {shift.planned_hours !== null && shift.planned_hours !== undefined && shift.planned_hours !== ''
+                                              ? `${Number(shift.planned_hours)} ч`
+                                              : ''}
+                                          </span>
                                         </div>
                                       ) : (
-                                        <div className="text-slate-500">—</div>
+                                        <div className="h-[32px]" />
                                       )}
-                                      {overrides.length > 0 && (
-                                        <div className="mt-1 flex flex-wrap gap-1">
-                      {overrides.map((o) => {
-                        const kind = (o.kind || '').toLowerCase()
-                        const map = {
-                          vacation: 'Отп',
-                          sick: 'Бол',
-                          training: 'Уч',
-                          donor: 'Дон',
-                          comp_day_off: 'Отг',
-                          overtime: 'Пер',
-                          debt: 'Долг',
-                          holiday_work: 'Празд',
-                        }
-                        const label = map[kind] || kind || 'др.'
-                        return (
-                          <Badge key={o.id} variant="orange" className="text-[9px] px-1.5">
-                            {label}
-                          </Badge>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
+                                    </div>
+                                    {(selectedCell?.employeeId === emp.id && selectedCell?.date === d) ||
+                                    selectedCells.some((c) => c.employeeId === emp.id && c.date === d) ? (
+                                      <span className="pointer-events-none absolute right-1 top-1 rounded-full bg-emerald-500 px-1.5 text-[9px] font-semibold text-slate-900">
+                                        ✓
+                                      </span>
+                                    ) : null}
+                                    {selectedCells.length <= 1 && selectedCell?.employeeId === emp.id && selectedCell?.date === d && (
+                                      <div className="absolute left-1 top-9 z-50 w-52 rounded-xl border border-white/10 bg-slate-900/95 p-2 text-[11px] text-slate-100 shadow-xl">
+                                        <p className="mb-1 text-[10px] uppercase tracking-[0.15em] text-slate-400">Выбрать смену</p>
+                                        <div className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
+                                          {shiftOptions.map((opt) => (
+                                            <button
+                                              key={opt.value}
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                applyShiftAndClose(emp.id, d, opt.value)
+                                              }}
+                                              className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-slate-800/80 px-2 py-1 text-left transition hover:border-sky-400/60 hover:bg-slate-800"
+                                            >
+                                              <span>{opt.label}</span>
+                                              <span className="text-[10px] text-slate-400">{opt.meta}</span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </td>
                                 )
                               })}
@@ -954,57 +1148,73 @@ function UnitSectionPage() {
                 </tbody>
               </table>
             </div>
+            {selectedCells.length > 1 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-200">
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                  Ячеек выделено: {selectedCells.length}
+                </span>
+                {!!pinnedEmployees.length && (
+                  <span className="rounded-full border border-emerald-400/40 bg-emerald-500/20 px-3 py-1 text-emerald-100">
+                    Закреплено сотрудников: {pinnedEmployees.length} (показываем только их)
+                  </span>
+                )}
+                {!!hiddenEmployees.length && !pinnedEmployees.length && (
+                  <span className="rounded-full border border-orange-400/40 bg-orange-500/10 px-3 py-1 text-orange-100">
+                    Скрыто сотрудников: {hiddenEmployees.length}
+                  </span>
+                )}
+                <div className="flex flex-wrap gap-1">
+                  {shiftOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => applyShiftToSelected(opt.value)}
+                      disabled={!selectedCells.length}
+                      className="rounded-full border border-white/10 bg-slate-800 px-3 py-1 text-[11px] text-slate-100 transition hover:border-sky-400/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {opt.label} ({opt.meta})
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => {
+                      setSelectedCells([])
+                      setSelectionAnchor(null)
+                    }}
+                    className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-slate-100 transition hover:border-red-400/60 hover:text-white"
+                  >
+                    Очистить выделение
+                  </button>
+                </div>
+              </div>
+            )}
             {selectedCell && (
               <div className="mt-4 rounded-xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-200">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
                   Ячейка {selectedCell.employeeId} · {new Date(selectedCell.date).toLocaleDateString('ru-RU')}
                 </p>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.15em] text-slate-400">Смена (шаблон)</p>
-                    <select
-                      value={selectedShiftId}
-                      onChange={(e) => setSelectedShiftId(e.target.value)}
-                      className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white"
-                    >
-                      <option value="">Выберите смену</option>
-                      <option value="off">Выходной</option>
-                      {shiftTemplates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name || t.code} · {t.start_time}–{t.end_time} · {t.duration_hours}ч
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => handleApplyShift(selectedCell.employeeId, selectedCell.date)}
-                      className="mt-2 w-full rounded-full bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-400"
-                    >
-                      Применить смену
-                    </button>
-                  </div>
-                  <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.15em] text-slate-400">Отсутствие / исключение</p>
-                    <select
-                      value={selectedOverrideKind}
-                      onChange={(e) => setSelectedOverrideKind(e.target.value)}
-                      className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white"
-                    >
-                      {['vacation', 'sick', 'training', 'donor', 'comp_day_off', 'overtime', 'debt'].map((k) => (
-                        <option key={k} value={k}>
-                          {k}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => handleApplyOverride(selectedCell.employeeId, selectedCell.date)}
-                      className="mt-2 w-full rounded-full border border-white/10 px-3 py-2 text-sm text-slate-100 transition hover:border-orange-400/60 hover:text-white"
-                    >
-                      Применить исключение
-                    </button>
-                  </div>
+                <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.15em] text-slate-400">Смена / состояние</p>
+                  <select
+                    value={selectedShiftId}
+                    onChange={(e) => setSelectedShiftId(e.target.value)}
+                    className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white"
+                  >
+                    <option value="">Выберите смену</option>
+                    <option value="off">Выходной</option>
+                    {shiftTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name || t.code} · {t.start_time}–{t.end_time} · {t.duration_hours}ч
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => handleApplyShift(selectedCell.employeeId, selectedCell.date)}
+                    className="mt-2 w-full rounded-full bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-400"
+                  >
+                    Применить
+                  </button>
                 </div>
                 <p className="mt-2 text-[11px] text-slate-400">
-                  Список смен берётся из таблицы shift_templates. Выходной — planned_hours=0. Исключения падают в schedule_overrides.
+                  Список смен берётся из таблицы shift_templates. Выходной — planned_hours=0. Статусы (отпуск, больничный, отгул и т.д.) пишем в planned_hours согласно пресету.
                 </p>
               </div>
             )}

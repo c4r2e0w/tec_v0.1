@@ -61,6 +61,11 @@ export async function createScheduleEntry({ supabase, payload }) {
   return supabase.from('schedule').upsert(payload, { onConflict: 'employee_id,date' }).select().maybeSingle()
 }
 
+export async function deleteScheduleEntry({ supabase, employeeId, date }) {
+  if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
+  return supabase.from('schedule').delete().eq('employee_id', employeeId).eq('date', date)
+}
+
 export async function createOverride({ supabase, payload }) {
   if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
   return supabase.from('schedule_overrides').insert(payload).select().maybeSingle()
