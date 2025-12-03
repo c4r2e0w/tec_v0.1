@@ -5,6 +5,7 @@ import { createOverride, createScheduleEntry, fetchEmployeesByUnit, fetchOverrid
 import { useSupabase } from '../context/SupabaseProvider'
 import { useProfile } from '../hooks/useProfile'
 import { useAuth } from '../hooks/useAuth'
+import PillButton from '../components/PillButton'
 
 const units = {
   ktc: { name: 'Котлотурбинный цех', color: 'from-orange-500/20 to-slate-900' },
@@ -718,22 +719,20 @@ function UnitSectionPage() {
                   ].map((t) => {
                     const active = positionTypeFilter.includes(t.key)
                     return (
-                      <button
+                      <PillButton
                         key={t.key}
+                        active={active}
+                        activeClassName="bg-emerald-500 text-slate-950 border border-emerald-500 hover:bg-emerald-400"
+                        inactiveClassName="border border-white/10 bg-slate-900 text-slate-100 hover:border-emerald-400/60"
                         onClick={() => {
                           setPositionTypeFilter((prev) =>
                             prev.includes(t.key) ? prev.filter((x) => x !== t.key) : [...prev, t.key],
                           )
                           setPositionFilter([])
                         }}
-                        className={`rounded-full px-1.5 py-0.5 transition ${
-                          active
-                            ? 'bg-emerald-500 text-slate-950'
-                            : 'border border-white/10 bg-slate-900 text-slate-100 hover:border-emerald-400/60'
-                        }`}
                       >
                         {t.label}
-                      </button>
+                      </PillButton>
                     )
                   })}
                 </div>
@@ -743,20 +742,16 @@ function UnitSectionPage() {
                   {divisionOptions.map((div) => {
                     const active = divisionFilter.includes(div)
                     return (
-                      <button
+                      <PillButton
                         key={div}
+                        active={active}
                         onClick={() => {
                           setDivisionFilter((prev) => (prev.includes(div) ? prev.filter((d) => d !== div) : [...prev, div]))
                           setPositionFilter([])
                         }}
-                        className={`rounded-full px-1.5 py-0.5 text-[10px] transition ${
-                          active
-                            ? 'bg-sky-500 text-slate-950'
-                            : 'border border-white/10 bg-slate-900 text-slate-100 hover:border-sky-400/60'
-                        }`}
                       >
                         {div}
-                      </button>
+                      </PillButton>
                     )
                   })}
                 </div>
