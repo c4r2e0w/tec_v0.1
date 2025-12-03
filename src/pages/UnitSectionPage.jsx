@@ -246,17 +246,6 @@ function UnitSectionPage() {
     return list
   }, [staffWithLabels, scheduleRows, positionFilter, divisionFilter, positionTypeFilter, pinnedEmployees, hiddenEmployees])
 
-  const visibleRows = useMemo(() => {
-    const list = []
-    groupedByPosition.forEach((group) => {
-      if (collapsedPositions.includes(group.position)) return
-      group.list.forEach((emp) => list.push(emp))
-    })
-    return list
-  }, [collapsedPositions, groupedByPosition])
-
-  const employeeIndexMap = useMemo(() => new Map(visibleRows.map((e, idx) => [e.id, idx])), [visibleRows])
-
   const scheduleMap = useMemo(() => {
     const m = new Map()
     scheduleRows.forEach((row) => {
@@ -276,6 +265,17 @@ function UnitSectionPage() {
       .map(([position, list]) => ({ position, list }))
       .sort((a, b) => a.position.localeCompare(b.position, 'ru'))
   }, [employeesFromSchedule])
+
+  const visibleRows = useMemo(() => {
+    const list = []
+    groupedByPosition.forEach((group) => {
+      if (collapsedPositions.includes(group.position)) return
+      group.list.forEach((emp) => list.push(emp))
+    })
+    return list
+  }, [collapsedPositions, groupedByPosition])
+
+  const employeeIndexMap = useMemo(() => new Map(visibleRows.map((e, idx) => [e.id, idx])), [visibleRows])
 
   const positionOptions = useMemo(() => {
     const set = new Set()
