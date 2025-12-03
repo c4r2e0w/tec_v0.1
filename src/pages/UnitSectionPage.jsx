@@ -707,7 +707,9 @@ function UnitSectionPage() {
                 <h3 className="text-lg font-semibold text-white">Календарь по цеху</h3>
                 <p className="text-sm text-slate-300">Сотрудники слева, даты в шапке. Клик по ячейке — проставить смену или отсутствие.</p>
               </div>
-              <div className="flex flex-wrap items-center gap-1 text-[10px] leading-none text-slate-200">
+            </div>
+            <div className="mt-3 flex flex-col gap-2 text-[10px] leading-none text-slate-200">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="flex flex-wrap items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5">
                   <span className="text-slate-400">Тип:</span>
                   {[
@@ -758,7 +760,9 @@ function UnitSectionPage() {
                     )
                   })}
                 </div>
+              </div>
 
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="relative flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5">
                   <span className="text-slate-400">Должности:</span>
                   <button
@@ -811,16 +815,21 @@ function UnitSectionPage() {
                       </div>
                     </div>
                   )}
-                  <button
-                    onClick={resetFilters}
-                    className="rounded-full border border-red-500 bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white transition hover:bg-red-500"
-                  >
-                    Сброс
-                  </button>
                 </div>
-
-                <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5">
-                  <button
+                <button
+                  onClick={resetFilters}
+                  className="rounded-full border border-red-500 bg-red-600 px-3 py-1 text-[10px] font-semibold text-white transition hover:bg-red-500"
+                >
+                  Сброс
+                </button>
+              </div>
+            </div>
+            {loadingSchedule && <p className="mt-2 text-xs text-slate-400">Загрузка...</p>}
+          </div>
+            {scheduleError && <p className="mt-3 text-xs text-orange-300">Ошибка: {scheduleError}</p>}
+            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-200">
+              <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5">
+                <button
                   onClick={() => {
                     const d = new Date(monthStart)
                     d.setMonth(d.getMonth() - 1)
@@ -829,42 +838,40 @@ function UnitSectionPage() {
                   }}
                   className="rounded-full border border-white/10 bg-slate-900 px-2.5 py-0.5 transition hover:border-sky-400/60"
                 >
-                    ←
-                  </button>
-                  <button
-                    onClick={() =>
-                      setMonthStart(() => {
-                        const d = new Date()
-                        d.setDate(1)
-                        return d.toISOString().slice(0, 10)
-                      })
-                    }
-                    className="rounded-full border border-white/10 bg-slate-900 px-2.5 py-0.5 transition hover:border-sky-400/60"
-                  >
-                    {monthLabel}
-                  </button>
-                  <button
-                    onClick={() => {
-                      const d = new Date(monthStart)
-                      d.setMonth(d.getMonth() + 1)
+                  ←
+                </button>
+                <button
+                  onClick={() =>
+                    setMonthStart(() => {
+                      const d = new Date()
                       d.setDate(1)
-                      setMonthStart(d.toISOString().slice(0, 10))
-                    }}
-                    className="rounded-full border border-white/10 bg-slate-900 px-2.5 py-0.5 transition hover:border-sky-400/60"
-                  >
-                    →
-                  </button>
-                </div>
-                {loadingSchedule && <span className="text-xs text-slate-400">Загрузка...</span>}
+                      return d.toISOString().slice(0, 10)
+                    })
+                  }
+                  className="rounded-full border border-white/10 bg-slate-900 px-2.5 py-0.5 transition hover:border-sky-400/60"
+                >
+                  {monthLabel}
+                </button>
+                <button
+                  onClick={() => {
+                    const d = new Date(monthStart)
+                    d.setMonth(d.getMonth() + 1)
+                    d.setDate(1)
+                    setMonthStart(d.toISOString().slice(0, 10))
+                  }}
+                  className="rounded-full border border-white/10 bg-slate-900 px-2.5 py-0.5 transition hover:border-sky-400/60"
+                >
+                  →
+                </button>
               </div>
-           </div>
-            {scheduleError && <p className="mt-3 text-xs text-orange-300">Ошибка: {scheduleError}</p>}
-              <div className="mt-4 relative max-h-[70vh] overflow-auto rounded-2xl border border-white/10">
-                <table className="w-max min-w-full table-fixed border-separate border-spacing-0 text-xs text-slate-200">
-                  <thead className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur">
-                    <tr>
-                      <th className="sticky left-0 z-[35] w-44 bg-slate-900/95 px-3 py-1.5 text-left text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                        Сотрудник
+              <span className="text-[11px] text-slate-400">{monthDates.length} дней</span>
+            </div>
+            <div className="mt-2 relative max-h-[70vh] overflow-auto rounded-2xl border border-white/10">
+              <table className="w-max min-w-full table-fixed border-separate border-spacing-0 text-xs text-slate-200">
+                <thead className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur">
+                  <tr>
+                    <th className="sticky left-0 z-[35] w-44 bg-slate-900/95 px-3 py-1.5 text-left text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                      Сотрудник
                     </th>
                     {monthDates.map((d) => (
                       <th key={d} className="w-8 px-1 py-1.5 text-center text-[11px] uppercase tracking-[0.15em] text-slate-300">
@@ -878,10 +885,10 @@ function UnitSectionPage() {
                     const collapsed = collapsedPositions.includes(group.position)
                     return (
                       <Fragment key={group.position}>
-                        <tr className="bg-slate-900/70 border-t border-white/10">
+                        <tr className="bg-slate-900/60 border-t border-white/10">
                           <td
                             colSpan={1 + monthDates.length}
-                            className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.15em] text-slate-300"
+                            className="px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-300"
                           >
                             <button
                               onClick={() =>
@@ -891,11 +898,11 @@ function UnitSectionPage() {
                                     : [...prev, group.position],
                                 )
                               }
-                              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-100 transition hover:border-sky-400/60"
+                              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] text-slate-100 transition hover:border-sky-400/60"
                             >
-                              <span className="text-lg">{collapsed ? '▸' : '▾'}</span>
+                              <span className="text-base">{collapsed ? '▸' : '▾'}</span>
                               <span>{group.position}</span>
-                              <span className="rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[10px]">
+                              <span className="rounded-full border border-white/10 bg-white/10 px-1.5 py-0.5 text-[10px]">
                                 {group.list.length}
                               </span>
                             </button>
@@ -1028,7 +1035,6 @@ function UnitSectionPage() {
                 </p>
               </div>
             )}
-          </div>
         </div>
       )}
 
