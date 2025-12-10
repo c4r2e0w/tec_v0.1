@@ -23,12 +23,6 @@ const updates = [
   },
 ]
 
-const events = [
-  { title: 'Учения по ГО и ЧС', date: '20 марта · 10:00', place: 'Учебный класс 4', type: 'Тренинг' },
-  { title: 'Совещание по модернизации ВРП', date: '22 марта · 14:00', place: 'Конф. зал', type: 'Проект' },
-  { title: 'День открытых дверей для стажёров', date: '25 марта · 12:00', place: 'Турбинный зал', type: 'HR' },
-]
-
 const ideas = [
   { author: 'А. Ким', text: 'Добавить контрольные списки для смен перед запуском котла', likes: 18 },
   { author: 'М. Гордеев', text: 'Собрать базу знаний по аварийным кейсам', likes: 23 },
@@ -71,7 +65,7 @@ function StartPage() {
 
   return (
     <div className="space-y-6">
-      <div className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 to-slate-900/70 p-8 shadow-2xl shadow-sky-900/10">
+      <div className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 to-slate-900/70 p-6 shadow-2xl shadow-sky-900/10 sm:p-8">
         <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Смена · Инфопоток</p>
         <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-3">
@@ -92,7 +86,7 @@ function StartPage() {
               </span>
             </div>
           </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <p className="text-xs text-slate-400">Статус смены</p>
                 <p className="text-lg font-semibold text-emerald-200">Смена S-24 активна</p>

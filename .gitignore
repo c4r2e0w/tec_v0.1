@@ -24,3 +24,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local data exports (не коммитить вспомогательные JSON)
+equipment_subsystems.json
+schema_columns.json
+schema_from_data.json
+schema_full.json
+schema_public.json

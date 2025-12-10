@@ -56,7 +56,7 @@ function WeatherWidget() {
   const status = weatherCodes[w.weather_code] || '—'
 
   return (
-    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
+    <div className="flex flex-wrap items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
       <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Усть-Илимск</span>
       <span className="font-semibold text-white">{Math.round(w.temperature_2m)}°C</span>
       <span className="text-slate-300">{status}</span>
