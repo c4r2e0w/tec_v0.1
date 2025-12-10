@@ -249,6 +249,14 @@ function Layout({ children }) {
           </div>
         </header>
 
+        {user && (
+          <div className="px-5 pb-4 md:hidden">
+            <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-lg shadow-sky-900/10">
+              {navContent}
+            </div>
+          </div>
+        )}
+
         <main className="flex-1 px-5 py-8">
           <div className="mx-auto max-w-6xl">{children}</div>
         </main>
