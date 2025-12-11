@@ -3,7 +3,6 @@ import { useSupabase } from '../context/SupabaseProvider'
 
 export function useAuth() {
   const supabase = useSupabase()
-  if (!supabase) return { session: null, user: null, loading: false }
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
 

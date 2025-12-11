@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from 'react'
 import { createOverride, createScheduleEntry, fetchOverridesRange, fetchScheduleRange } from '../api/schedule'
 import { useSupabase } from '../context/SupabaseProvider'

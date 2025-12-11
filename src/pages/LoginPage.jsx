@@ -11,13 +11,41 @@ function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
+  const [info, setInfo] = useState('')
+
+  const emailTrimmed = email.trim().toLowerCase()
+  const passwordTrimmed = password.trim()
+  const canSubmit = !!emailTrimmed && !!passwordTrimmed && !pending
 
   const handleLogin = async () => {
+    if (!canSubmit) {
+      setError('Введите email и пароль')
+      return
+    }
     setPending(true)
     setError('')
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+    setInfo('')
+    const { error: err } = await supabase.auth.signInWithPassword({ email: emailTrimmed, password: passwordTrimmed })
     if (err) setError(err.message)
     else navigate('/')
+    setPending(false)
+  }
+
+  const handleSignUp = async () => {
+    if (!canSubmit) {
+      setError('Для регистрации введите email и пароль')
+      return
+    }
+    setPending(true)
+    setError('')
+    setInfo('')
+    const { data, error: err } = await supabase.auth.signUp({ email: emailTrimmed, password: passwordTrimmed })
+    if (err) {
+      setError(err.message)
+    } else {
+      const needsConfirm = data?.user?.identities?.[0]?.identity_data?.email
+      setInfo(needsConfirm ? 'Проверьте почту: отправили ссылку для завершения регистрации.' : 'Аккаунт создан, можно войти.')
+    }
     setPending(false)
   }
 
@@ -61,7 +89,7 @@ function LoginPage() {
       </div>
       <div className="flex flex-col gap-3">
         <button
-          disabled={pending}
+          disabled={!canSubmit}
           onClick={handleLogin}
           className="rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-70"
         >
@@ -74,10 +102,24 @@ function LoginPage() {
         >
           Выйти
         </button>
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-100">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Авторизация новых пользователей</p>
+          <p className="mt-1 text-slate-300">
+            Введите корпоративный email и придумайте пароль, нажмите «Создать аккаунт». Подтвердите письмо в почте, затем войдите.
+          </p>
+          <button
+            disabled={!canSubmit}
+            onClick={handleSignUp}
+            className="mt-3 w-full rounded-full border border-emerald-400/60 bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {pending ? 'Отправляем...' : 'Создать аккаунт'}
+          </button>
+        </div>
       </div>
       {error && <p className="text-xs text-orange-300">Ошибка: {error}</p>}
+      {info && <p className="text-xs text-emerald-300">{info}</p>}
       {user && !loading && <p className="text-xs text-emerald-300">Уже вошли как {user.email}</p>}
-      <p className="text-xs text-slate-400">Позже сюда подключим Supabase Auth и проверку ролей.</p>
+      <p className="text-xs text-slate-400">Supabase Auth уже работает; проверку ролей добавим позднее.</p>
     </div>
   )
 }

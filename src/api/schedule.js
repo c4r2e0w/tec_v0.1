@@ -16,7 +16,7 @@ export async function fetchScheduleRange({ supabase, from, to, unit }) {
       source,
       note,
       template_id,
-      employees:employee_id ( first_name, last_name, middle_name, position_id, positions:position_id ( name, departament_name, devision_name, type ) ),
+      employees:employee_id ( first_name, last_name, middle_name, position_id, positions:position_id ( name, departament_name, devision_name, type, sort_weight ) ),
       shift_templates:template_id ( code, name )
     `,
     )
@@ -76,12 +76,25 @@ export async function fetchShiftTemplates({ supabase }) {
   return supabase.from('shift_templates').select('id, code, name, start_time, end_time, duration_hours, night, is_rotational').order('name', { ascending: true })
 }
 
-export async function fetchEmployeesByUnit({ supabase, unit }) {
+export async function fetchEmployeesByUnit({ supabase, filters = {} }) {
   if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
-  // Тянем всех, фильтруем по unit на клиенте (надёжнее при вложенных полях)
-  return supabase
+  const { positionIds, query } = filters
+  let empQuery = supabase
     .from('employees')
-    .select('id, first_name, last_name, middle_name, position_id, positions:position_id ( name, departament_name, devision_name, type )')
+    .select('id, first_name, last_name, middle_name, position_id, positions:position_id ( name, departament_name, devision_name, type, sort_weight )')
+    .order('sort_weight', { ascending: true, foreignTable: 'positions', nullsFirst: false })
     .order('last_name', { ascending: true })
-    .limit(500)
+
+  if (Array.isArray(positionIds) && positionIds.length) empQuery = empQuery.in('position_id', positionIds)
+  if (query) {
+    const pattern = `%${query}%`
+    empQuery = empQuery.or(`last_name.ilike.${pattern},first_name.ilike.${pattern},middle_name.ilike.${pattern}`)
+  }
+
+  return empQuery.limit(500)
+}
+
+export async function fetchPositions({ supabase }) {
+  if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
+  return supabase.from('positions').select('id, name, departament_name, devision_name, type, sort_weight').order('sort_weight', { ascending: true, nullsFirst: false }).order('name', { ascending: true })
 }

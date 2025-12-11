@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSupabase } from '../context/SupabaseProvider'
@@ -46,6 +47,7 @@ export function useProfile() {
     queryKey: ['profile', user?.id],
     queryFn: () => fetchProfileByUserId(supabase, user.id),
     enabled: !!user,
+    staleTime: 5 * 60 * 1000,
   })
 
   const employeeId = profileQuery.data?.data?.employee_id
@@ -54,6 +56,7 @@ export function useProfile() {
     queryKey: ['employee', employeeId],
     queryFn: () => fetchEmployeeById(supabase, employeeId),
     enabled: !!employeeId,
+    staleTime: 5 * 60 * 1000,
   })
 
   const employeesSearchQuery = useQuery({
@@ -65,6 +68,7 @@ export function useProfile() {
     },
     enabled: !isLinked && !!user,
     staleTime: 1000 * 30,
+    cacheTime: 5 * 60 * 1000,
   })
 
   const childrenQuery = useQuery({
@@ -75,7 +79,8 @@ export function useProfile() {
       return data || []
     },
     enabled: !!employeeId,
-    staleTime: 1000 * 60,
+    staleTime: 5 * 60 * 1000,
+    cacheTime: 5 * 60 * 1000,
   })
 
   useEffect(() => {
