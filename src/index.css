@@ -21,23 +21,23 @@ body {
   min-height: 100vh;
 }
 
-@keyframes cellBounce {
+@keyframes cellGlow {
   0% {
-    transform: scale(1) translateY(0);
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.06);
   }
-  40% {
-    transform: scale(1.18) translateY(-2px);
-  }
-  70% {
-    transform: scale(1.08) translateY(-1px);
+  50% {
+    transform: translateY(-1px) scale(1.04);
+    box-shadow: 0 10px 24px 4px rgba(56, 189, 248, 0.16);
   }
   100% {
-    transform: scale(1) translateY(0);
+    transform: translateY(-1px) scale(1.02);
+    box-shadow: 0 12px 32px 6px rgba(56, 189, 248, 0.2);
   }
 }
 
 .cell-selected {
-  transform: scale(1.15) translateY(-2px);
-  animation: cellBounce 240ms ease-out;
+  transform: translateY(-1px) scale(1.02);
+  animation: cellGlow 320ms ease-out;
   transform-origin: center;
 }

@@ -1,6 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 import { useProfile } from '../hooks/useProfile'
@@ -9,39 +8,47 @@ import Badge from '../components/Badge'
 import { unitsMap, sectionsMap } from '../constants/units'
 import { createEntriesService } from '../services/entriesService'
 import { createScheduleService } from '../services/scheduleService'
+import PersonnelSchedule from '../components/PersonnelSchedule'
 
 const iconCatalog = {
   work: {
-    color: '#f6c96f',
-    glow: 'rgba(246, 201, 111, 0.5)',
+    color: '#cbd5e1',
+    glow: 'transparent',
     title: 'Рабочая смена',
     description: 'Штатный график, шаблоны и дневные смены.',
     icon: 'sun',
   },
+  sleep: {
+    color: '#cbd5e1',
+    glow: 'transparent',
+    title: 'Отсыпной после ночи',
+    description: 'Отсыпной день (9ч) после ночной.',
+    icon: 'bed',
+  },
   night: {
-    color: '#a78bfa',
-    glow: 'rgba(167, 139, 250, 0.45)',
+    color: '#cbd5e1',
+    glow: 'transparent',
     title: 'Ночная часть',
     description: 'Ночёвки и отсыпные 3/9.',
     icon: 'moon',
   },
   learning: {
-    color: '#22d3ee',
-    glow: 'rgba(34, 211, 238, 0.45)',
+    color: '#cbd5e1',
+    glow: 'transparent',
     title: 'Учеба/тренировки',
     description: 'Техучёба, противоаварийные тренировки.',
     icon: 'bulb',
   },
   special: {
-    color: '#f43f5e',
-    glow: 'rgba(244, 63, 94, 0.45)',
+    color: '#cbd5e1',
+    glow: 'transparent',
     title: 'Спецдень',
     description: 'Командировка, донорский, особые статусы.',
     icon: 'alert',
   },
   rest: {
-    color: '#22c55e',
-    glow: 'rgba(34, 197, 94, 0.4)',
+    color: '#cbd5e1',
+    glow: 'transparent',
     title: 'Отдых',
     description: 'Выходной, отпуск, больничный, отгулы.',
     icon: 'cross',
@@ -54,6 +61,7 @@ const getIconType = (shift) => {
   const note = (shift.note || '').toLowerCase()
   const hours = Number.isFinite(Number(shift.planned_hours)) ? Number(shift.planned_hours) : 0
 
+  if (note.includes('отсып') || (source.includes('night') && hours >= 9)) return 'sleep'
   if (source.includes('night') || note.includes('ноч') || note.includes('отсып')) return 'night'
   if (note.includes('учеб') || note.includes('учёб') || note.includes('противоавар')) return 'learning'
   if (
@@ -128,19 +136,38 @@ const iconSvg = {
       />
     </svg>
   ),
+  bed: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 17h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M4 19h16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M6 9.2h4l-4 3.6h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M11 6.8h3l-3 2.7h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14.5 4.8h2l-2 1.8h2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
 }
 
-function ShiftIcon({ type, color = '#f6c96f', glow = 'rgba(246, 201, 111, 0.5)', size = 16, title = '' }) {
-  const boxStyle = {
-    boxShadow: `0 0 0 1px ${color}66, 0 0 0 6px ${glow}, 0 10px 25px ${glow}`,
-  }
+function ShiftIcon({
+  type,
+  color = '#f6c96f',
+  glow = 'rgba(246, 201, 111, 0.5)',
+  size = 16,
+  title = '',
+  minimal = false,
+  className = '',
+}) {
+  const resolvedColor = minimal ? '#cbd5e1' : color
+  const boxStyle = minimal ? {} : { boxShadow: `0 0 0 1px ${resolvedColor}66, 0 0 0 6px ${glow}, 0 10px 25px ${glow}` }
   const icon = iconSvg[type] || iconSvg.sun
+  const baseClass = minimal
+    ? 'inline-flex items-center justify-center text-slate-300'
+    : 'inline-flex items-center justify-center rounded-full bg-slate-950/85 ring-1 ring-white/5'
 
   return (
     <span
       title={title}
-      className="inline-flex items-center justify-center rounded-full bg-slate-950/85 ring-1 ring-white/5"
-      style={{ width: size + 8, height: size + 8, color, ...boxStyle }}
+      className={`${baseClass} ${className}`.trim()}
+      style={{ width: minimal ? size : size + 8, height: minimal ? size : size + 8, color: resolvedColor, ...boxStyle }}
     >
       {icon}
     </span>
@@ -193,7 +220,8 @@ function UnitSectionPage() {
   const [positionsOpen, setPositionsOpen] = useState(false)
   const [filterQuery, setFilterQuery] = useState('')
   const pinStorageKey = 'ktc_filters'
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState(null)
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([])
+  const [showSchedule, setShowSchedule] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem(pinStorageKey)
@@ -280,6 +308,10 @@ function UnitSectionPage() {
     setFilterQuery('')
     setPinnedEmployees([])
     setHiddenEmployees([])
+    setSelectedEmployeeIds([])
+    setSelectedCells([])
+    setSelectionAnchor(null)
+    setMenuCell(null)
   }
   const [selectedShiftId, setSelectedShiftId] = useState('')
 
@@ -352,6 +384,10 @@ function UnitSectionPage() {
     const d = new Date(monthStart)
     return d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
   }, [monthStart])
+  const headerTitle = useMemo(() => {
+    if (section === 'personnel') return `Персонал / ГРАФИК · ${monthLabel}`
+    return sectionLabel
+  }, [section, monthLabel, sectionLabel])
 
   const shiftTemplateMap = useMemo(() => Object.fromEntries((shiftTemplates || []).map((t) => [t.id, t])), [shiftTemplates])
   const customShiftOptions = useMemo(
@@ -475,7 +511,20 @@ function UnitSectionPage() {
   const resolveIconType = useCallback(
     (list) => {
       if (!list?.length) return null
-      const priority = ['night', 'special', 'learning', 'work', 'rest']
+      const hours = list
+        .map((item) => {
+          const raw = item?.planned_hours
+          if (raw === null || raw === undefined || raw === '') return null
+          const num = Number(raw)
+          return Number.isFinite(num) ? num : null
+        })
+        .filter((n) => n !== null)
+      const notes = list.map((i) => (i.note || '').toLowerCase())
+      const has3 = hours.some((h) => Math.round(h) === 3)
+      const has9 = hours.some((h) => Math.round(h) === 9)
+      const hasMixNote = notes.some((n) => n.includes('9/3'))
+      if ((has3 && has9) || hasMixNote) return 'night'
+      const priority = ['sleep', 'night', 'special', 'learning', 'work', 'rest']
       for (const type of priority) {
         const found = list.some((item) => getIconType(item) === type)
         if (found) return type
@@ -496,16 +545,24 @@ function UnitSectionPage() {
         return Number.isFinite(num) ? num : null
       })
       .filter((num) => num !== null)
+
+    const nightHours = list
+      .filter((i) => ['status-night', 'template-night'].includes(i?.source))
+      .map((i) => Number(i?.planned_hours || 0))
+      .filter((n) => Number.isFinite(n))
+
+    const has3 = hours.some((h) => Math.round(h) === 3) || nightHours.some((h) => Math.round(h) === 3)
+    const has9 = hours.some((h) => Math.round(h) === 9) || nightHours.some((h) => Math.round(h) === 9)
+    if (has3 && has9) return '9/3'
+
     if (hours.length > 1) {
       const ordered = [...hours].sort((a, b) => b - a)
       return ordered.map((h) => String(h)).join('/')
     }
     if (hours.length === 1) {
-      const val = hours[0]
-      if (val === 0) return (list.find((i) => i.note)?.note || '').slice(0, 6) || '0'
-      return `${val}`
+      return `${hours[0]}`
     }
-    return (list.find((i) => i.note)?.note || '').slice(0, 6) || '—'
+    return '—'
   }, [])
   const shiftMenuPosition = useMemo(() => {
     if (!menuCell) return null
@@ -838,14 +895,14 @@ function UnitSectionPage() {
     const skipReload = opts.skipReload
     if (!shiftId) return
     if (shiftId === 'clear') {
-      await deleteNightParts(employeeId, [addDays(date, -1), date, addDays(date, 1)], pending)
+      await deleteNightParts(employeeId, [date], pending)
       await scheduleService.deleteEntry({ employeeId: Number(employeeId), date })
       if (pending?.set) pending.set(`${employeeId}-${date}`, [])
       if (!skipReload) loadSchedule({ silent: true })
       return
     }
     if (shiftId === 'off') {
-      await deleteNightParts(employeeId, [addDays(date, -1), date, addDays(date, 1)], pending)
+      await deleteNightParts(employeeId, [date], pending)
       const payload = {
         employee_id: Number(employeeId),
         date,
@@ -865,39 +922,39 @@ function UnitSectionPage() {
     const custom = customShiftMap[shiftId]
     // Если ставим любую смену кроме ночной — уберём ночные хвосты на день и следующий
     if (shiftId !== 'night12') {
-      await deleteNightParts(employeeId, [addDays(date, -1), date, addDays(date, 1)], pending)
+      await deleteNightParts(employeeId, [date, addDays(date, 1)], pending)
     }
     if (custom) {
       // Спец-логика для ночной 3/9
       if (shiftId === 'night12') {
         const existingList = mergeEntriesForDate(employeeId, date, pending)
-        const hasTailFromPrev = existingList.some(
+        const tailFromPrev = existingList.find(
           (item) => ['status-night', 'template-night'].includes(item?.source) && Number(item.planned_hours || 0) >= 9,
         )
+        const hasTailFromPrev = Boolean(tailFromPrev)
         const dayOneHours = clampPositiveHours(3)
         const dayTwoHours = clampPositiveHours((custom.hours || 12) - 3)
         const nextDate = addDays(date, 1)
         // чистим будущий хвост, но если есть хвост 9ч с предыдущей ночи — не трогаем его
         await deleteNightParts(employeeId, [nextDate], pending)
+
         if (hasTailFromPrev) {
-          const mergedPayload = {
+          const updatedToday = {
             employee_id: Number(employeeId),
             date,
-            start_time: null,
-            end_time: null,
-            planned_hours: clampPositiveHours(custom.hours || 12),
+            start_time: tailFromPrev.start_time ?? null,
+            end_time: tailFromPrev.end_time ?? null,
+            planned_hours: clampPositiveHours((Number(tailFromPrev.planned_hours) || 0) + dayOneHours),
             unit: unit,
             created_by: user.id,
-            source: 'status-night',
-            note: 'Ночная (9/3)',
+            source: tailFromPrev.source || 'status-night',
+            template_id: tailFromPrev.template_id ?? null,
+            note: 'Ночная (9/3, подряд)',
           }
-          await scheduleService.createEntry(mergedPayload)
+          await scheduleService.createEntry(updatedToday)
           if (pending?.set) {
             const key = `${employeeId}-${date}`
-            pending.set(key, [
-              ...mergeEntriesForDate(employeeId, date, pending).filter((e) => !['status-night', 'template-night'].includes(e.source)),
-              mergedPayload,
-            ])
+            pending.set(key, [updatedToday])
           }
         } else {
           const noteToday = 'Ночная (3/9)'
@@ -919,6 +976,7 @@ function UnitSectionPage() {
             pending.set(key, [...list.filter((e) => e.source !== 'status-night'), entryToday])
           }
         }
+
         const entryNext = {
           employee_id: Number(employeeId),
           date: nextDate,
@@ -961,48 +1019,53 @@ function UnitSectionPage() {
     const tmpl = shiftTemplateMap[shiftId]
     if (!tmpl) return
     if (isNightSplitTemplate(tmpl)) {
-        const existingList = mergeEntriesForDate(employeeId, date, pending)
-        const hasTailFromPrev = existingList.some(
-          (item) => ['status-night', 'template-night'].includes(item?.source) && Number(item.planned_hours || 0) >= 9,
-        )
-        const dayOneHours = clampPositiveHours(3)
-        const dayTwoHours = clampPositiveHours((tmpl.duration_hours || 12) - 3)
-        const nextDate = addDays(date, 1)
-        const baseNote = tmpl.name || tmpl.code || 'Ночная смена'
-        await deleteNightParts(employeeId, [nextDate], pending)
-        if (!hasTailFromPrev) {
-          await deleteNightParts(employeeId, [date], pending)
-        }
-        const entryToday = hasTailFromPrev
-          ? {
-              employee_id: Number(employeeId),
-              date,
-              start_time: tmpl.start_time,
-              end_time: tmpl.end_time,
-              planned_hours: clampPositiveHours(tmpl.duration_hours || 12),
-              unit: unit,
-              created_by: user.id,
-              source: 'template-night',
-              template_id: tmpl.id,
-              note: `${baseNote} (9/3)`,
-            }
-          : {
-              employee_id: Number(employeeId),
-              date,
-              start_time: tmpl.start_time,
-              end_time: tmpl.end_time,
-              planned_hours: dayOneHours,
-              unit: unit,
-              created_by: user.id,
-              source: 'template-night',
-              template_id: tmpl.id,
-              note: `${baseNote} (часть 1 · ${dayOneHours}ч)`,
-            }
-        await scheduleService.createEntry(entryToday)
-        if (pending?.set) {
-          const key = `${employeeId}-${date}`
+      const existingList = mergeEntriesForDate(employeeId, date, pending)
+      const tailFromPrev = existingList.find(
+        (item) => ['status-night', 'template-night'].includes(item?.source) && Number(item.planned_hours || 0) >= 9,
+      )
+      const hasTailFromPrev = Boolean(tailFromPrev)
+      const dayOneHours = clampPositiveHours(3)
+      const dayTwoHours = clampPositiveHours((tmpl.duration_hours || 12) - 3)
+      const nextDate = addDays(date, 1)
+      const baseNote = tmpl.name || tmpl.code || 'Ночная смена'
+      await deleteNightParts(employeeId, [nextDate], pending)
+      if (!hasTailFromPrev) {
+        await deleteNightParts(employeeId, [date], pending)
+      }
+      const entryToday = hasTailFromPrev
+        ? {
+            employee_id: Number(employeeId),
+            date,
+            start_time: tmpl.start_time,
+            end_time: tmpl.end_time,
+            planned_hours: clampPositiveHours((Number(tailFromPrev.planned_hours) || 0) + dayOneHours),
+            unit: unit,
+            created_by: user.id,
+            source: 'template-night',
+            template_id: tmpl.id,
+            note: `${baseNote} (9/3, подряд)`,
+          }
+        : {
+            employee_id: Number(employeeId),
+            date,
+            start_time: tmpl.start_time,
+            end_time: tmpl.end_time,
+            planned_hours: dayOneHours,
+            unit: unit,
+            created_by: user.id,
+            source: 'template-night',
+            template_id: tmpl.id,
+            note: `${baseNote} (часть 1 · ${dayOneHours}ч)`,
+          }
+      await scheduleService.createEntry(entryToday)
+      if (pending?.set) {
+        const key = `${employeeId}-${date}`
+        if (hasTailFromPrev) {
+          pending.set(key, [entryToday])
+        } else {
           pending.set(key, [...mergeEntriesForDate(employeeId, date, pending).filter((e) => e !== entryToday), entryToday])
         }
+      }
       const entryNext = {
         employee_id: Number(employeeId),
         date: nextDate,
@@ -1072,15 +1135,16 @@ function UnitSectionPage() {
 
   return (
     <div className="space-y-4">
-      <div
-        className={`overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br ${bg} p-8 shadow-xl shadow-sky-900/10`}
-      >
-        <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
-          {unitData.name} · {sectionLabel}
-        </p>
-        <h1 className="mt-3 text-3xl font-semibold text-white">{sectionLabel}</h1>
-        <p className="mt-2 text-sm text-slate-200">{subtitle}</p>
-      </div>
+      {section !== 'personnel' && (
+        <div
+          className={`overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br ${bg} p-8 shadow-xl shadow-sky-900/10`}
+        >
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
+            {unitData.name} · {sectionLabel}
+          </p>
+          <h1 className="mt-3 text-3xl font-semibold text-white">{headerTitle}</h1>
+        </div>
+      )}
 
       {isKtc && section === 'docs' && (
         <div className="space-y-4">
@@ -1222,7 +1286,7 @@ function UnitSectionPage() {
                     Автор: {item.author_snapshot?.label || item.author_name || '—'} {item.unit ? `· ${item.unit}` : ''}
                     {item.type ? ` · ${item.type}` : ''}
                   </p>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap">
                     <Badge variant="sky">{item.type}</Badge>
                     {!item.acknowledged && <Badge variant="emerald">Новое</Badge>}
                   </div>
@@ -1250,446 +1314,78 @@ function UnitSectionPage() {
 
       {section === 'personnel' && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">График смен</p>
-                <h3 className="text-lg font-semibold text-white">Календарь по цеху</h3>
-                <p className="text-sm text-slate-300">Сотрудники слева, даты в шапке. Клик по ячейке — проставить смену или отсутствие.</p>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-col gap-2 text-[11px] text-slate-200">
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={filterCategory}
-                  onChange={(e) => setFilterCategory(e.target.value)}
-                  className="rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white"
-                >
-                  <option value="">Категория: все</option>
-                  <option value="administrative">АТП</option>
-                  <option value="operational">Оперативный</option>
-                </select>
-                <select
-                  value={filterSection}
-                  onChange={(e) => setFilterSection(e.target.value)}
-                  className="rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white"
-                >
-                  <option value="">Отделение: оба</option>
-                  <option value="turbine">Турбинное</option>
-                  <option value="boiler">Котельное</option>
-                </select>
-                <div className="relative">
-                  <button
-                    onClick={() => setPositionsOpen((p) => !p)}
-                    className="h-[34px] rounded-lg border border-white/10 bg-slate-950/70 px-3 text-xs text-white transition hover:border-sky-400/60 disabled:opacity-60"
-                  >
-                    {positionFilter.length ? `Должности: ${positionFilter.length}` : 'Должности'}
-                  </button>
-                  {positionsOpen && (
-                    <div className="absolute left-0 top-9 z-50 w-56 rounded-xl border border-white/10 bg-slate-900/95 p-2 text-[11px] text-slate-100 shadow-xl">
-                      <div className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
-                        {positionOptions.map((pos) => {
-                          const checked = positionFilter.includes(pos)
-                          return (
-                            <label key={pos} className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setPositionFilter((prev) => [...prev, pos])
-                                  } else {
-                                    setPositionFilter((prev) => prev.filter((p) => p !== pos))
-                                  }
-                                }}
-                                className="h-3.5 w-3.5 rounded border-white/20 bg-slate-900"
-                              />
-                              <span className="truncate">{pos}</span>
-                            </label>
-                          )
-                        })}
-                        {!positionOptions.length && <span className="text-slate-500">Нет должностей</span>}
-                      </div>
-                      <div className="mt-2 flex gap-2">
-                        <button
-                          onClick={() => setPositionFilter([])}
-                          className="flex-1 rounded-full border border-white/10 bg-slate-800 px-2 py-1 text-[11px] text-white transition hover:border-sky-400/60"
-                        >
-                          Очистить
-                        </button>
-                        <button
-                          onClick={() => setPositionsOpen(false)}
-                          className="flex-1 rounded-full border border-emerald-400/40 bg-emerald-500 px-2 py-1 text-[11px] font-semibold text-slate-900 transition hover:bg-emerald-400"
-                        >
-                          Готово
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={resetFilters}
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-100 transition hover:border-red-400/60 hover:text-white"
-                >
-                  Сброс
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  value={filterQueryInput}
-                  onChange={(e) => setFilterQueryInput(e.target.value)}
-                  placeholder="Поиск ФИО"
-                  className="w-full rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white placeholder:text-slate-500"
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {filterCategory && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white">
-                    {filterCategory === 'administrative' ? 'АТП' : 'Оперативный'}
-                    <button onClick={() => setFilterCategory('')} className="text-slate-400 hover:text-white">
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filterSection && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white">
-                    {filterSection === 'turbine' ? 'Турбинное' : 'Котельное'}
-                    <button onClick={() => setFilterSection('')} className="text-slate-400 hover:text-white">
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filterQuery && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white">
-                    Поиск по ФИО: {filterQuery}
-                    <button
-                      onClick={() => {
-                        setFilterQuery('')
-                        setFilterQueryInput('')
-                      }}
-                      className="text-slate-400 hover:text-white"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {positionFilter.map((pos) => (
-                  <span
-                    key={pos}
-                    className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white"
-                  >
-                    {pos}
-                    <button
-                      onClick={() => setPositionFilter((prev) => prev.filter((p) => p !== pos))}
-                      className="text-slate-400 hover:text-white"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            </div>
-            {loadingSchedule && <p className="mt-2 text-xs text-slate-400">Загрузка...</p>}
-            {loadingStaff && <p className="mt-1 text-xs text-slate-400">Загружаем сотрудников...</p>}
-            {staffError && <p className="mt-1 text-xs text-orange-300">Ошибка загрузки сотрудников: {staffError}</p>}
-          </div>
-            {scheduleError && <p className="mt-3 text-xs text-orange-300">Ошибка: {scheduleError}</p>}
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-200">
-              <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5">
-                <button
-                  onClick={() => {
-                    const d = new Date(monthStart)
-                    d.setMonth(d.getMonth() - 1)
-                    d.setDate(1)
-                    setMonthStart(d.toISOString().slice(0, 10))
-                  }}
-                  className="rounded-full border border-white/10 bg-slate-900 px-2.5 py-0.5 transition hover:border-sky-400/60"
-                >
-                  ←
-                </button>
-                <button
-                  onClick={() =>
-                    setMonthStart(() => {
-                      const d = new Date()
-                      d.setDate(1)
-                      return d.toISOString().slice(0, 10)
-                    })
-                  }
-                  className="rounded-full border border-white/10 bg-slate-900 px-2.5 py-0.5 transition hover:border-sky-400/60"
-                >
-                  {monthLabel}
-                </button>
-                <button
-                  onClick={() => {
-                    const d = new Date(monthStart)
-                    d.setMonth(d.getMonth() + 1)
-                    d.setDate(1)
-                    setMonthStart(d.toISOString().slice(0, 10))
-                  }}
-                  className="rounded-full border border-white/10 bg-slate-900 px-2.5 py-0.5 transition hover:border-sky-400/60"
-                >
-                  →
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] text-slate-400">{monthDates.length} дней</span>
-                {!!pinnedEmployees.length && (
-                  <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/20 px-2 py-1 text-[11px] text-emerald-100">
-                    Показаны только закреплённые ({pinnedEmployees.length})
-                    <button
-                      onClick={() => setPinnedEmployees([])}
-                      className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white transition hover:border-sky-400/60"
-                    >
-                      Показать всех
-                    </button>
-                  </span>
-                )}
-                {!!hiddenEmployees.length && (
-                  <button
-                    onClick={() => {
-                      setHiddenEmployees([])
-                    }}
-                    className="rounded-full border border-orange-400/40 bg-orange-500/10 px-2 py-1 text-[11px] text-orange-100 transition hover:border-orange-300 hover:text-orange-50"
-                  >
-                    Скрыто: {hiddenEmployees.length} · Показать всех
-                  </button>
-                )}
-                <span className="text-[11px] text-slate-400">Шифты: Cmd/Ctrl для точечного выбора, Shift для диапазона.</span>
-              </div>
-            </div>
-              <div className="mt-2 relative isolate max-h-[70vh] overflow-auto rounded-2xl border border-white/10">
-                <table className="w-max min-w-full table-fixed border-separate border-spacing-0 text-xs text-slate-200">
-                  <thead className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur">
-                  <tr>
-                    <th className="sticky left-0 z-[35] w-44 bg-slate-900/95 px-3 py-1.5 text-left text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                      Сотрудник
-                    </th>
-                    {monthDates.map((d) => (
-                      <th key={d} className="w-8 px-1 py-1.5 text-center text-[11px] uppercase tracking-[0.15em] text-slate-300">
-                        {new Date(d).getDate()}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {groupedByPosition.map((group) => {
-                    const collapsed = collapsedPositions.includes(group.position)
-                    return (
-                      <Fragment key={group.position}>
-                        <tr className="bg-slate-900/60 border-t border-white/10">
-                          <td
-                            colSpan={1 + monthDates.length}
-                            className="px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-300"
-                          >
-                            <button
-                              onClick={() =>
-                                setCollapsedPositions((prev) =>
-                                  prev.includes(group.position)
-                                    ? prev.filter((p) => p !== group.position)
-                                    : [...prev, group.position],
-                                )
-                              }
-                              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] text-slate-100 transition hover:border-sky-400/60"
-                            >
-                              <span className="text-base">{collapsed ? '▸' : '▾'}</span>
-                              <span>{group.position}</span>
-                      <Badge variant="neutral" className="px-1.5 text-[10px]">
-                        {group.list.length}
-                      </Badge>
-                            </button>
-                          </td>
-                        </tr>
-                        {!collapsed &&
-                          group.list.map((emp) => {
-                            const hiddenRow = hiddenEmployees.includes(emp.id)
-                            return (
-                              <tr
-                                key={`${group.position}-${emp.id}`}
-                                className={`border-t border-white/5 ${hiddenRow ? 'hidden' : ''}`}
-                              >
-                                <td className="sticky left-0 z-20 max-w-[240px] bg-slate-900/95 px-3 py-2 text-left text-sm font-semibold text-white">
-                                  <div className="relative flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedEmployeeId(emp.id)}
-                                      className={`origin-left text-left transition ${
-                                        selectedEmployeeId === emp.id
-                                          ? 'scale-[1.05] text-white drop-shadow-[0_0_12px_rgba(56,189,248,0.7)]'
-                                          : 'text-slate-100'
-                                      }`}
-                                      title={emp.label}
-                                    >
-                                      {emp.label}
-                                    </button>
-                                    {selectedEmployeeId === emp.id && !pinnedEmployees.includes(emp.id) && (
-                                      <div className="absolute left-0 top-6 z-30 w-44 rounded-xl border border-white/10 bg-slate-900/95 p-2 text-[11px] text-slate-100 shadow-xl">
-                                        <p className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Действия</p>
-                                        <button
-                                          onClick={() => {
-                                            setPinnedEmployees([emp.id])
-                                            setSelectedEmployeeId(null)
-                                          }}
-                                          className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-left transition hover:border-sky-400/60 hover:bg-slate-800"
-                                        >
-                                          Скрыть остальных
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                                {monthDates.map((d) => {
-                                  const key = `${emp.id}-${d}`
-                                  const cellEntries = scheduleByDay.get(key) || []
-                                  const displayValue = formatCellValue(cellEntries)
-                                  const pentagramType = resolveIconType(cellEntries)
-                                  const pentagramMeta = pentagramType ? iconCatalog[pentagramType] : null
-                                  const isSelected =
-                                    (selectedCell?.employeeId === emp.id && selectedCell?.date === d) ||
-                                    selectedCells.some((c) => c.employeeId === emp.id && c.date === d)
-                                  return (
-                                    <td
-                                      key={`${emp.id}-${d}`}
-                                      onClick={(e) => handleCellClick(emp.id, d, e)}
-                                      className={`relative cursor-pointer px-1 py-1 align-top transition hover:bg-sky-500/10 ${
-                                        selectedCell?.employeeId === emp.id && selectedCell?.date === d ? 'bg-sky-500/10' : ''
-                                      }`}
-                                    >
-                                      <div
-                                        className={`flex min-h-[32px] items-center justify-center gap-1.5 rounded border bg-white/5 px-2 py-1 text-[11px] font-semibold text-slate-100 transition ${
-                                          isSelected
-                                            ? 'cell-selected border-sky-400/60 bg-sky-500/10 shadow-lg shadow-sky-500/30'
-                                            : 'border-white/10'
-                                        }`}
-                                        title={pentagramMeta?.title || ''}
-                                      >
-                                        {pentagramMeta && (
-                                          <ShiftIcon
-                                            type={pentagramMeta.icon}
-                                            color={pentagramMeta.color}
-                                            glow={pentagramMeta.glow}
-                                            size={12}
-                                            title={pentagramMeta.title}
-                                          />
-                                        )}
-                                        <span className="leading-none">{displayValue}</span>
-                                      </div>
-                                    </td>
-                                  )
-                                })}
-                              </tr>
-                            )
-                          })}
-                      </Fragment>
-                    )
-                  })}
-                  {employeesFromSchedule.length === 0 && (
-                    <tr>
-                      <td colSpan={1 + monthDates.length} className="px-3 py-4 text-center text-xs text-slate-400">
-                        Нет данных за месяц. Добавьте смену по ID сотрудника, и она появится здесь.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {menuCell && typeof document !== 'undefined' && (
-              createPortal(
-                <div className="fixed inset-0 z-[120] pointer-events-none">
-                  <div
-                    className="absolute pointer-events-auto w-56 rounded-xl border border-white/10 bg-slate-900/95 p-2 text-[11px] text-slate-100 shadow-2xl"
-                    style={{
-                      left: shiftMenuPosition?.left ?? 24,
-                      top: shiftMenuPosition?.top ?? 80,
-                      maxHeight: '70vh',
-                      overflow: 'hidden',
-                      overflowY: 'auto',
-                    }}
-                    onWheel={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.15em] text-slate-400">
-                      <span>Выбрать смену</span>
-                      <button
-                        onClick={() => setMenuCell(null)}
-                        className="rounded-full px-2 py-0.5 text-[12px] font-semibold text-slate-200 transition hover:bg-white/10"
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <div
-                      className="flex max-h-60 flex-col gap-1 overflow-y-auto pr-1"
-                      onWheel={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      {shiftOptions.map((opt) => (
-                        <button
-                          key={opt.value}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            applyShiftToSelected(opt.value)
-                          }}
-                          className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-slate-800/80 px-2 py-1 text-left transition hover:border-sky-400/60 hover:bg-slate-800"
-                        >
-                          <span>{opt.label}</span>
-                          <span className="text-[10px] text-slate-400">{opt.meta}</span>
-                        </button>
-                      ))}
-                    </div>
+          {!showSchedule ? (
+            <button
+              type="button"
+                onClick={() => setShowSchedule(true)}
+                className="group relative w-full overflow-hidden rounded-3xl border border-sky-500/40 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-6 text-left shadow-[0_10px_40px_-12px_rgba(56,189,248,0.35)] transition hover:-translate-y-0.5 hover:border-sky-300/60 hover:shadow-[0_18px_50px_-12px_rgba(56,189,248,0.45)] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+              >
+                <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.15),transparent_45%),radial-gradient(circle_at_80%_0%,rgba(14,165,233,0.18),transparent_42%)]" />
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="mt-1 text-2xl font-semibold text-white">ГРАФИК</h3>
+                    <p className="mt-1 text-sm text-slate-200/90">Открыть календарь смен персонала.</p>
                   </div>
-                </div>,
-                document.body,
-              )
-            )}
-            {pentagramTypesInSchedule.length > 0 && (
-              <div className="mt-3 rounded-2xl border border-white/10 bg-slate-900/80 p-3 text-[11px] text-slate-100">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Легенда смен</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {pentagramTypesInSchedule.map((type) => {
-                    const meta = iconCatalog[type]
-                    if (!meta) return null
-                    return (
-                      <div
-                        key={type}
-                        className="flex min-w-[220px] items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 shadow-inner shadow-black/10"
-                      >
-                        <ShiftIcon type={meta.icon} color={meta.color} glow={meta.glow} size={18} title={meta.title} />
-                        <div className="leading-tight">
-                          <div className="text-[11px] font-semibold text-white">{meta.title}</div>
-                          <div className="text-[10px] text-slate-400">{meta.description}</div>
-                        </div>
-                      </div>
-                    )
-                  })}
+                  <span className="rounded-full border border-amber-300/50 bg-amber-400/20 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-amber-100">
+                    Тестирование
+                  </span>
                 </div>
-              </div>
-            )}
-            {selectedCells.length > 1 && (
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-200">
-                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                  Ячеек выделено: {selectedCells.length}
-                </span>
-                {!!pinnedEmployees.length && (
-                  <span className="rounded-full border border-emerald-400/40 bg-emerald-500/20 px-3 py-1 text-emerald-100">
-                    Закреплено сотрудников: {pinnedEmployees.length} (показываем только их)
-                  </span>
-                )}
-                {!!hiddenEmployees.length && !pinnedEmployees.length && (
-                  <span className="rounded-full border border-orange-400/40 bg-orange-500/10 px-3 py-1 text-orange-100">
-                    Скрыто сотрудников: {hiddenEmployees.length}
-                  </span>
-                )}
-                <button
-                  onClick={() => {
-                    setSelectedCells([])
-                    setSelectionAnchor(null)
-                    setMenuCell(null)
-                  }}
-                  className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-slate-100 transition hover:border-red-400/60 hover:text-white"
-                >
-                  Очистить выделение
-                </button>
-              </div>
-            )}
+              </button>
+          ) : (
+            <PersonnelSchedule
+              monthDates={monthDates}
+              monthLabel={monthLabel}
+              employeesFromSchedule={employeesFromSchedule}
+              filterCategory={filterCategory}
+              filterSection={filterSection}
+              filterQuery={filterQuery}
+              filterQueryInput={filterQueryInput}
+              unitCode={unit}
+              positionFilter={positionFilter}
+              positionOptions={positionOptions}
+              positionsOpen={positionsOpen}
+              setFilterCategory={setFilterCategory}
+              setFilterSection={setFilterSection}
+              setFilterQuery={setFilterQuery}
+              setFilterQueryInput={setFilterQueryInput}
+              setPositionFilter={setPositionFilter}
+              setPositionsOpen={setPositionsOpen}
+              resetFilters={resetFilters}
+              pinnedEmployees={pinnedEmployees}
+              hiddenEmployees={hiddenEmployees}
+              setPinnedEmployees={setPinnedEmployees}
+              setHiddenEmployees={setHiddenEmployees}
+              collapsedPositions={collapsedPositions}
+              setCollapsedPositions={setCollapsedPositions}
+              scheduleError={scheduleError}
+              loadingSchedule={loadingSchedule}
+              loadingStaff={loadingStaff}
+              staffError={staffError}
+              monthStart={monthStart}
+              setMonthStart={setMonthStart}
+              groupedByPosition={groupedByPosition}
+              selectedEmployeeIds={selectedEmployeeIds}
+              setSelectedEmployeeIds={setSelectedEmployeeIds}
+              scheduleByDay={scheduleByDay}
+              formatCellValue={formatCellValue}
+              resolveIconType={resolveIconType}
+              iconCatalog={iconCatalog}
+              selectedCell={selectedCell}
+              selectedCells={selectedCells}
+              handleCellClick={handleCellClick}
+              handleApplyShift={handleApplyShift}
+              applyShiftToSelected={applyShiftToSelected}
+              setSelectionAnchor={setSelectionAnchor}
+              setMenuCell={setMenuCell}
+              menuCell={menuCell}
+              shiftMenuPosition={shiftMenuPosition}
+              shiftOptions={shiftOptions}
+              pentagramTypesInSchedule={pentagramTypesInSchedule}
+              isPersonnel
+              ShiftIcon={ShiftIcon}
+              onBackToCard={() => setShowSchedule(false)}
+            />
+          )}
         </div>
       )}
 
@@ -1698,8 +1394,7 @@ function UnitSectionPage() {
         <ul className="mt-3 space-y-2">
           {section === 'personnel' && (
             <>
-              <li>• Подключить выборку состава смены по подразделению</li>
-              <li>• Добавить контакты и роли (operator / supervisor)</li>
+              <li>• Добавить возможность экспорта в файл</li>
             </>
           )}
           {section === 'equipment' && (
