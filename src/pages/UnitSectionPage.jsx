@@ -540,29 +540,42 @@ function UnitSectionPage() {
       .sort((a, b) => a.weight - b.weight || a.label.localeCompare(b.label, 'ru'))
   }, [staff, positionsMap, getPositionWeight])
 
-  const employeesFromSchedule = useMemo(() => {
+  const allEmployeesFromSchedule = useMemo(() => {
     const map = new Map()
     const filteredRows = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
     staffWithLabels.forEach((e) => map.set(e.id, e))
-    if (!map.size) {
-      filteredRows.forEach((row) => {
-        const label = row.employees
-          ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ')
-          : `ID ${row.employee_id}`
-        const posName = row.employees?.positions?.name || ''
-        map.set(row.employee_id, {
-          id: row.employee_id,
-          label,
-          position: posName,
-          position_id: row.employees?.position_id || null,
-          division: row.employees?.positions?.devision_name || '',
-          department: row.employees?.positions?.departament_name || '',
-          positionType: row.employees?.positions?.type || '',
-          weight: row.employees?.positions?.sort_weight ?? getPositionWeight(posName),
-        })
+    filteredRows.forEach((row) => {
+      const label = row.employees
+        ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ')
+        : `ID ${row.employee_id}`
+      const posName = row.employees?.positions?.name || ''
+      const fromRow = {
+        id: row.employee_id,
+        label,
+        position: posName,
+        position_id: row.employees?.position_id || null,
+        division: row.employees?.positions?.devision_name || '',
+        department: row.employees?.positions?.departament_name || '',
+        positionType: row.employees?.positions?.type || '',
+        weight: row.employees?.positions?.sort_weight ?? getPositionWeight(posName),
+      }
+      const prev = map.get(row.employee_id)
+      map.set(row.employee_id, {
+        ...fromRow,
+        ...(prev || {}),
+        position: prev?.position || fromRow.position,
+        division: prev?.division || fromRow.division,
+        department: prev?.department || fromRow.department,
+        positionType: prev?.positionType || fromRow.positionType,
       })
-    }
-    let list = Array.from(map.values())
+    })
+    return Array.from(map.values())
+      .map((e) => (e.weight !== undefined ? e : { ...e, weight: getPositionWeight(e.position) }))
+      .sort((a, b) => a.weight - b.weight || a.label.localeCompare(b.label, 'ru'))
+  }, [staffWithLabels, scheduleRows, getPositionWeight, unit])
+
+  const employeesFromSchedule = useMemo(() => {
+    let list = [...allEmployeesFromSchedule]
     const pinnedSet = new Set(pinnedEmployees)
     const hiddenSet = new Set(hiddenEmployees)
     if (pinnedSet.size) {
@@ -574,10 +587,9 @@ function UnitSectionPage() {
       const set = new Set(positionFilter)
       list = list.filter((e) => set.has(e.position))
     }
-    list = list.map((e) => (e.weight !== undefined ? e : { ...e, weight: getPositionWeight(e.position) }))
     list.sort((a, b) => a.weight - b.weight || a.label.localeCompare(b.label, 'ru'))
     return list
-  }, [staffWithLabels, scheduleRows, pinnedEmployees, hiddenEmployees, positionFilter, getPositionWeight, unit])
+  }, [allEmployeesFromSchedule, pinnedEmployees, hiddenEmployees, positionFilter])
 
   const scheduleMap = useMemo(() => {
     const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
@@ -783,18 +795,18 @@ function UnitSectionPage() {
 
   const buildShiftRoster = useCallback((mode, targetDate, targetShiftType) => {
     const nextDate = addDaysIso(targetDate, 1)
-    const byDayShiftHours = employeesFromSchedule.filter((emp) => {
+    const byDayShiftHours = allEmployeesFromSchedule.filter((emp) => {
       const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
       return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
     })
-    const byNightShiftHours = employeesFromSchedule.filter((emp) => {
+    const byNightShiftHours = allEmployeesFromSchedule.filter((emp) => {
       const todayEntries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
       const nextEntries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
       const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
       const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
       return has3Today && has9Next
     })
-    const byNextDayShiftHours = employeesFromSchedule.filter((emp) => {
+    const byNextDayShiftHours = allEmployeesFromSchedule.filter((emp) => {
       const entries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
       return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
     })
@@ -857,7 +869,7 @@ function UnitSectionPage() {
       turbine: assignForDivision('turbine'),
       other: assignForDivision('other'),
     }
-  }, [addDaysIso, employeesFromSchedule, normalizedWorkplaces, scheduleByDay])
+  }, [addDaysIso, allEmployeesFromSchedule, normalizedWorkplaces, scheduleByDay])
 
   const activeShiftCode = shiftCodes[activeShiftIndex] || '—'
   const nextShiftCode = shiftCodes[(activeShiftIndex + 1) % shiftCodes.length] || '—'
