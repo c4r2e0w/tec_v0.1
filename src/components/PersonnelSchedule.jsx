@@ -2,6 +2,7 @@ import { Fragment, memo, useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import Badge from './Badge'
+import { calculateEmployeeMonthStats } from '../lib/productionNorm'
 
 const IconSun = ({ className, style }) => (
   <svg
@@ -526,24 +527,47 @@ function PersonnelSchedule(props) {
     return { text: 'Данные актуальны', tone: 'ok' }
   }, [loadingStaff, loadingSchedule, staffError, scheduleError])
   const hoursSummary = useMemo(() => {
-    const byEmployee = new Map()
-    scheduleByDay.forEach((list, key) => {
-      const [empId] = key.split('-')
-      const total = list
-        .map((item) => Number(item?.planned_hours || 0))
-        .filter((n) => Number.isFinite(n))
-        .reduce((acc, n) => acc + n, 0)
-      byEmployee.set(empId, (byEmployee.get(empId) || 0) + total)
-    })
-    const norm = monthNorm?.normHours || 0
     const rows = employeesFromSchedule.map((emp) => {
-      const total = byEmployee.get(String(emp.id)) || 0
-      const overtime = total - norm
-      return { id: emp.id, label: emp.label, total, overtime }
+      if (!monthNorm?.isWorkingDay) {
+        return {
+          id: emp.id,
+          label: emp.label,
+          totalHours: 0,
+          adjustedNormHours: 0,
+          overtimeHours: 0,
+          nightHours: 0,
+          holidayHours: 0,
+          shiftCount: 0,
+          handoverHours: 0,
+          payableHours: 0,
+          normReductionHours: 0,
+        }
+      }
+      const stats = calculateEmployeeMonthStats({
+        employeeId: emp.id,
+        monthDates,
+        scheduleByDay,
+        calendarMeta: monthNorm,
+      })
+      return { id: emp.id, label: emp.label, ...stats }
     })
-    const totalHours = rows.reduce((acc, r) => acc + r.total, 0)
-    return { rows, norm, totalHours }
-  }, [scheduleByDay, employeesFromSchedule, monthNorm])
+    const totalHours = rows.reduce((acc, r) => acc + r.totalHours, 0)
+    const nightHours = rows.reduce((acc, r) => acc + r.nightHours, 0)
+    const holidayHours = rows.reduce((acc, r) => acc + r.holidayHours, 0)
+    const handoverHours = rows.reduce((acc, r) => acc + r.handoverHours, 0)
+    const payableHours = rows.reduce((acc, r) => acc + r.payableHours, 0)
+    const overtimeTotal = rows.reduce((acc, r) => acc + r.overtimeHours, 0)
+    return {
+      rows,
+      norm: monthNorm?.normHours || 0,
+      totalHours,
+      nightHours,
+      holidayHours,
+      handoverHours,
+      payableHours,
+      overtimeTotal,
+    }
+  }, [employeesFromSchedule, monthDates, monthNorm, scheduleByDay])
   const [actionMenuRect, setActionMenuRect] = useState(null)
   const selectedCellKey = selectedCell ? `${selectedCell.employeeId}|${selectedCell.date}` : null
   const selectedCellsSet = useMemo(
@@ -979,15 +1003,19 @@ function PersonnelSchedule(props) {
         <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3 text-xs text-slate-200">
           <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-[0.15em] text-slate-400">
             <span>Свод по часам</span>
-            <span className="text-slate-500">Норма: {hoursSummary.norm || '—'} ч</span>
+            <span className="text-slate-500">
+              Норма (40ч): {hoursSummary.norm ? hoursSummary.norm.toFixed(1) : '—'} ч
+            </span>
           </div>
           <div className="max-h-60 overflow-auto">
             <table className="w-full border-separate border-spacing-y-1">
               <thead className="text-[11px] text-slate-400">
                 <tr>
                   <th className="text-left font-normal">Сотрудник</th>
-                  <th className="text-right font-normal">Часы</th>
+                  <th className="text-right font-normal">Факт</th>
+                  <th className="text-right font-normal">Норма</th>
                   <th className="text-right font-normal">Переработка</th>
+                  <th className="text-right font-normal">Ночные</th>
                 </tr>
               </thead>
               <tbody>
@@ -996,12 +1024,14 @@ function PersonnelSchedule(props) {
                     <td className="truncate pr-2 text-slate-100" title={row.label}>
                       {row.label}
                     </td>
-                    <td className="text-right font-semibold text-white">{row.total.toFixed(1)}</td>
+                    <td className="text-right font-semibold text-white">{row.totalHours.toFixed(1)}</td>
+                    <td className="text-right text-slate-300">{row.adjustedNormHours.toFixed(1)}</td>
                     <td
-                      className={`text-right font-semibold ${row.overtime > 0 ? 'text-amber-300' : row.overtime < 0 ? 'text-slate-300' : 'text-slate-300'}`}
+                      className={`text-right font-semibold ${row.overtimeHours > 0 ? 'text-amber-300' : row.overtimeHours < 0 ? 'text-slate-300' : 'text-slate-300'}`}
                     >
-                      {row.overtime.toFixed(1)}
+                      {row.overtimeHours.toFixed(1)}
                     </td>
+                    <td className="text-right text-slate-300">{row.nightHours.toFixed(1)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1024,14 +1054,29 @@ function PersonnelSchedule(props) {
               <span className="font-semibold text-white">{monthNorm?.workingDays || '—'}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-300">Переработка суммарно</span>
+              <span className="text-slate-300">Ночные часы</span>
+              <span className="font-semibold text-slate-100">{hoursSummary.nightHours.toFixed(1)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-300">Праздничные/выходные</span>
+              <span className="font-semibold text-slate-100">{hoursSummary.holidayHours.toFixed(1)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-300">Пересменка (30 мин/смена)</span>
+              <span className="font-semibold text-slate-100">{hoursSummary.handoverHours.toFixed(1)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-300">Оплачиваемые часы</span>
+              <span className="font-semibold text-white">{hoursSummary.payableHours.toFixed(1)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-300">Переработка суммарно (факт-норма)</span>
               <span className="font-semibold text-amber-300">
-                {(hoursSummary.totalHours - (hoursSummary.norm || 0)).toFixed(1)}
+                {hoursSummary.overtimeTotal.toFixed(1)}
               </span>
             </div>
             <p className="mt-2 text-[11px] text-slate-500">
-              Норма рассчитывается по производственному календарю (8 ч на рабочий день; точные нормы можно задать в
-              `productionCalendar`).
+              Норма учитывает праздники, переносы и сокращённые предпраздничные дни из `productionCalendar`.
             </p>
           </div>
         </div>

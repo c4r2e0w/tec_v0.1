@@ -9,6 +9,7 @@ import { unitsMap, sectionsMap } from '../constants/units'
 import { createScheduleService } from '../services/scheduleService'
 import PersonnelSchedule from '../components/PersonnelSchedule'
 import { productionCalendar } from '../constants/productionCalendar'
+import { getMonthCalendarMeta } from '../lib/productionNorm'
 
 const iconCatalog = {
   work: {
@@ -238,11 +239,13 @@ function UnitSectionPage() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
-        setFilterCategory(parsed.category || '')
-        setFilterSection(parsed.section || '')
-        setPositionFilter(parsed.positions || [])
-        setFilterQuery(parsed.query || '')
-        setFilterQueryInput(parsed.query || '')
+        queueMicrotask(() => {
+          setFilterCategory(parsed.category || '')
+          setFilterSection(parsed.section || '')
+          setPositionFilter(parsed.positions || [])
+          setFilterQuery(parsed.query || '')
+          setFilterQueryInput(parsed.query || '')
+        })
       } catch {
         // ignore malformed
       }
@@ -390,19 +393,11 @@ function UnitSectionPage() {
     const d = new Date(monthStart)
     const year = d.getUTCFullYear()
     const monthIndex = d.getUTCMonth() + 1
-    const daysInMonth = new Date(year, monthIndex, 0).getDate()
-    const holidays = productionCalendar[year]?.[monthIndex]?.holidays || []
-    const workingHours = productionCalendar[year]?.[monthIndex]?.workingHours
-    let workingDays = 0
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(Date.UTC(year, monthIndex - 1, day))
-      const iso = date.toISOString().slice(0, 10)
-      const isWeekend = date.getUTCDay() === 0 || date.getUTCDay() === 6
-      const isHoliday = holidays.includes(iso)
-      if (!isWeekend && !isHoliday) workingDays += 1
-    }
-    const normHours = Number.isFinite(workingHours) ? workingHours : workingDays * 8
-    return { workingDays, normHours }
+    return getMonthCalendarMeta({
+      year,
+      month: monthIndex,
+      calendar: productionCalendar,
+    })
   }, [monthStart])
   const headerTitle = useMemo(() => {
     if (section === 'personnel') return `Персонал / ГРАФИК · ${monthLabel}`
@@ -505,6 +500,7 @@ function UnitSectionPage() {
     const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
     return new Map(source.map((row) => [`${row.employee_id}-${row.date}`, row]))
   }, [scheduleRows, unit])
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const scheduleByDay = useMemo(() => {
     const map = new Map()
     const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
@@ -687,7 +683,10 @@ function UnitSectionPage() {
   )
 
   useEffect(() => {
-    loadSchedule()
+    const timer = setTimeout(() => {
+      void loadSchedule()
+    }, 0)
+    return () => clearTimeout(timer)
   }, [loadSchedule])
 
   const loadStaff = useCallback(async () => {
@@ -737,7 +736,10 @@ function UnitSectionPage() {
   }, [scheduleService])
 
   useEffect(() => {
-    loadStaff()
+    const timer = setTimeout(() => {
+      void loadStaff()
+    }, 0)
+    return () => clearTimeout(timer)
   }, [loadStaff])
 
   useEffect(() => {
@@ -749,7 +751,10 @@ function UnitSectionPage() {
   }, [scheduleService])
 
   useEffect(() => {
-    loadShiftTemplates()
+    const timer = setTimeout(() => {
+      void loadShiftTemplates()
+    }, 0)
+    return () => clearTimeout(timer)
   }, [loadShiftTemplates])
 
   const handleCreate = async () => {
