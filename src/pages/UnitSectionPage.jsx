@@ -407,18 +407,29 @@ function UnitSectionPage() {
     if (section === 'personnel') return `Персонал / ГРАФИК · ${monthLabel}`
     return sectionLabel
   }, [section, monthLabel, sectionLabel])
+  const addDaysIso = useCallback((dateStr, days) => {
+    const d = new Date(dateStr)
+    d.setDate(d.getDate() + days)
+    return d.toISOString().slice(0, 10)
+  }, [])
   const currentShiftDate = useMemo(() => new Date().toISOString().slice(0, 10), [])
   const currentShiftType = useMemo(() => {
     const hour = new Date().getHours()
     return hour >= 20 || hour < 8 ? 'night' : 'day'
   }, [])
   const shiftCodes = useMemo(() => ['А', 'Б', 'В', 'Г'], [])
-  const [activeShiftIndex, setActiveShiftIndex] = useState(() => {
+  const todayShiftIndex = useMemo(() => {
     const now = new Date()
     const yearStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1))
     const dayNumber = Math.floor((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - yearStart.getTime()) / 86400000)
     return ((dayNumber % 4) + 4) % 4
-  })
+  }, [])
+  const [viewedShiftOffset, setViewedShiftOffset] = useState(0)
+  const activeShiftIndex = useMemo(
+    () => ((todayShiftIndex + viewedShiftOffset) % shiftCodes.length + shiftCodes.length) % shiftCodes.length,
+    [todayShiftIndex, viewedShiftOffset, shiftCodes.length],
+  )
+  const activeShiftDate = useMemo(() => addDaysIso(currentShiftDate, viewedShiftOffset), [addDaysIso, currentShiftDate, viewedShiftOffset])
 
   const scopeForEntryType = useCallback((entryType) => {
     if (entryType === 'daily') return 'daily_statement'
@@ -530,7 +541,6 @@ function UnitSectionPage() {
     const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
     return new Map(source.map((row) => [`${row.employee_id}-${row.date}`, row]))
   }, [scheduleRows, unit])
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const scheduleByDay = useMemo(() => {
     const map = new Map()
     const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
@@ -690,12 +700,6 @@ function UnitSectionPage() {
   }, [collapsedPositions, groupedByPosition])
   const employeeIndexMap = useMemo(() => new Map(visibleRows.map((e, idx) => [e.id, idx])), [visibleRows])
 
-  const addDaysIso = useCallback((dateStr, days) => {
-    const d = new Date(dateStr)
-    d.setDate(d.getDate() + days)
-    return d.toISOString().slice(0, 10)
-  }, [])
-
   const normalizedWorkplaces = useMemo(() => {
     return (workplaces || [])
       .map((wp, index) => {
@@ -748,19 +752,39 @@ function UnitSectionPage() {
       return has3Today && has9Next
     })
     const roster = mode === 'next' ? byReplacementShiftHours : byCurrentShiftHours
+    const normalizeText = (value) =>
+      String(value || '')
+        .toLowerCase()
+        .replaceAll('ё', 'е')
+        .replace(/[^a-zа-я0-9]+/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    const splitTokens = (value) => normalizeText(value).split(' ').filter((t) => t.length > 2)
+    const guessDivisionKey = (emp) => {
+      const raw = `${emp.division || ''} ${emp.department || ''} ${emp.position || ''}`
+      const lower = normalizeText(raw)
+      if (lower.includes('котел')) return 'boiler'
+      if (lower.includes('турбин')) return 'turbine'
+      return 'other'
+    }
     const positionMatchesWorkplace = (emp, wp) => {
-      const positionName = String(emp.position || '').toLowerCase().trim()
-      if (wp.positionText && (positionName === wp.positionText || positionName.includes(wp.positionText) || wp.positionText.includes(positionName))) return true
-      return wp.allowedPositions.some((name) => positionName.includes(name))
+      const employeeText = normalizeText(emp.position)
+      const workplaceText = normalizeText(wp.positionText)
+      if (!employeeText || !workplaceText) return false
+      if (employeeText === workplaceText || employeeText.includes(workplaceText) || workplaceText.includes(employeeText)) return true
+      const empTokens = splitTokens(employeeText)
+      const wpTokens = splitTokens(workplaceText)
+      const common = wpTokens.filter((t) => empTokens.some((e) => e === t || e.startsWith(t) || t.startsWith(e))).length
+      if (common >= Math.max(2, Math.ceil(wpTokens.length * 0.6))) return true
+      return wp.allowedPositions.some((name) => employeeText.includes(normalizeText(name)))
     }
     const used = new Set()
     const assignForDivision = (divisionKey) => {
       const places = normalizedWorkplaces.filter((wp) => wp.divisionKey === divisionKey)
       const employees = roster.filter((emp) => {
-        const lowerDivision = String(emp.division || '').toLowerCase()
-        if (divisionKey === 'boiler') return lowerDivision.includes('котель')
-        if (divisionKey === 'turbine') return lowerDivision.includes('турбин')
-        return true
+        const key = guessDivisionKey(emp)
+        if (divisionKey === 'other') return key === 'other'
+        return key === divisionKey || key === 'other'
       })
       const rows = places.map((wp) => {
         const assigned = employees.find((emp) => !used.has(emp.id) && positionMatchesWorkplace(emp, wp)) || null
@@ -785,8 +809,8 @@ function UnitSectionPage() {
 
   const activeShiftCode = shiftCodes[activeShiftIndex] || '—'
   const nextShiftCode = shiftCodes[(activeShiftIndex + 1) % shiftCodes.length] || '—'
-  const currentRoster = useMemo(() => buildShiftRoster('current', currentShiftDate), [buildShiftRoster, currentShiftDate])
-  const nextRoster = useMemo(() => buildShiftRoster('next', currentShiftDate), [buildShiftRoster, currentShiftDate])
+  const currentRoster = useMemo(() => buildShiftRoster('current', activeShiftDate), [buildShiftRoster, activeShiftDate])
+  const nextRoster = useMemo(() => buildShiftRoster('next', activeShiftDate), [buildShiftRoster, activeShiftDate])
 
   const loadSchedule = useCallback(
     async (opts = {}) => {
@@ -1482,16 +1506,16 @@ function UnitSectionPage() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setActiveShiftIndex((prev) => (prev - 1 + shiftCodes.length) % shiftCodes.length)}
+                  onClick={() => setViewedShiftOffset((prev) => prev - 1)}
                   className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
                 >
                   ←
                 </button>
                 <span className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
-                  Листать вахты
+                  {new Date(activeShiftDate).toLocaleDateString('ru-RU')}
                 </span>
                 <button
-                  onClick={() => setActiveShiftIndex((prev) => (prev + 1) % shiftCodes.length)}
+                  onClick={() => setViewedShiftOffset((prev) => prev + 1)}
                   className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
                 >
                   →
