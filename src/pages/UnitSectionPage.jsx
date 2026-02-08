@@ -7,7 +7,9 @@ import { useAuth } from '../hooks/useAuth'
 import Badge from '../components/Badge'
 import { unitsMap, sectionsMap } from '../constants/units'
 import { createScheduleService } from '../services/scheduleService'
+import { createShiftHandoverService } from '../services/shiftHandoverService'
 import PersonnelSchedule from '../components/PersonnelSchedule'
+import ShiftHandoverPanel from '../components/ShiftHandoverPanel'
 import { productionCalendar } from '../constants/productionCalendar'
 import { getMonthCalendarMeta } from '../lib/productionNorm'
 
@@ -182,6 +184,7 @@ function UnitSectionPage() {
   const isKtc = unit === 'ktc'
   const supabase = useSupabase()
   const scheduleService = useMemo(() => createScheduleService(supabase), [supabase])
+  const handoverService = useMemo(() => createShiftHandoverService(supabase), [supabase])
   const { user } = useAuth()
   const profile = useProfile()
   const journalCode = 'ktc-docs'
@@ -233,6 +236,13 @@ function UnitSectionPage() {
   const pinStorageKey = 'ktc_filters'
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([])
   const [showSchedule, setShowSchedule] = useState(false)
+  const [handoverSession, setHandoverSession] = useState(null)
+  const [handoverTopic, setHandoverTopic] = useState(null)
+  const [handoverAssignments, setHandoverAssignments] = useState([])
+  const [activeShiftPermissions, setActiveShiftPermissions] = useState([])
+  const [loadingHandover, setLoadingHandover] = useState(false)
+  const [savingHandover, setSavingHandover] = useState(false)
+  const [handoverError, setHandoverError] = useState('')
 
   useEffect(() => {
     const saved = localStorage.getItem(pinStorageKey)
@@ -403,6 +413,38 @@ function UnitSectionPage() {
     if (section === 'personnel') return `Персонал / ГРАФИК · ${monthLabel}`
     return sectionLabel
   }, [section, monthLabel, sectionLabel])
+  const currentShiftDate = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const currentShiftType = useMemo(() => {
+    const hour = new Date().getHours()
+    return hour >= 20 || hour < 8 ? 'night' : 'day'
+  }, [])
+
+  const normalizeWorkplaceCode = useCallback((positionName = '') => {
+    const normalized = String(positionName)
+      .toLowerCase()
+      .replace(/[^a-zA-Zа-яА-Я0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+    return normalized || 'general'
+  }, [])
+
+  const scopesForPosition = useCallback((positionName = '') => {
+    const name = String(positionName).toLowerCase()
+    if (name.includes('начальник смены')) return ['shift_control', 'operational_log', 'daily_statement']
+    if (name.includes('машинист щита') || name.includes('старший машинист')) return ['operational_log', 'daily_statement']
+    return ['daily_statement']
+  }, [])
+  const scopeForEntryType = useCallback((entryType) => {
+    if (entryType === 'daily') return 'daily_statement'
+    if (entryType === 'turbine' || entryType === 'boiler') return 'operational_log'
+    if (entryType === 'admin') return 'shift_control'
+    return null
+  }, [])
+  const canCreateEntryByShift = useMemo(() => {
+    if (section !== 'docs' || unit !== 'ktc') return true
+    const requiredScope = scopeForEntryType(newEntry.type)
+    if (!requiredScope) return true
+    return activeShiftPermissions.some((row) => row.scope === requiredScope)
+  }, [activeShiftPermissions, newEntry.type, scopeForEntryType, section, unit])
 
   const shiftTemplateMap = useMemo(() => Object.fromEntries((shiftTemplates || []).map((t) => [t.id, t])), [shiftTemplates])
   const customShiftOptions = useMemo(
@@ -658,6 +700,24 @@ function UnitSectionPage() {
     })
     return list
   }, [collapsedPositions, groupedByPosition])
+  const buildDraftAssignments = useCallback(() => {
+    return employeesFromSchedule
+      .map((emp) => {
+        const entries = scheduleByDay.get(`${emp.id}-${currentShiftDate}`) || []
+        const hasWork = entries.some((e) => Number(e?.planned_hours || 0) > 0)
+        if (!hasWork) return null
+        return {
+          employee_id: emp.id,
+          employee_label: emp.label,
+          position_name: emp.position || '',
+          workplace_code: normalizeWorkplaceCode(emp.position || ''),
+          is_present: true,
+          note: '',
+          scopes: scopesForPosition(emp.position || ''),
+        }
+      })
+      .filter(Boolean)
+  }, [currentShiftDate, employeesFromSchedule, normalizeWorkplaceCode, scheduleByDay, scopesForPosition])
 
   const employeeIndexMap = useMemo(() => new Map(visibleRows.map((e, idx) => [e.id, idx])), [visibleRows])
 
@@ -757,12 +817,191 @@ function UnitSectionPage() {
     return () => clearTimeout(timer)
   }, [loadShiftTemplates])
 
+  const loadHandoverData = useCallback(async () => {
+    if (section !== 'personnel' || !unit || !user) return
+    setLoadingHandover(true)
+    setHandoverError('')
+    const [topicRes, sessionRes] = await Promise.all([
+      handoverService.fetchTopicForDate({ unit, shiftDate: currentShiftDate }),
+      handoverService.fetchSession({ unit, shiftDate: currentShiftDate, shiftType: currentShiftType }),
+    ])
+    if (topicRes.error) setHandoverError(topicRes.error.message)
+    if (sessionRes.error) setHandoverError((prev) => prev || sessionRes.error.message)
+    const topicData = topicRes.data || null
+    const sessionData = sessionRes.data || null
+    setHandoverTopic(topicData)
+    setHandoverSession(sessionData)
+
+    if (sessionData?.id) {
+      const mapById = new Map(employeesFromSchedule.map((emp) => [emp.id, emp]))
+      const assRes = await handoverService.fetchAssignments({ sessionId: sessionData.id })
+      if (assRes.error) {
+        setHandoverError((prev) => prev || assRes.error.message)
+        setHandoverAssignments(buildDraftAssignments())
+      } else {
+        const fromDb = (assRes.data || []).map((row) => {
+          const emp = mapById.get(row.employee_id)
+          const positionName = row.position_name || emp?.position || ''
+          return {
+            ...row,
+            employee_label: emp?.label || `ID ${row.employee_id}`,
+            position_name: positionName,
+            workplace_code: row.workplace_code || normalizeWorkplaceCode(positionName),
+            scopes: scopesForPosition(positionName),
+          }
+        })
+        setHandoverAssignments(fromDb.length ? fromDb : buildDraftAssignments())
+      }
+
+      if (profile?.employee?.id) {
+        const permsRes = await handoverService.fetchActivePermissions({
+          sessionId: sessionData.id,
+          employeeId: profile.employee.id,
+        })
+        if (permsRes.error) {
+          setHandoverError((prev) => prev || permsRes.error.message)
+          setActiveShiftPermissions([])
+        } else {
+          setActiveShiftPermissions(permsRes.data || [])
+        }
+      } else {
+        setActiveShiftPermissions([])
+      }
+    } else {
+      setHandoverAssignments(buildDraftAssignments())
+      setActiveShiftPermissions([])
+    }
+    setLoadingHandover(false)
+  }, [
+    buildDraftAssignments,
+    currentShiftDate,
+    currentShiftType,
+    employeesFromSchedule,
+    handoverService,
+    normalizeWorkplaceCode,
+    profile,
+    scopesForPosition,
+    section,
+    unit,
+    user,
+  ])
+
+  useEffect(() => {
+    if (section !== 'personnel' || !showSchedule || !user) return
+    const timer = setTimeout(() => {
+      void loadHandoverData()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [section, showSchedule, user, loadHandoverData])
+
+  const handleStartHandover = async () => {
+    if (!user || !unit || handoverSession) return
+    setSavingHandover(true)
+    setHandoverError('')
+    const payload = {
+      unit,
+      shift_date: currentShiftDate,
+      shift_type: currentShiftType,
+      status: 'handover',
+      chief_employee_id: profile?.employee?.id || null,
+      briefing_topic_id: handoverTopic?.id || null,
+    }
+    const { data, error } = await handoverService.createSession(payload)
+    if (error) {
+      setHandoverError(error.message)
+      setSavingHandover(false)
+      return
+    }
+    setHandoverSession(data)
+    setHandoverAssignments((prev) => (prev.length ? prev : buildDraftAssignments()))
+    setSavingHandover(false)
+  }
+
+  const handleAssignmentChange = useCallback((employeeId, patch) => {
+    setHandoverAssignments((prev) =>
+      prev.map((row) => (row.employee_id === employeeId ? { ...row, ...patch } : row)),
+    )
+  }, [])
+
+  const handleConfirmHandover = async () => {
+    if (!user || !handoverSession?.id) return
+    setSavingHandover(true)
+    setHandoverError('')
+    const now = new Date().toISOString()
+    const rows = handoverAssignments.map((row) => ({
+      session_id: handoverSession.id,
+      employee_id: row.employee_id,
+      workplace_code: row.workplace_code || normalizeWorkplaceCode(row.position_name || ''),
+      position_name: row.position_name || '',
+      source: row.source || 'schedule',
+      is_present: Boolean(row.is_present),
+      note: row.note || null,
+      confirmed_by_chief: true,
+      confirmed_at: now,
+    }))
+    const upsertAssignments = await handoverService.upsertAssignments(rows)
+    if (upsertAssignments.error) {
+      setHandoverError(upsertAssignments.error.message)
+      setSavingHandover(false)
+      return
+    }
+
+    const permissionRows = rows
+      .filter((row) => row.is_present)
+      .flatMap((row) =>
+        scopesForPosition(row.position_name).map((scope) => ({
+          session_id: handoverSession.id,
+          employee_id: row.employee_id,
+          scope,
+          workplace_code: row.workplace_code,
+          granted_at: now,
+          revoked_at: null,
+          created_by: user.id,
+        })),
+      )
+    if (permissionRows.length) {
+      const upsertPermissions = await handoverService.upsertPermissions(permissionRows)
+      if (upsertPermissions.error) {
+        setHandoverError(upsertPermissions.error.message)
+        setSavingHandover(false)
+        return
+      }
+    }
+
+    const upd = await handoverService.updateSession({
+      sessionId: handoverSession.id,
+      payload: {
+        status: 'active',
+        confirmed_at: now,
+        confirmed_by: user.id,
+      },
+    })
+    if (upd.error) {
+      setHandoverError(upd.error.message)
+      setSavingHandover(false)
+      return
+    }
+    setHandoverSession(upd.data || { ...handoverSession, status: 'active', confirmed_at: now, confirmed_by: user.id })
+    setSavingHandover(false)
+  }
+
   const handleCreate = async () => {
     if (!newEntry.title.trim()) {
       setEntriesError('Введите заголовок')
       return
     }
     if (!user) {
+      return
+    }
+    if (!canCreateEntryByShift) {
+      const requiredScope = scopeForEntryType(newEntry.type)
+      const scopeName =
+        requiredScope === 'daily_statement'
+          ? 'суточная ведомость'
+          : requiredScope === 'operational_log'
+            ? 'оперативный журнал'
+            : 'управление сменой'
+      setEntriesError(`Нет права на запись: требуется активное назначение на "${scopeName}" после подтверждения начальником смены.`)
       return
     }
     await createEntry({
@@ -1187,7 +1426,7 @@ function UnitSectionPage() {
             <div className="mt-3 flex gap-2">
               <button
                 onClick={handleCreate}
-                disabled={saving}
+                disabled={saving || !canCreateEntryByShift}
                 className="rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {saving ? 'Сохраняем...' : 'Создать'}
@@ -1200,6 +1439,11 @@ function UnitSectionPage() {
                 Очистить
               </button>
             </div>
+            {section === 'docs' && unit === 'ktc' && (
+              <p className="mt-2 text-[11px] text-slate-400">
+                Активные права на смене: {activeShiftPermissions.map((p) => p.scope).join(', ') || 'нет'}.
+              </p>
+            )}
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1291,61 +1535,81 @@ function UnitSectionPage() {
                 </div>
             </button>
           ) : (
-            <PersonnelSchedule
-              monthDates={monthDates}
-              monthLabel={monthLabel}
-              employeesFromSchedule={employeesFromSchedule}
-              filterCategory={filterCategory}
-              filterSection={filterSection}
-              filterQuery={filterQuery}
-              filterQueryInput={filterQueryInput}
-              unitCode={unit}
-              positionFilter={positionFilter}
-              positionOptions={positionOptions}
-              positionsOpen={positionsOpen}
-              setFilterCategory={setFilterCategory}
-              setFilterSection={setFilterSection}
-              setFilterQuery={setFilterQuery}
-              setFilterQueryInput={setFilterQueryInput}
-              setPositionFilter={setPositionFilter}
-              setPositionsOpen={setPositionsOpen}
-              resetFilters={resetFilters}
-              pinnedEmployees={pinnedEmployees}
-              hiddenEmployees={hiddenEmployees}
-              setPinnedEmployees={setPinnedEmployees}
-              setHiddenEmployees={setHiddenEmployees}
-              collapsedPositions={collapsedPositions}
-              setCollapsedPositions={setCollapsedPositions}
-              scheduleError={scheduleError}
-              loadingSchedule={loadingSchedule}
-              loadingStaff={loadingStaff}
-              staffError={staffError}
-              monthStart={monthStart}
-              setMonthStart={setMonthStart}
-              groupedByPosition={groupedByPosition}
-              selectedEmployeeIds={selectedEmployeeIds}
-              setSelectedEmployeeIds={setSelectedEmployeeIds}
-              scheduleByDay={scheduleByDay}
-              formatCellValue={formatCellValue}
-              resolveIconType={resolveIconType}
-              iconCatalog={iconCatalog}
-              monthNorm={monthNorm}
-              selectedCell={selectedCell}
-              selectedCells={selectedCells}
-              setSelectedCells={setSelectedCells}
-              handleCellClick={handleCellClick}
-              handleApplyShift={handleApplyShift}
-              applyShiftToSelected={applyShiftToSelected}
-              setSelectionAnchor={setSelectionAnchor}
-              setMenuCell={setMenuCell}
-              menuCell={menuCell}
-              shiftMenuPosition={shiftMenuPosition}
-              shiftOptions={shiftOptions}
-              pentagramTypesInSchedule={pentagramTypesInSchedule}
-              isPersonnel
-              ShiftIcon={ShiftIcon}
-              onBackToCard={() => setShowSchedule(false)}
-            />
+            <>
+              <ShiftHandoverPanel
+                unitCode={unit}
+                shiftDate={currentShiftDate}
+                chiefEmployee={profile?.employee}
+                userId={user?.id}
+                employeesFromSchedule={employeesFromSchedule}
+                scheduleByDay={scheduleByDay}
+                session={handoverSession}
+                topic={handoverTopic}
+                assignments={handoverAssignments}
+                loading={loadingHandover}
+                saving={savingHandover}
+                error={handoverError}
+                onReload={() => void loadHandoverData()}
+                onStart={handleStartHandover}
+                onConfirm={handleConfirmHandover}
+                onChangeAssignment={handleAssignmentChange}
+              />
+              <PersonnelSchedule
+                monthDates={monthDates}
+                monthLabel={monthLabel}
+                employeesFromSchedule={employeesFromSchedule}
+                filterCategory={filterCategory}
+                filterSection={filterSection}
+                filterQuery={filterQuery}
+                filterQueryInput={filterQueryInput}
+                unitCode={unit}
+                positionFilter={positionFilter}
+                positionOptions={positionOptions}
+                positionsOpen={positionsOpen}
+                setFilterCategory={setFilterCategory}
+                setFilterSection={setFilterSection}
+                setFilterQuery={setFilterQuery}
+                setFilterQueryInput={setFilterQueryInput}
+                setPositionFilter={setPositionFilter}
+                setPositionsOpen={setPositionsOpen}
+                resetFilters={resetFilters}
+                pinnedEmployees={pinnedEmployees}
+                hiddenEmployees={hiddenEmployees}
+                setPinnedEmployees={setPinnedEmployees}
+                setHiddenEmployees={setHiddenEmployees}
+                collapsedPositions={collapsedPositions}
+                setCollapsedPositions={setCollapsedPositions}
+                scheduleError={scheduleError}
+                loadingSchedule={loadingSchedule}
+                loadingStaff={loadingStaff}
+                staffError={staffError}
+                monthStart={monthStart}
+                setMonthStart={setMonthStart}
+                groupedByPosition={groupedByPosition}
+                selectedEmployeeIds={selectedEmployeeIds}
+                setSelectedEmployeeIds={setSelectedEmployeeIds}
+                scheduleByDay={scheduleByDay}
+                formatCellValue={formatCellValue}
+                resolveIconType={resolveIconType}
+                iconCatalog={iconCatalog}
+                monthNorm={monthNorm}
+                selectedCell={selectedCell}
+                selectedCells={selectedCells}
+                setSelectedCells={setSelectedCells}
+                handleCellClick={handleCellClick}
+                handleApplyShift={handleApplyShift}
+                applyShiftToSelected={applyShiftToSelected}
+                setSelectionAnchor={setSelectionAnchor}
+                setMenuCell={setMenuCell}
+                menuCell={menuCell}
+                shiftMenuPosition={shiftMenuPosition}
+                shiftOptions={shiftOptions}
+                pentagramTypesInSchedule={pentagramTypesInSchedule}
+                isPersonnel
+                ShiftIcon={ShiftIcon}
+                onBackToCard={() => setShowSchedule(false)}
+              />
+            </>
           )}
         </div>
       )}
