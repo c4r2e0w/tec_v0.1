@@ -1072,14 +1072,14 @@ function UnitSectionPage() {
     setMenuCell(null)
     const unique = new Map()
     selectedCells.forEach((c) => unique.set(`${c.employeeId}-${c.date}`, c))
-    const pending = new Map()
-    for (const cell of unique.values()) {
-      await handleApplyShift(cell.employeeId, cell.date, shiftId, { pending, skipReload: true })
-    }
-    applyPendingToScheduleRows(pending)
-    void loadSchedule({ silent: true })
     setSelectedCells([])
     setSelectionAnchor(null)
+    const tasks = Array.from(unique.values()).map((cell) =>
+      handleApplyShift(cell.employeeId, cell.date, shiftId, { skipReload: true }),
+    )
+    void Promise.allSettled(tasks).then(() => {
+      void loadSchedule({ silent: true })
+    })
   }
 
   if (!unitData || !sectionLabel) {

@@ -933,10 +933,11 @@ function PersonnelSchedule(props) {
                           key={opt.value}
                         onClick={(e) => {
                           e.stopPropagation()
+                          setMenuCell(null)
                           if (applyShiftToSelected) {
-                            applyShiftToSelected(opt.value)
+                            void applyShiftToSelected(opt.value)
                           } else {
-                            handleApplyShift(selectedCell?.employeeId || 0, selectedCell?.date || '', opt.value)
+                            void handleApplyShift(selectedCell?.employeeId || 0, selectedCell?.date || '', opt.value)
                           }
                         }}
                         className={`no-spy-btn flex w-full items-center justify-between rounded-lg border px-2 py-1 text-left transition ${
