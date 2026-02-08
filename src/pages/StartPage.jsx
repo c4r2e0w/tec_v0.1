@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSupabase } from '../context/SupabaseProvider'
 import { useEmployeeProfile } from '../hooks/useEmployeeProfile'
+import { useAuth } from '../hooks/useAuth'
+import { useProfile } from '../hooks/useProfile'
+import { createScheduleService } from '../services/scheduleService'
+import { createShiftHandoverService } from '../services/shiftHandoverService'
+import ShiftHandoverPanel from '../components/ShiftHandoverPanel'
 
 const updates = [
   {
@@ -31,11 +36,88 @@ const ideas = [
 
 function StartPage() {
   const supabase = useSupabase()
+  const { user } = useAuth()
+  const profile = useProfile()
+  const scheduleService = useMemo(() => createScheduleService(supabase), [supabase])
+  const handoverService = useMemo(() => createShiftHandoverService(supabase), [supabase])
   const employeeProfile = useEmployeeProfile()
   const [probe, setProbe] = useState({ loading: true, result: null, error: '' })
   const [employees, setEmployees] = useState([])
   const [loadingEmployees, setLoadingEmployees] = useState(true)
   const [employeesError, setEmployeesError] = useState('')
+  const [scheduleToday, setScheduleToday] = useState([])
+  const [handoverSession, setHandoverSession] = useState(null)
+  const [handoverTopic, setHandoverTopic] = useState(null)
+  const [handoverAssignments, setHandoverAssignments] = useState([])
+  const [loadingHandover, setLoadingHandover] = useState(false)
+  const [savingHandover, setSavingHandover] = useState(false)
+  const [handoverError, setHandoverError] = useState('')
+  const unitCode = 'ktc'
+  const currentShiftDate = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const currentShiftType = useMemo(() => {
+    const hour = new Date().getHours()
+    return hour >= 20 || hour < 8 ? 'night' : 'day'
+  }, [])
+
+  const normalizeWorkplaceCode = useCallback((positionName = '') => {
+    const normalized = String(positionName)
+      .toLowerCase()
+      .replace(/[^a-zA-Zа-яА-Я0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+    return normalized || 'general'
+  }, [])
+
+  const scopesForPosition = useCallback((positionName = '') => {
+    const name = String(positionName).toLowerCase()
+    if (name.includes('начальник смены')) return ['shift_control', 'operational_log', 'daily_statement']
+    if (name.includes('машинист щита') || name.includes('старший машинист')) return ['operational_log', 'daily_statement']
+    return ['daily_statement']
+  }, [])
+
+  const scheduleByDay = useMemo(() => {
+    const map = new Map()
+    scheduleToday.forEach((row) => {
+      const key = `${row.employee_id}-${row.date}`
+      const list = map.get(key) || []
+      list.push(row)
+      map.set(key, list)
+    })
+    return map
+  }, [scheduleToday])
+
+  const employeesFromSchedule = useMemo(() => {
+    const map = new Map()
+    scheduleToday.forEach((row) => {
+      const label = row.employees
+        ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ')
+        : `ID ${row.employee_id}`
+      map.set(row.employee_id, {
+        id: row.employee_id,
+        label,
+        position: row.employees?.positions?.name || '',
+      })
+    })
+    return Array.from(map.values())
+  }, [scheduleToday])
+
+  const buildDraftAssignments = useCallback(() => {
+    return employeesFromSchedule
+      .map((emp) => {
+        const entries = scheduleByDay.get(`${emp.id}-${currentShiftDate}`) || []
+        const hasWork = entries.some((e) => Number(e?.planned_hours || 0) > 0)
+        if (!hasWork) return null
+        return {
+          employee_id: emp.id,
+          employee_label: emp.label,
+          position_name: emp.position || '',
+          workplace_code: normalizeWorkplaceCode(emp.position || ''),
+          is_present: true,
+          note: '',
+          scopes: scopesForPosition(emp.position || ''),
+        }
+      })
+      .filter(Boolean)
+  }, [currentShiftDate, employeesFromSchedule, normalizeWorkplaceCode, scheduleByDay, scopesForPosition])
 
   useEffect(() => {
     let active = true
@@ -62,6 +144,158 @@ function StartPage() {
       active = false
     }
   }, [supabase])
+
+  const loadHandoverData = useCallback(async () => {
+    if (!user) return
+    setLoadingHandover(true)
+    setHandoverError('')
+    const scheduleRes = await scheduleService.fetchRange({
+      from: currentShiftDate,
+      to: currentShiftDate,
+      unit: unitCode,
+    })
+    if (scheduleRes.error) {
+      setHandoverError(scheduleRes.error.message)
+      setScheduleToday([])
+      setLoadingHandover(false)
+      return
+    }
+    setScheduleToday(scheduleRes.data || [])
+    const [topicRes, sessionRes] = await Promise.all([
+      handoverService.fetchTopicForDate({ unit: unitCode, shiftDate: currentShiftDate }),
+      handoverService.fetchSession({ unit: unitCode, shiftDate: currentShiftDate, shiftType: currentShiftType }),
+    ])
+    setHandoverTopic(topicRes.data || null)
+    const session = sessionRes.data || null
+    setHandoverSession(session)
+    if (session?.id) {
+      const assRes = await handoverService.fetchAssignments({ sessionId: session.id })
+      if (assRes.error) {
+        setHandoverError((prev) => prev || assRes.error.message)
+        setHandoverAssignments(buildDraftAssignments())
+      } else {
+        const mapById = new Map((scheduleRes.data || []).map((row) => {
+          const label = row.employees
+            ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ')
+            : `ID ${row.employee_id}`
+          return [row.employee_id, { label, position: row.employees?.positions?.name || '' }]
+        }))
+        setHandoverAssignments((assRes.data || []).map((row) => {
+          const emp = mapById.get(row.employee_id)
+          const positionName = row.position_name || emp?.position || ''
+          return {
+            ...row,
+            employee_label: emp?.label || `ID ${row.employee_id}`,
+            position_name: positionName,
+            scopes: scopesForPosition(positionName),
+            workplace_code: row.workplace_code || normalizeWorkplaceCode(positionName),
+          }
+        }))
+      }
+    } else {
+      setHandoverAssignments(buildDraftAssignments())
+    }
+    setLoadingHandover(false)
+  }, [
+    buildDraftAssignments,
+    currentShiftDate,
+    currentShiftType,
+    handoverService,
+    normalizeWorkplaceCode,
+    scheduleService,
+    scopesForPosition,
+    user,
+  ])
+
+  useEffect(() => {
+    if (!user) return
+    const timer = setTimeout(() => {
+      void loadHandoverData()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [user, loadHandoverData])
+
+  const handleStartHandover = async () => {
+    if (!user || handoverSession) return
+    setSavingHandover(true)
+    setHandoverError('')
+    const { data, error } = await handoverService.createSession({
+      unit: unitCode,
+      shift_date: currentShiftDate,
+      shift_type: currentShiftType,
+      status: 'handover',
+      chief_employee_id: profile?.employee?.id || null,
+      briefing_topic_id: handoverTopic?.id || null,
+    })
+    if (error) {
+      setHandoverError(error.message)
+      setSavingHandover(false)
+      return
+    }
+    setHandoverSession(data)
+    setHandoverAssignments((prev) => (prev.length ? prev : buildDraftAssignments()))
+    setSavingHandover(false)
+  }
+
+  const handleAssignmentChange = useCallback((employeeId, patch) => {
+    setHandoverAssignments((prev) => prev.map((row) => (row.employee_id === employeeId ? { ...row, ...patch } : row)))
+  }, [])
+
+  const handleConfirmHandover = async () => {
+    if (!user || !handoverSession?.id) return
+    setSavingHandover(true)
+    setHandoverError('')
+    const now = new Date().toISOString()
+    const rows = handoverAssignments.map((row) => ({
+      session_id: handoverSession.id,
+      employee_id: row.employee_id,
+      workplace_code: row.workplace_code || normalizeWorkplaceCode(row.position_name || ''),
+      position_name: row.position_name || '',
+      source: row.source || 'schedule',
+      is_present: Boolean(row.is_present),
+      note: row.note || null,
+      confirmed_by_chief: true,
+      confirmed_at: now,
+    }))
+    const upsertAssignments = await handoverService.upsertAssignments(rows)
+    if (upsertAssignments.error) {
+      setHandoverError(upsertAssignments.error.message)
+      setSavingHandover(false)
+      return
+    }
+    const permissionRows = rows
+      .filter((row) => row.is_present)
+      .flatMap((row) =>
+        scopesForPosition(row.position_name).map((scope) => ({
+          session_id: handoverSession.id,
+          employee_id: row.employee_id,
+          scope,
+          workplace_code: row.workplace_code || '',
+          granted_at: now,
+          revoked_at: null,
+          created_by: user.id,
+        })),
+      )
+    if (permissionRows.length) {
+      const upsertPermissions = await handoverService.upsertPermissions(permissionRows)
+      if (upsertPermissions.error) {
+        setHandoverError(upsertPermissions.error.message)
+        setSavingHandover(false)
+        return
+      }
+    }
+    const upd = await handoverService.updateSession({
+      sessionId: handoverSession.id,
+      payload: { status: 'active', confirmed_at: now, confirmed_by: user.id },
+    })
+    if (upd.error) {
+      setHandoverError(upd.error.message)
+      setSavingHandover(false)
+      return
+    }
+    setHandoverSession(upd.data || { ...handoverSession, status: 'active' })
+    setSavingHandover(false)
+  }
 
   return (
     <div className="space-y-6">
@@ -121,6 +355,25 @@ function StartPage() {
           </button>
         </div>
       </div>
+
+      <ShiftHandoverPanel
+        unitCode={unitCode}
+        shiftDate={currentShiftDate}
+        chiefEmployee={profile?.employee}
+        userId={user?.id}
+        employeesFromSchedule={employeesFromSchedule}
+        scheduleByDay={scheduleByDay}
+        session={handoverSession}
+        topic={handoverTopic}
+        assignments={handoverAssignments}
+        loading={loadingHandover}
+        saving={savingHandover}
+        error={handoverError}
+        onStart={handleStartHandover}
+        onReload={() => void loadHandoverData()}
+        onConfirm={handleConfirmHandover}
+        onChangeAssignment={handleAssignmentChange}
+      />
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border border-border bg-white p-6 shadow-lg">

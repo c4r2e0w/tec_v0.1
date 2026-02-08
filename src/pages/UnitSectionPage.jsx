@@ -413,6 +413,7 @@ function UnitSectionPage() {
     if (section === 'personnel') return `Персонал / ГРАФИК · ${monthLabel}`
     return sectionLabel
   }, [section, monthLabel, sectionLabel])
+  const enableInlineHandover = false
   const currentShiftDate = useMemo(() => new Date().toISOString().slice(0, 10), [])
   const currentShiftType = useMemo(() => {
     const hour = new Date().getHours()
@@ -887,12 +888,41 @@ function UnitSectionPage() {
   ])
 
   useEffect(() => {
-    if (section !== 'personnel' || !showSchedule || !user) return
+    if (!enableInlineHandover || section !== 'personnel' || !showSchedule || !user) return
     const timer = setTimeout(() => {
       void loadHandoverData()
     }, 0)
     return () => clearTimeout(timer)
-  }, [section, showSchedule, user, loadHandoverData])
+  }, [enableInlineHandover, section, showSchedule, user, loadHandoverData])
+
+  const loadCurrentShiftPermissions = useCallback(async () => {
+    if (!unit || !user || !profile?.employee?.id) {
+      setActiveShiftPermissions([])
+      return
+    }
+    const sessionRes = await handoverService.fetchSession({
+      unit,
+      shiftDate: currentShiftDate,
+      shiftType: currentShiftType,
+    })
+    if (sessionRes.error || !sessionRes.data?.id) {
+      setActiveShiftPermissions([])
+      return
+    }
+    const permsRes = await handoverService.fetchActivePermissions({
+      sessionId: sessionRes.data.id,
+      employeeId: profile.employee.id,
+    })
+    setActiveShiftPermissions(permsRes.error ? [] : (permsRes.data || []))
+  }, [currentShiftDate, currentShiftType, handoverService, profile, unit, user])
+
+  useEffect(() => {
+    if (section !== 'docs' || unit !== 'ktc' || !user) return
+    const timer = setTimeout(() => {
+      void loadCurrentShiftPermissions()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [section, unit, user, loadCurrentShiftPermissions])
 
   const handleStartHandover = async () => {
     if (!user || !unit || handoverSession) return
@@ -1536,24 +1566,26 @@ function UnitSectionPage() {
             </button>
           ) : (
             <>
-              <ShiftHandoverPanel
-                unitCode={unit}
-                shiftDate={currentShiftDate}
-                chiefEmployee={profile?.employee}
-                userId={user?.id}
-                employeesFromSchedule={employeesFromSchedule}
-                scheduleByDay={scheduleByDay}
-                session={handoverSession}
-                topic={handoverTopic}
-                assignments={handoverAssignments}
-                loading={loadingHandover}
-                saving={savingHandover}
-                error={handoverError}
-                onReload={() => void loadHandoverData()}
-                onStart={handleStartHandover}
-                onConfirm={handleConfirmHandover}
-                onChangeAssignment={handleAssignmentChange}
-              />
+              {enableInlineHandover && (
+                <ShiftHandoverPanel
+                  unitCode={unit}
+                  shiftDate={currentShiftDate}
+                  chiefEmployee={profile?.employee}
+                  userId={user?.id}
+                  employeesFromSchedule={employeesFromSchedule}
+                  scheduleByDay={scheduleByDay}
+                  session={handoverSession}
+                  topic={handoverTopic}
+                  assignments={handoverAssignments}
+                  loading={loadingHandover}
+                  saving={savingHandover}
+                  error={handoverError}
+                  onReload={() => void loadHandoverData()}
+                  onStart={handleStartHandover}
+                  onConfirm={handleConfirmHandover}
+                  onChangeAssignment={handleAssignmentChange}
+                />
+              )}
               <PersonnelSchedule
                 monthDates={monthDates}
                 monthLabel={monthLabel}

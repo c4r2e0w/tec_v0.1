@@ -24,7 +24,7 @@ export async function fetchShiftSession({ supabase, unit, shiftDate, shiftType =
   if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
   return supabase
     .from('shift_sessions')
-    .select('id, unit, shift_date, shift_type, status, chief_employee_id, briefing_topic_id, confirmed_at, confirmed_by, created_at')
+    .select('*')
     .eq('unit', unit)
     .eq('shift_date', shiftDate)
     .eq('shift_type', shiftType)
@@ -33,21 +33,50 @@ export async function fetchShiftSession({ supabase, unit, shiftDate, shiftType =
 
 export async function createShiftSession({ supabase, payload }) {
   if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
-  return supabase
+  const res = await supabase
     .from('shift_sessions')
     .upsert(payload, { onConflict: 'unit,shift_date,shift_type' })
-    .select('id, unit, shift_date, shift_type, status, chief_employee_id, briefing_topic_id, confirmed_at, confirmed_by, created_at')
+    .select('*')
     .maybeSingle()
+  if (!res.error) return res
+
+  const msg = String(res.error.message || '').toLowerCase()
+  if (msg.includes('briefing_topic_id') && payload?.briefing_topic_id !== undefined) {
+    const fallbackPayload = { ...payload }
+    fallbackPayload.brifing_topic_id = fallbackPayload.briefing_topic_id
+    delete fallbackPayload.briefing_topic_id
+    return supabase
+      .from('shift_sessions')
+      .upsert(fallbackPayload, { onConflict: 'unit,shift_date,shift_type' })
+      .select('*')
+      .maybeSingle()
+  }
+  return res
 }
 
 export async function updateShiftSession({ supabase, sessionId, payload }) {
   if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
-  return supabase
+  const res = await supabase
     .from('shift_sessions')
     .update(payload)
     .eq('id', sessionId)
-    .select('id, unit, shift_date, shift_type, status, chief_employee_id, briefing_topic_id, confirmed_at, confirmed_by, created_at')
+    .select('*')
     .maybeSingle()
+  if (!res.error) return res
+
+  const msg = String(res.error.message || '').toLowerCase()
+  if (msg.includes('briefing_topic_id') && payload?.briefing_topic_id !== undefined) {
+    const fallbackPayload = { ...payload }
+    fallbackPayload.brifing_topic_id = fallbackPayload.briefing_topic_id
+    delete fallbackPayload.briefing_topic_id
+    return supabase
+      .from('shift_sessions')
+      .update(fallbackPayload)
+      .eq('id', sessionId)
+      .select('*')
+      .maybeSingle()
+  }
+  return res
 }
 
 export async function fetchShiftAssignments({ supabase, sessionId }) {
