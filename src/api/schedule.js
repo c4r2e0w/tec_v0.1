@@ -98,3 +98,10 @@ export async function fetchPositions({ supabase }) {
   if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
   return supabase.from('positions').select('id, name, departament_name, devision_name, type, sort_weight').order('sort_weight', { ascending: true, nullsFirst: false }).order('name', { ascending: true })
 }
+
+export async function fetchWorkplaces({ supabase, unit }) {
+  if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
+  let query = supabase.from('workplace').select('*')
+  if (unit) query = query.eq('unit', unit)
+  return query
+}

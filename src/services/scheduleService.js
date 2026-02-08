@@ -7,6 +7,7 @@ import {
   fetchPositions,
   fetchScheduleRange,
   fetchShiftTemplates,
+  fetchWorkplaces,
 } from '../api/schedule'
 
 /**
@@ -18,6 +19,7 @@ export function createScheduleService(supabase) {
     fetchOverrides: ({ from, to, unit }) => fetchOverridesRange({ supabase, from, to, unit }),
     fetchEmployeesByUnit: (filters) => fetchEmployeesByUnit({ supabase, filters }),
     fetchPositions: () => fetchPositions({ supabase }),
+    fetchWorkplaces: ({ unit }) => fetchWorkplaces({ supabase, unit }),
     fetchShiftTemplates: () => fetchShiftTemplates({ supabase }),
     createEntry: (payload) => createScheduleEntry({ supabase, payload }),
     deleteEntry: ({ employeeId, date }) => deleteScheduleEntry({ supabase, employeeId, date }),

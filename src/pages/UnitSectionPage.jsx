@@ -221,6 +221,7 @@ function UnitSectionPage() {
   const [staffError, setStaffError] = useState('')
   const [loadingStaff, setLoadingStaff] = useState(false)
   const [positionsList, setPositionsList] = useState([])
+  const [workplaces, setWorkplaces] = useState([])
   const [collapsedPositions, setCollapsedPositions] = useState([])
   const [pinnedEmployees, setPinnedEmployees] = useState([])
   const [hiddenEmployees, setHiddenEmployees] = useState([])
@@ -481,7 +482,7 @@ function UnitSectionPage() {
         const department = emp.positions?.departament_name || positionsMap[emp.position_id]?.departament_name || ''
         const positionType = emp.positions?.type || positionsMap[emp.position_id]?.type || ''
         const weight = emp.positions?.sort_weight ?? positionsMap[emp.position_id]?.sort_weight ?? getPositionWeight(position)
-        return { id: emp.id, label, position, division, department, positionType, weight }
+        return { id: emp.id, label, position, position_id: emp.position_id || null, division, department, positionType, weight }
       })
       .sort((a, b) => a.weight - b.weight || a.label.localeCompare(b.label, 'ru'))
   }, [staff, positionsMap, getPositionWeight])
@@ -500,6 +501,7 @@ function UnitSectionPage() {
           id: row.employee_id,
           label,
           position: posName,
+          position_id: row.employees?.position_id || null,
           division: row.employees?.positions?.devision_name || '',
           department: row.employees?.positions?.departament_name || '',
           positionType: row.employees?.positions?.type || '',
@@ -694,28 +696,51 @@ function UnitSectionPage() {
     return d.toISOString().slice(0, 10)
   }, [])
 
-  const buildShiftRoster = useCallback((shiftCode, targetDate) => {
-    const shiftToken = `вахта ${String(shiftCode).toLowerCase()}`
-    const employeesWithHours = employeesFromSchedule.filter((emp) => {
+  const buildShiftRoster = useCallback((mode, targetDate) => {
+    const nextDate = addDaysIso(targetDate, 1)
+    const currentByHours = employeesFromSchedule.filter((emp) => {
       const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
-      return entries.some((entry) => Number(entry?.planned_hours || 0) > 0)
+      return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
     })
-    const hasExplicitShiftLabels = employeesWithHours.some((emp) => {
-      const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
-      const noteText = entries.map((entry) => `${entry?.note || ''} ${entry?.source || ''}`).join(' ').toLowerCase()
-      return noteText.includes('вахта ')
+    const replacementByHours = employeesFromSchedule.filter((emp) => {
+      const todayEntries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
+      const nextEntries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
+      const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
+      const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
+      return has3Today && has9Next
     })
-    const roster = hasExplicitShiftLabels
-      ? employeesWithHours.filter((emp) => {
-          const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
-          const noteText = entries.map((entry) => `${entry?.note || ''} ${entry?.source || ''}`).join(' ').toLowerCase()
-          return noteText.includes(shiftToken)
-        })
-      : employeesWithHours
+    const roster = mode === 'next' ? replacementByHours : currentByHours
 
+    const pickWorkplace = (emp) => {
+      const positionName = String(emp.position || '').toLowerCase()
+      const positionId = emp.position_id
+      return workplaces.find((wp) => {
+        const directId = wp.position_id || wp.id_position || wp.allowed_position_id
+        if (directId && positionId && Number(directId) === Number(positionId)) return true
+        const wpText = String(wp.position_name || wp.position || wp.allowed_position_name || '').toLowerCase()
+        if (wpText && positionName && positionName.includes(wpText)) return true
+        const names = Array.isArray(wp.allowed_positions) ? wp.allowed_positions : []
+        return names.some((n) => positionName.includes(String(n || '').toLowerCase()))
+      })
+    }
+    const getDivisionKey = (emp) => {
+      const wp = pickWorkplace(emp)
+      const raw =
+        wp?.devision_name ||
+        wp?.division_name ||
+        wp?.division ||
+        wp?.departament_name ||
+        wp?.department_name ||
+        emp.division ||
+        ''
+      const lower = String(raw).toLowerCase()
+      if (lower.includes('котель')) return 'boiler'
+      if (lower.includes('турбин')) return 'turbine'
+      return 'other'
+    }
     const divisions = {
-      boiler: roster.filter((emp) => String(emp.division || '').toLowerCase().includes('котель')),
-      turbine: roster.filter((emp) => String(emp.division || '').toLowerCase().includes('турбин')),
+      boiler: roster.filter((emp) => getDivisionKey(emp) === 'boiler'),
+      turbine: roster.filter((emp) => getDivisionKey(emp) === 'turbine'),
     }
     const roleName = (emp) => String(emp.position || '').toLowerCase()
     const groupRoles = (list) => ({
@@ -736,18 +761,12 @@ function UnitSectionPage() {
       boiler: groupRoles(divisions.boiler),
       turbine: groupRoles(divisions.turbine),
     }
-  }, [employeesFromSchedule, scheduleByDay])
+  }, [addDaysIso, employeesFromSchedule, scheduleByDay, workplaces])
 
   const activeShiftCode = shiftCodes[activeShiftIndex] || '—'
   const nextShiftCode = shiftCodes[(activeShiftIndex + 1) % shiftCodes.length] || '—'
-  const currentRoster = useMemo(
-    () => buildShiftRoster(activeShiftCode, currentShiftDate),
-    [activeShiftCode, buildShiftRoster, currentShiftDate],
-  )
-  const nextRoster = useMemo(
-    () => buildShiftRoster(nextShiftCode, addDaysIso(currentShiftDate, 1)),
-    [addDaysIso, buildShiftRoster, currentShiftDate, nextShiftCode],
-  )
+  const currentRoster = useMemo(() => buildShiftRoster('current', currentShiftDate), [buildShiftRoster, currentShiftDate])
+  const nextRoster = useMemo(() => buildShiftRoster('next', currentShiftDate), [buildShiftRoster, currentShiftDate])
 
   const loadSchedule = useCallback(
     async (opts = {}) => {
@@ -837,6 +856,15 @@ function UnitSectionPage() {
     }
     loadPositions()
   }, [scheduleService])
+
+  useEffect(() => {
+    if (!unit || section !== 'personnel' || !user) return
+    const timer = setTimeout(async () => {
+      const { data, error } = await scheduleService.fetchWorkplaces({ unit })
+      if (!error) setWorkplaces(data || [])
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [scheduleService, section, unit, user])
 
   useEffect(() => {
     const timer = setTimeout(() => {
