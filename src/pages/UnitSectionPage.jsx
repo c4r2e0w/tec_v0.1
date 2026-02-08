@@ -1259,20 +1259,20 @@ function UnitSectionPage() {
           {!showSchedule ? (
             <button
               type="button"
-                onClick={() => setShowSchedule(true)}
-                className="group relative w-full overflow-hidden rounded-3xl border border-sky-500/40 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-6 text-left shadow-[0_10px_40px_-12px_rgba(56,189,248,0.35)] transition hover:-translate-y-0.5 hover:border-sky-300/60 hover:shadow-[0_18px_50px_-12px_rgba(56,189,248,0.45)] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-              >
-                <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.15),transparent_45%),radial-gradient(circle_at_80%_0%,rgba(14,165,233,0.18),transparent_42%)]" />
+              onClick={() => setShowSchedule(true)}
+              className="group relative w-full overflow-hidden rounded-3xl border border-accent/45 bg-gradient-to-br from-slate-900 via-[#0f1e18] to-slate-950 p-6 text-left shadow-[0_12px_40px_-14px_rgba(31,107,67,0.5)] transition hover:-translate-y-0.5 hover:border-accent/70 hover:shadow-[0_20px_52px_-14px_rgba(31,107,67,0.62)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/55"
+            >
+                <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_20%,rgba(62,219,138,0.2),transparent_45%),radial-gradient(circle_at_80%_0%,rgba(31,107,67,0.28),transparent_42%)]" />
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="mt-1 text-2xl font-semibold text-white">ГРАФИК</h3>
-                    <p className="mt-1 text-sm text-slate-200/90">Открыть календарь смен персонала.</p>
+                    <p className="mt-1 text-sm text-gray-200/90">Открыть календарь смен персонала.</p>
                   </div>
-                  <span className="rounded-full border border-amber-300/50 bg-amber-400/20 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-amber-100">
+                  <span className="rounded-full border border-warning/60 bg-warning-light px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-amber-100">
                     Тестирование
                   </span>
                 </div>
-              </button>
+            </button>
           ) : (
             <PersonnelSchedule
               monthDates={monthDates}
