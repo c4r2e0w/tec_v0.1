@@ -705,14 +705,14 @@ function UnitSectionPage() {
           wp.devision_name ||
           wp.division_name ||
           wp.division ||
+          wp.departament_id ||
           wp.departament_name ||
           wp.department_name ||
           wp.section ||
           ''
         const division = String(rawDivision || '').toLowerCase()
         const sort = Number(wp.sort_weight ?? wp.sort_order ?? wp.order_index ?? index)
-        const positionId = wp.position_id || wp.id_position || wp.allowed_position_id || null
-        const rawPosition = wp.position_name || wp.position || wp.allowed_position_name || ''
+        const rawPosition = wp.position_id || wp.position_name || wp.position || wp.allowed_position_name || ''
         const positionText = String(rawPosition || '').toLowerCase().trim()
         const allowedPositions = Array.isArray(wp.allowed_positions)
           ? wp.allowed_positions.map((n) => String(n || '').toLowerCase().trim()).filter(Boolean)
@@ -727,7 +727,6 @@ function UnitSectionPage() {
           name,
           divisionKey,
           sort: Number.isFinite(sort) ? sort : index,
-          positionId,
           positionText,
           allowedPositions,
         }
@@ -751,9 +750,7 @@ function UnitSectionPage() {
     const roster = mode === 'next' ? byReplacementShiftHours : byCurrentShiftHours
     const positionMatchesWorkplace = (emp, wp) => {
       const positionName = String(emp.position || '').toLowerCase().trim()
-      const positionId = emp.position_id
-      if (wp.positionId && positionId && Number(wp.positionId) === Number(positionId)) return true
-      if (wp.positionText && positionName.includes(wp.positionText)) return true
+      if (wp.positionText && (positionName === wp.positionText || positionName.includes(wp.positionText) || wp.positionText.includes(positionName))) return true
       return wp.allowedPositions.some((name) => positionName.includes(name))
     }
     const used = new Set()
@@ -774,12 +771,7 @@ function UnitSectionPage() {
           employee: assigned,
         }
       })
-      const leftovers = employees.filter((emp) => !used.has(emp.id)).map((emp) => ({
-        workplaceId: `unassigned-${divisionKey}-${emp.id}`,
-        workplaceName: 'Без закрепленного рабочего места',
-        employee: emp,
-      }))
-      return rows.concat(leftovers)
+      return rows
     }
     const chief =
       roster.find((emp) => String(emp.position || '').toLowerCase().includes('начальник смены')) || null
