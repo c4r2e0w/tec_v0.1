@@ -696,72 +696,100 @@ function UnitSectionPage() {
     return d.toISOString().slice(0, 10)
   }, [])
 
+  const normalizedWorkplaces = useMemo(() => {
+    return (workplaces || [])
+      .map((wp, index) => {
+        const code = String(wp.code || wp.workplace_code || wp.slug || wp.id || `wp-${index}`)
+        const name = String(wp.name || wp.workplace_name || wp.title || wp.position_name || wp.position || code)
+        const rawDivision =
+          wp.devision_name ||
+          wp.division_name ||
+          wp.division ||
+          wp.departament_name ||
+          wp.department_name ||
+          wp.section ||
+          ''
+        const division = String(rawDivision || '').toLowerCase()
+        const sort = Number(wp.sort_weight ?? wp.sort_order ?? wp.order_index ?? index)
+        const positionId = wp.position_id || wp.id_position || wp.allowed_position_id || null
+        const rawPosition = wp.position_name || wp.position || wp.allowed_position_name || ''
+        const positionText = String(rawPosition || '').toLowerCase().trim()
+        const allowedPositions = Array.isArray(wp.allowed_positions)
+          ? wp.allowed_positions.map((n) => String(n || '').toLowerCase().trim()).filter(Boolean)
+          : []
+        const divisionKey = division.includes('котель')
+          ? 'boiler'
+          : division.includes('турбин')
+            ? 'turbine'
+            : 'other'
+        return {
+          id: code,
+          name,
+          divisionKey,
+          sort: Number.isFinite(sort) ? sort : index,
+          positionId,
+          positionText,
+          allowedPositions,
+        }
+      })
+      .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'ru'))
+  }, [workplaces])
+
   const buildShiftRoster = useCallback((mode, targetDate) => {
     const nextDate = addDaysIso(targetDate, 1)
-    const currentByHours = employeesFromSchedule.filter((emp) => {
+    const byCurrentShiftHours = employeesFromSchedule.filter((emp) => {
       const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
       return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
     })
-    const replacementByHours = employeesFromSchedule.filter((emp) => {
+    const byReplacementShiftHours = employeesFromSchedule.filter((emp) => {
       const todayEntries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
       const nextEntries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
       const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
       const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
       return has3Today && has9Next
     })
-    const roster = mode === 'next' ? replacementByHours : currentByHours
-
-    const pickWorkplace = (emp) => {
-      const positionName = String(emp.position || '').toLowerCase()
+    const roster = mode === 'next' ? byReplacementShiftHours : byCurrentShiftHours
+    const positionMatchesWorkplace = (emp, wp) => {
+      const positionName = String(emp.position || '').toLowerCase().trim()
       const positionId = emp.position_id
-      return workplaces.find((wp) => {
-        const directId = wp.position_id || wp.id_position || wp.allowed_position_id
-        if (directId && positionId && Number(directId) === Number(positionId)) return true
-        const wpText = String(wp.position_name || wp.position || wp.allowed_position_name || '').toLowerCase()
-        if (wpText && positionName && positionName.includes(wpText)) return true
-        const names = Array.isArray(wp.allowed_positions) ? wp.allowed_positions : []
-        return names.some((n) => positionName.includes(String(n || '').toLowerCase()))
+      if (wp.positionId && positionId && Number(wp.positionId) === Number(positionId)) return true
+      if (wp.positionText && positionName.includes(wp.positionText)) return true
+      return wp.allowedPositions.some((name) => positionName.includes(name))
+    }
+    const used = new Set()
+    const assignForDivision = (divisionKey) => {
+      const places = normalizedWorkplaces.filter((wp) => wp.divisionKey === divisionKey)
+      const employees = roster.filter((emp) => {
+        const lowerDivision = String(emp.division || '').toLowerCase()
+        if (divisionKey === 'boiler') return lowerDivision.includes('котель')
+        if (divisionKey === 'turbine') return lowerDivision.includes('турбин')
+        return true
       })
+      const rows = places.map((wp) => {
+        const assigned = employees.find((emp) => !used.has(emp.id) && positionMatchesWorkplace(emp, wp)) || null
+        if (assigned) used.add(assigned.id)
+        return {
+          workplaceId: wp.id,
+          workplaceName: wp.name,
+          employee: assigned,
+        }
+      })
+      const leftovers = employees.filter((emp) => !used.has(emp.id)).map((emp) => ({
+        workplaceId: `unassigned-${divisionKey}-${emp.id}`,
+        workplaceName: 'Без закрепленного рабочего места',
+        employee: emp,
+      }))
+      return rows.concat(leftovers)
     }
-    const getDivisionKey = (emp) => {
-      const wp = pickWorkplace(emp)
-      const raw =
-        wp?.devision_name ||
-        wp?.division_name ||
-        wp?.division ||
-        wp?.departament_name ||
-        wp?.department_name ||
-        emp.division ||
-        ''
-      const lower = String(raw).toLowerCase()
-      if (lower.includes('котель')) return 'boiler'
-      if (lower.includes('турбин')) return 'turbine'
-      return 'other'
-    }
-    const divisions = {
-      boiler: roster.filter((emp) => getDivisionKey(emp) === 'boiler'),
-      turbine: roster.filter((emp) => getDivisionKey(emp) === 'turbine'),
-    }
-    const roleName = (emp) => String(emp.position || '').toLowerCase()
-    const groupRoles = (list) => ({
-      chief: list.filter((emp) => roleName(emp).includes('начальник смены')),
-      senior: list.filter((emp) => roleName(emp).includes('старший машинист')),
-      panel: list.filter((emp) => roleName(emp).includes('машинист щита')),
-      walker: list.filter((emp) => roleName(emp).includes('обходчик')),
-      other: list.filter(
-        (emp) =>
-          !roleName(emp).includes('начальник смены') &&
-          !roleName(emp).includes('старший машинист') &&
-          !roleName(emp).includes('машинист щита') &&
-          !roleName(emp).includes('обходчик'),
-      ),
-    })
+    const chief =
+      roster.find((emp) => String(emp.position || '').toLowerCase().includes('начальник смены')) || null
     return {
-      chief: roster.find((emp) => roleName(emp).includes('начальник смены')) || null,
-      boiler: groupRoles(divisions.boiler),
-      turbine: groupRoles(divisions.turbine),
+      chief,
+      boiler: assignForDivision('boiler'),
+      turbine: assignForDivision('turbine'),
+      other: assignForDivision('other'),
     }
-  }, [addDaysIso, employeesFromSchedule, scheduleByDay, workplaces])
+  }, [addDaysIso, employeesFromSchedule, normalizedWorkplaces, scheduleByDay])
 
   const activeShiftCode = shiftCodes[activeShiftIndex] || '—'
   const nextShiftCode = shiftCodes[(activeShiftIndex + 1) % shiftCodes.length] || '—'
@@ -1238,25 +1266,20 @@ function UnitSectionPage() {
     })
   }
 
-  const renderRosterColumn = useCallback((title, roles) => {
-    const rows = [
-      { key: 'senior', label: 'Старшие машинисты', list: roles.senior },
-      { key: 'panel', label: 'Щитовые', list: roles.panel },
-      { key: 'walker', label: 'Обходчики', list: roles.walker },
-      { key: 'other', label: 'Прочие', list: roles.other },
-    ]
+  const renderRosterColumn = useCallback((title, rows) => {
     return (
       <div className="rounded-xl border border-border bg-background/70 p-3">
         <p className="text-[11px] uppercase tracking-[0.2em] text-grayText">{title}</p>
         <div className="mt-2 space-y-2">
           {rows.map((row) => (
-            <div key={row.key}>
-              <p className="text-[11px] text-grayText">{row.label}</p>
+            <div key={row.workplaceId}>
+              <p className="text-[11px] text-grayText">{row.workplaceName}</p>
               <p className="text-xs text-dark">
-                {row.list.length ? row.list.map((emp) => emp.label).join(', ') : '—'}
+                {row.employee?.label || '—'}
               </p>
             </div>
           ))}
+          {!rows.length && <p className="text-xs text-grayText">Нет рабочих мест в таблице `workplace`.</p>}
         </div>
       </div>
     )
@@ -1493,9 +1516,7 @@ function UnitSectionPage() {
                 Вахта {nextShiftCode} · Начальник: {nextRoster.chief?.label || 'не назначен'}
               </p>
               <p className="mt-1 text-grayText">
-                По ролям: старшие машинисты {nextRoster.turbine.senior.length + nextRoster.boiler.senior.length || 0},
-                щитовые {nextRoster.turbine.panel.length + nextRoster.boiler.panel.length || 0},
-                обходчики {nextRoster.turbine.walker.length + nextRoster.boiler.walker.length || 0}.
+                Рабочих мест к приёмке: {(nextRoster.boiler?.length || 0) + (nextRoster.turbine?.length || 0)}.
               </p>
             </div>
           </div>
