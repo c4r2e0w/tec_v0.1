@@ -12,16 +12,11 @@ async function resolveJournalId({ supabase, journalCode, journalId, journalName 
   const { data, error } = await supabase.from('journals').select('id').eq('code', journalCode).maybeSingle()
   if (error) return { journalId: null, error }
   if (data?.id) return { journalId: data.id, error: null }
-
-  // Создаём журнал на лету, если не нашли запись
-  const { data: created, error: insertErr } = await supabase
-    .from('journals')
-    .insert({ code: journalCode, name: journalName || journalCode })
-    .select('id')
-    .maybeSingle()
-  if (insertErr) return { journalId: null, error: insertErr }
-  if (!created?.id) return { journalId: null, error: new Error(`Журнал с code=${journalCode} не найден`) }
-  return { journalId: created.id, error: null }
+  const label = journalName || journalCode
+  return {
+    journalId: null,
+    error: new Error(`Журнал "${label}" не найден в БД (code=${journalCode})`),
+  }
 }
 
 export async function fetchEntries({ supabase, journalCode, journalId, types, profileId, journalName }) {

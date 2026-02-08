@@ -1,14 +1,14 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 import { useProfile } from '../hooks/useProfile'
+import { useJournal } from '../hooks/useJournal'
 import { useAuth } from '../hooks/useAuth'
 import Badge from '../components/Badge'
 import { unitsMap, sectionsMap } from '../constants/units'
-import { createEntriesService } from '../services/entriesService'
 import { createScheduleService } from '../services/scheduleService'
 import PersonnelSchedule from '../components/PersonnelSchedule'
+import { productionCalendar } from '../constants/productionCalendar'
 
 const iconCatalog = {
   work: {
@@ -180,23 +180,33 @@ function UnitSectionPage() {
   const sectionLabel = sectionsMap[section]
   const isKtc = unit === 'ktc'
   const supabase = useSupabase()
-  const entriesService = useMemo(() => createEntriesService(supabase), [supabase])
   const scheduleService = useMemo(() => createScheduleService(supabase), [supabase])
   const { user } = useAuth()
   const profile = useProfile()
   const journalCode = 'ktc-docs'
   const journalName = 'Журнал КТЦ (документы)'
-  const [entries, setEntries] = useState([])
-  const [journalId, setJournalId] = useState(null)
-  const [lastSeenAt, setLastSeenAt] = useState(null)
-  const [loadingEntries, setLoadingEntries] = useState(false)
-  const [entriesError, setEntriesError] = useState('')
   const [newEntry, setNewEntry] = useState({ type: 'admin', title: '', body: '' })
-  const [saving, setSaving] = useState(false)
   const [selectedTypes, setSelectedTypes] = useState(['admin', 'turbine', 'boiler', 'daily'])
-  const [ackLoadingId, setAckLoadingId] = useState(null)
-  const [markAllLoading, setMarkAllLoading] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+  const {
+    entries,
+    lastSeenAt,
+    loadingEntries,
+    refreshing,
+    entriesError,
+    saving,
+    ackLoadingId,
+    markAllLoading,
+    createEntry,
+    acknowledgeEntry,
+    markAllRead,
+    refreshEntries,
+    setEntriesError,
+  } = useJournal({
+    enabled: isKtc && section === 'docs' && !!user,
+    journalCode,
+    journalName,
+    profileId: user?.id,
+  })
   const [scheduleRows, setScheduleRows] = useState([])
   const [scheduleError, setScheduleError] = useState('')
   const [loadingSchedule, setLoadingSchedule] = useState(false)
@@ -338,14 +348,6 @@ function UnitSectionPage() {
 
   const bg = unitData?.color || 'from-slate-800 to-slate-900'
 
-  const subtitle = useMemo(() => {
-    if (!unitData || !sectionLabel) return 'Раздел не найден'
-    if (section === 'personnel') return 'Состав смены, контакты, роли'
-    if (section === 'equipment') return 'Реестр оборудования, статус и ППР'
-    if (section === 'docs') return 'Инструкции, регламенты, чек-листы'
-    return ''
-  }, [unitData, sectionLabel, section])
-
   const filteredList = useMemo(() => {
     const list = entries.filter((e) => selectedTypes.includes(e.type))
     return list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
@@ -383,6 +385,24 @@ function UnitSectionPage() {
   const monthLabel = useMemo(() => {
     const d = new Date(monthStart)
     return d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+  }, [monthStart])
+  const monthNorm = useMemo(() => {
+    const d = new Date(monthStart)
+    const year = d.getUTCFullYear()
+    const monthIndex = d.getUTCMonth() + 1
+    const daysInMonth = new Date(year, monthIndex, 0).getDate()
+    const holidays = productionCalendar[year]?.[monthIndex]?.holidays || []
+    const workingHours = productionCalendar[year]?.[monthIndex]?.workingHours
+    let workingDays = 0
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(Date.UTC(year, monthIndex - 1, day))
+      const iso = date.toISOString().slice(0, 10)
+      const isWeekend = date.getUTCDay() === 0 || date.getUTCDay() === 6
+      const isHoliday = holidays.includes(iso)
+      if (!isWeekend && !isHoliday) workingDays += 1
+    }
+    const normHours = Number.isFinite(workingHours) ? workingHours : workingDays * 8
+    return { workingDays, normHours }
   }, [monthStart])
   const headerTitle = useMemo(() => {
     if (section === 'personnel') return `Персонал / ГРАФИК · ${monthLabel}`
@@ -445,9 +465,10 @@ function UnitSectionPage() {
 
   const employeesFromSchedule = useMemo(() => {
     const map = new Map()
+    const filteredRows = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
     staffWithLabels.forEach((e) => map.set(e.id, e))
     if (!map.size) {
-      scheduleRows.forEach((row) => {
+      filteredRows.forEach((row) => {
         const label = row.employees
           ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ')
           : `ID ${row.employee_id}`
@@ -478,19 +499,23 @@ function UnitSectionPage() {
     list = list.map((e) => (e.weight !== undefined ? e : { ...e, weight: getPositionWeight(e.position) }))
     list.sort((a, b) => a.weight - b.weight || a.label.localeCompare(b.label, 'ru'))
     return list
-  }, [staffWithLabels, scheduleRows, pinnedEmployees, hiddenEmployees, positionFilter, getPositionWeight])
+  }, [staffWithLabels, scheduleRows, pinnedEmployees, hiddenEmployees, positionFilter, getPositionWeight, unit])
 
-  const scheduleMap = new Map(scheduleRows.map((row) => [`${row.employee_id}-${row.date}`, row]))
+  const scheduleMap = useMemo(() => {
+    const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
+    return new Map(source.map((row) => [`${row.employee_id}-${row.date}`, row]))
+  }, [scheduleRows, unit])
   const scheduleByDay = useMemo(() => {
     const map = new Map()
-    scheduleRows.forEach((row) => {
+    const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
+    source.forEach((row) => {
       const key = `${row.employee_id}-${row.date}`
       const list = map.get(key) || []
       list.push(row)
       map.set(key, list)
     })
     return map
-  }, [scheduleRows])
+  }, [scheduleRows, unit])
   const mergeEntriesForDate = useCallback(
     (employeeId, date, pending) => {
       const key = `${employeeId}-${date}`
@@ -531,7 +556,7 @@ function UnitSectionPage() {
       }
       return null
     },
-    [getIconType],
+    [],
   )
   const formatCellValue = useCallback((list) => {
     if (!list?.length) return '—'
@@ -623,42 +648,6 @@ function UnitSectionPage() {
   }, [collapsedPositions, groupedByPosition])
 
   const employeeIndexMap = useMemo(() => new Map(visibleRows.map((e, idx) => [e.id, idx])), [visibleRows])
-
-  const loadEntries = useCallback(async () => {
-    if (!isKtc || section !== 'docs' || !user) return
-    setLoadingEntries(true)
-    setEntriesError('')
-    const { data, error, journalId: resolvedId } = await entriesService.list({
-      journalCode,
-      journalName,
-      profileId: user.id,
-    })
-    if (error) {
-      setEntriesError(error.message)
-      setEntries([])
-      setLoadingEntries(false)
-      setRefreshing(false)
-      return
-    }
-    setEntries(data || [])
-    setJournalId(resolvedId || null)
-
-    const { data: readData, error: readError } = await entriesService.lastRead({
-      journalId: resolvedId,
-      profileId: user.id,
-      journalCode,
-      journalName,
-    })
-    if (!readError) {
-      setLastSeenAt(readData?.last_seen_at || null)
-    }
-    setLoadingEntries(false)
-    setRefreshing(false)
-  }, [entriesService, isKtc, journalCode, journalName, section, user])
-
-  useEffect(() => {
-    loadEntries()
-  }, [loadEntries])
 
   const loadSchedule = useCallback(
     async (opts = {}) => {
@@ -753,78 +742,31 @@ function UnitSectionPage() {
       return
     }
     if (!user) {
-      setEntriesError('Нужна авторизация')
       return
     }
-    setSaving(true)
-    setEntriesError('')
-    const { data, error } = await entriesService.create({
-      journalCode: 'ktc-docs',
-      journalName,
-      journalId,
-      profileId: user.id,
-      payload: {
-        type: newEntry.type,
-        title: newEntry.title,
-        body: newEntry.body,
-        unit: unit || null,
-        created_by_employee_id: profile?.employee?.id || null,
-        author_snapshot: authorLabel ? { label: authorLabel } : null,
-      },
+    await createEntry({
+      type: newEntry.type,
+      title: newEntry.title,
+      body: newEntry.body,
+      unit: unit || null,
+      created_by_employee_id: profile?.employee?.id || null,
+      author_snapshot: authorLabel ? { label: authorLabel } : null,
     })
-    if (error) {
-      setEntriesError(error.message)
-    } else {
-      if (data) setEntries((prev) => [data, ...prev])
-      setNewEntry({ type: newEntry.type, title: '', body: '' })
-      await loadEntries()
-    }
-    setSaving(false)
+    setNewEntry({ type: newEntry.type, title: '', body: '' })
   }
 
   const handleAcknowledge = async (entryId) => {
     if (!user) return
-    setAckLoadingId(entryId)
-    const { error } = await entriesService.acknowledge({ entryId, profileId: user.id })
-    if (error) {
-      setEntriesError(error.message)
-    } else {
-      setEntries((prev) =>
-        prev.map((item) =>
-          item.id === entryId
-            ? {
-                ...item,
-                acknowledged: true,
-                receipts: [...(item.receipts || []), { profile_id: user.id, acknowledged_at: new Date().toISOString() }],
-              }
-            : item,
-        ),
-      )
-    }
-    setAckLoadingId(null)
+    await acknowledgeEntry(entryId)
   }
 
   const handleRefresh = async () => {
-    setRefreshing(true)
-    await loadEntries()
+    await refreshEntries()
   }
 
   const handleMarkAllRead = async () => {
     if (!user) return
-    setMarkAllLoading(true)
-    const { error } = await entriesService.markRead({
-      journalId,
-      journalCode,
-      journalName,
-      profileId: user.id,
-    })
-    if (error) {
-      setEntriesError(error.message)
-    } else {
-      const nowIso = new Date().toISOString()
-      setLastSeenAt(nowIso)
-    }
-    setMarkAllLoading(false)
+    await markAllRead()
   }
 
   const handleCellClick = useCallback(
@@ -1137,7 +1079,7 @@ function UnitSectionPage() {
     <div className="space-y-4">
       {section !== 'personnel' && (
         <div
-          className={`overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br ${bg} p-8 shadow-xl shadow-sky-900/10`}
+          className={`overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br ${bg} p-6 shadow-xl shadow-sky-900/10 sm:p-8`}
         >
           <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
             {unitData.name} · {sectionLabel}
@@ -1243,7 +1185,7 @@ function UnitSectionPage() {
             </div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-base font-semibold text-white">Распоряжения / ведомости</p>
               <span className="rounded-full border border-white/10 bg-sky-500/15 px-3 py-1 text-[11px] uppercase text-slate-100">
                 {selectedTypes.join(', ') || 'нет источников'}
@@ -1277,7 +1219,7 @@ function UnitSectionPage() {
               {loadingEntries && <p className="text-xs text-slate-400">Обновляем список...</p>}
               {filteredList.map((item) => (
                 <div key={item.id} className="rounded-xl border border-white/5 bg-slate-900/70 px-3 py-2">
-                  <div className="flex items-center justify-between text-xs text-slate-400">
+                  <div className="flex flex-col gap-1 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
                     <span>#{item.id}</span>
                     <span>{formatDateTime(item.created_at)}</span>
                   </div>
@@ -1370,8 +1312,10 @@ function UnitSectionPage() {
               formatCellValue={formatCellValue}
               resolveIconType={resolveIconType}
               iconCatalog={iconCatalog}
+              monthNorm={monthNorm}
               selectedCell={selectedCell}
               selectedCells={selectedCells}
+              setSelectedCells={setSelectedCells}
               handleCellClick={handleCellClick}
               handleApplyShift={handleApplyShift}
               applyShiftToSelected={applyShiftToSelected}

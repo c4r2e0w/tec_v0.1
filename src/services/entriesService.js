@@ -12,6 +12,7 @@ export function createEntriesService(supabase) {
     acknowledge: ({ entryId, profileId }) => acknowledgeEntry({ supabase, entryId, profileId }),
     markRead: ({ journalId, journalCode, journalName, profileId }) =>
       markJournalRead({ supabase, journalId, journalCode, journalName, profileId }),
-    lastRead: ({ profileId, journalCode }) => fetchJournalRead({ supabase, profileId, journalCode }),
+    lastRead: ({ profileId, journalCode, journalName, journalId }) =>
+      fetchJournalRead({ supabase, profileId, journalCode, journalName, journalId }),
   }
 }
