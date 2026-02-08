@@ -8,13 +8,13 @@ export function SupabaseProvider({ children }) {
   const value = useMemo(() => ({ supabase }), [])
   if (!supabase) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-100">
-        <div className="max-w-md rounded-2xl border border-white/10 bg-slate-900/80 p-6 text-sm shadow-xl">
-          <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Конфигурация</p>
-          <p className="mt-2 text-base font-semibold text-white">
+      <div className="flex min-h-screen items-center justify-center bg-background text-dark">
+        <div className="max-w-md rounded-2xl border border-border bg-white p-6 text-sm shadow-xl">
+          <p className="text-xs uppercase tracking-[0.25em] text-grayText">Конфигурация</p>
+          <p className="mt-2 text-base font-semibold text-dark">
             Не заданы переменные VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY
           </p>
-          <p className="mt-2 text-slate-300">
+          <p className="mt-2 text-grayText">
             Создайте файл <code>.env.local</code> в корне и пропишите ключи (смотри .env.example), затем перезапустите
             <code> npm run dev</code>.
           </p>
