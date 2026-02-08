@@ -411,6 +411,13 @@ function UnitSectionPage() {
     const hour = new Date().getHours()
     return hour >= 20 || hour < 8 ? 'night' : 'day'
   }, [])
+  const shiftCodes = useMemo(() => ['А', 'Б', 'В', 'Г'], [])
+  const [activeShiftIndex, setActiveShiftIndex] = useState(() => {
+    const now = new Date()
+    const yearStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1))
+    const dayNumber = Math.floor((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - yearStart.getTime()) / 86400000)
+    return ((dayNumber % 4) + 4) % 4
+  })
 
   const scopeForEntryType = useCallback((entryType) => {
     if (entryType === 'daily') return 'daily_statement'
@@ -680,6 +687,67 @@ function UnitSectionPage() {
     return list
   }, [collapsedPositions, groupedByPosition])
   const employeeIndexMap = useMemo(() => new Map(visibleRows.map((e, idx) => [e.id, idx])), [visibleRows])
+
+  const addDaysIso = useCallback((dateStr, days) => {
+    const d = new Date(dateStr)
+    d.setDate(d.getDate() + days)
+    return d.toISOString().slice(0, 10)
+  }, [])
+
+  const buildShiftRoster = useCallback((shiftCode, targetDate) => {
+    const shiftToken = `вахта ${String(shiftCode).toLowerCase()}`
+    const employeesWithHours = employeesFromSchedule.filter((emp) => {
+      const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
+      return entries.some((entry) => Number(entry?.planned_hours || 0) > 0)
+    })
+    const hasExplicitShiftLabels = employeesWithHours.some((emp) => {
+      const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
+      const noteText = entries.map((entry) => `${entry?.note || ''} ${entry?.source || ''}`).join(' ').toLowerCase()
+      return noteText.includes('вахта ')
+    })
+    const roster = hasExplicitShiftLabels
+      ? employeesWithHours.filter((emp) => {
+          const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
+          const noteText = entries.map((entry) => `${entry?.note || ''} ${entry?.source || ''}`).join(' ').toLowerCase()
+          return noteText.includes(shiftToken)
+        })
+      : employeesWithHours
+
+    const divisions = {
+      boiler: roster.filter((emp) => String(emp.division || '').toLowerCase().includes('котель')),
+      turbine: roster.filter((emp) => String(emp.division || '').toLowerCase().includes('турбин')),
+    }
+    const roleName = (emp) => String(emp.position || '').toLowerCase()
+    const groupRoles = (list) => ({
+      chief: list.filter((emp) => roleName(emp).includes('начальник смены')),
+      senior: list.filter((emp) => roleName(emp).includes('старший машинист')),
+      panel: list.filter((emp) => roleName(emp).includes('машинист щита')),
+      walker: list.filter((emp) => roleName(emp).includes('обходчик')),
+      other: list.filter(
+        (emp) =>
+          !roleName(emp).includes('начальник смены') &&
+          !roleName(emp).includes('старший машинист') &&
+          !roleName(emp).includes('машинист щита') &&
+          !roleName(emp).includes('обходчик'),
+      ),
+    })
+    return {
+      chief: roster.find((emp) => roleName(emp).includes('начальник смены')) || null,
+      boiler: groupRoles(divisions.boiler),
+      turbine: groupRoles(divisions.turbine),
+    }
+  }, [employeesFromSchedule, scheduleByDay])
+
+  const activeShiftCode = shiftCodes[activeShiftIndex] || '—'
+  const nextShiftCode = shiftCodes[(activeShiftIndex + 1) % shiftCodes.length] || '—'
+  const currentRoster = useMemo(
+    () => buildShiftRoster(activeShiftCode, currentShiftDate),
+    [activeShiftCode, buildShiftRoster, currentShiftDate],
+  )
+  const nextRoster = useMemo(
+    () => buildShiftRoster(nextShiftCode, addDaysIso(currentShiftDate, 1)),
+    [addDaysIso, buildShiftRoster, currentShiftDate, nextShiftCode],
+  )
 
   const loadSchedule = useCallback(
     async (opts = {}) => {
@@ -1142,6 +1210,30 @@ function UnitSectionPage() {
     })
   }
 
+  const renderRosterColumn = useCallback((title, roles) => {
+    const rows = [
+      { key: 'senior', label: 'Старшие машинисты', list: roles.senior },
+      { key: 'panel', label: 'Щитовые', list: roles.panel },
+      { key: 'walker', label: 'Обходчики', list: roles.walker },
+      { key: 'other', label: 'Прочие', list: roles.other },
+    ]
+    return (
+      <div className="rounded-xl border border-border bg-background/70 p-3">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-grayText">{title}</p>
+        <div className="mt-2 space-y-2">
+          {rows.map((row) => (
+            <div key={row.key}>
+              <p className="text-[11px] text-grayText">{row.label}</p>
+              <p className="text-xs text-dark">
+                {row.list.length ? row.list.map((emp) => emp.label).join(', ') : '—'}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }, [])
+
   if (!unitData || !sectionLabel) {
     return (
       <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 text-sm text-slate-200">
@@ -1338,6 +1430,48 @@ function UnitSectionPage() {
 
       {section === 'personnel' && (
         <div className="space-y-4">
+          <div className="rounded-2xl border border-border bg-surface/95 p-4 shadow-lg">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-grayText">Сейчас на смене</p>
+                <p className="text-lg font-semibold text-dark">Вахта {activeShiftCode}</p>
+                <p className="text-xs text-grayText">Начальник смены: {currentRoster.chief?.label || 'не назначен'}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveShiftIndex((prev) => (prev - 1 + shiftCodes.length) % shiftCodes.length)}
+                  className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
+                >
+                  ←
+                </button>
+                <span className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
+                  Листать вахты
+                </span>
+                <button
+                  onClick={() => setActiveShiftIndex((prev) => (prev + 1) % shiftCodes.length)}
+                  className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
+                >
+                  →
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              {renderRosterColumn('Котельное', currentRoster.boiler)}
+              {renderRosterColumn('Турбинное', currentRoster.turbine)}
+            </div>
+            <div className="mt-3 rounded-xl border border-border bg-background/70 p-3 text-xs">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-grayText">Смену принимает</p>
+              <p className="mt-1 text-dark">
+                Вахта {nextShiftCode} · Начальник: {nextRoster.chief?.label || 'не назначен'}
+              </p>
+              <p className="mt-1 text-grayText">
+                По ролям: старшие машинисты {nextRoster.turbine.senior.length + nextRoster.boiler.senior.length || 0},
+                щитовые {nextRoster.turbine.panel.length + nextRoster.boiler.panel.length || 0},
+                обходчики {nextRoster.turbine.walker.length + nextRoster.boiler.walker.length || 0}.
+              </p>
+            </div>
+          </div>
+
           {!showSchedule ? (
             <button
               type="button"
