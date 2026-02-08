@@ -237,6 +237,7 @@ function UnitSectionPage() {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([])
   const [showSchedule, setShowSchedule] = useState(false)
   const [activeShiftPermissions, setActiveShiftPermissions] = useState([])
+  const [manualWorkplaceAssignments, setManualWorkplaceAssignments] = useState({})
 
   useEffect(() => {
     const saved = localStorage.getItem(pinStorageKey)
@@ -587,9 +588,17 @@ function UnitSectionPage() {
       const set = new Set(positionFilter)
       list = list.filter((e) => set.has(e.position))
     }
+    const query = String(filterQuery || '').toLowerCase().trim()
+    if (query) {
+      list = list.filter((e) => {
+        const label = String(e.label || '').toLowerCase()
+        const position = String(e.position || '').toLowerCase()
+        return label.includes(query) || position.includes(query)
+      })
+    }
     list.sort((a, b) => a.weight - b.weight || a.label.localeCompare(b.label, 'ru'))
     return list
-  }, [allEmployeesFromSchedule, pinnedEmployees, hiddenEmployees, positionFilter])
+  }, [allEmployeesFromSchedule, pinnedEmployees, hiddenEmployees, positionFilter, filterQuery])
 
   const scheduleMap = useMemo(() => {
     const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
@@ -793,69 +802,90 @@ function UnitSectionPage() {
       .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'ru'))
   }, [workplaces])
 
-  const buildShiftRoster = useCallback((mode, targetDate, targetShiftType) => {
-    const nextDate = addDaysIso(targetDate, 1)
-    const byDayShiftHours = allEmployeesFromSchedule.filter((emp) => {
-      const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
-      return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
-    })
-    const byNightShiftHours = allEmployeesFromSchedule.filter((emp) => {
-      const todayEntries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
-      const nextEntries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
-      const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
-      const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
-      return has3Today && has9Next
-    })
-    const byNextDayShiftHours = allEmployeesFromSchedule.filter((emp) => {
-      const entries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
-      return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
-    })
-    let roster = []
-    if (mode === 'current') {
-      roster = targetShiftType === 'night' ? byNightShiftHours : byDayShiftHours
-    } else {
-      roster = targetShiftType === 'night' ? byNextDayShiftHours : byNightShiftHours
-    }
-    const normalizeText = (value) =>
+  const normalizeRoleText = useCallback(
+    (value) =>
       String(value || '')
         .toLowerCase()
         .replaceAll('ё', 'е')
         .replace(/[^a-zа-я0-9]+/gi, ' ')
         .replace(/\s+/g, ' ')
-        .trim()
-    const splitTokens = (value) => normalizeText(value).split(' ').filter((t) => t.length > 2)
-    const guessDivisionKey = (emp) => {
-      const raw = `${emp.division || ''} ${emp.department || ''} ${emp.position || ''}`
-      const lower = normalizeText(raw)
+        .trim(),
+    [],
+  )
+  const splitRoleTokens = useCallback((value) => normalizeRoleText(value).split(' ').filter((t) => t.length > 2), [normalizeRoleText])
+  const detectDivisionKey = useCallback(
+    (emp) => {
+      const raw = `${emp?.division || ''} ${emp?.department || ''} ${emp?.position || ''}`
+      const lower = normalizeRoleText(raw)
       if (lower.includes('котел')) return 'boiler'
       if (lower.includes('турбин')) return 'turbine'
       return 'other'
-    }
-    const positionMatchesWorkplace = (emp, wp) => {
-      const employeeText = normalizeText(emp.position)
-      const workplaceText = normalizeText(wp.positionText)
+    },
+    [normalizeRoleText],
+  )
+  const canEmployeeCoverWorkplace = useCallback(
+    (emp, workplace) => {
+      const employeeText = normalizeRoleText(emp?.position)
+      const workplaceText = normalizeRoleText(workplace?.positionText)
       if (!employeeText || !workplaceText) return false
       if (employeeText === workplaceText || employeeText.includes(workplaceText) || workplaceText.includes(employeeText)) return true
-      const empTokens = splitTokens(employeeText)
-      const wpTokens = splitTokens(workplaceText)
+      const empTokens = splitRoleTokens(employeeText)
+      const wpTokens = splitRoleTokens(workplaceText)
       const common = wpTokens.filter((t) => empTokens.some((e) => e === t || e.startsWith(t) || t.startsWith(e))).length
       if (common >= Math.max(2, Math.ceil(wpTokens.length * 0.6))) return true
-      return wp.allowedPositions.some((name) => employeeText.includes(normalizeText(name)))
-    }
+      if (workplace.allowedPositions.some((name) => employeeText.includes(normalizeRoleText(name)))) return true
+      const isSenior = employeeText.includes('старш') && employeeText.includes('машинист')
+      const isLowerTarget =
+        workplaceText.includes('щит') ||
+        workplaceText.includes('обход') ||
+        (workplaceText.includes('машинист') && !workplaceText.includes('старш'))
+      if (isSenior && isLowerTarget) return true
+      return false
+    },
+    [normalizeRoleText, splitRoleTokens],
+  )
+  const resolveEmployeesForShift = useCallback(
+    (mode, targetDate, targetShiftType) => {
+      const nextDate = addDaysIso(targetDate, 1)
+      const byDayShiftHours = allEmployeesFromSchedule.filter((emp) => {
+        const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
+        return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
+      })
+      const byNightShiftHours = allEmployeesFromSchedule.filter((emp) => {
+        const todayEntries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
+        const nextEntries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
+        const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
+        const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
+        return has3Today && has9Next
+      })
+      const byNextDayShiftHours = allEmployeesFromSchedule.filter((emp) => {
+        const entries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
+        return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
+      })
+      if (mode === 'current') return targetShiftType === 'night' ? byNightShiftHours : byDayShiftHours
+      return targetShiftType === 'night' ? byNextDayShiftHours : byNightShiftHours
+    },
+    [addDaysIso, allEmployeesFromSchedule, scheduleByDay],
+  )
+
+  const buildShiftRoster = useCallback((mode, targetDate, targetShiftType) => {
+    const roster = resolveEmployeesForShift(mode, targetDate, targetShiftType)
     const used = new Set()
     const assignForDivision = (divisionKey) => {
       const places = normalizedWorkplaces.filter((wp) => wp.divisionKey === divisionKey)
       const employees = roster.filter((emp) => {
-        const key = guessDivisionKey(emp)
+        const key = detectDivisionKey(emp)
         if (divisionKey === 'other') return key === 'other'
         return key === divisionKey || key === 'other'
       })
       const rows = places.map((wp) => {
-        const assigned = employees.find((emp) => !used.has(emp.id) && positionMatchesWorkplace(emp, wp)) || null
+        const assigned = employees.find((emp) => !used.has(emp.id) && canEmployeeCoverWorkplace(emp, wp)) || null
         if (assigned) used.add(assigned.id)
         return {
           workplaceId: wp.id,
           workplaceName: wp.name,
+          requiredPositionText: wp.positionText,
+          divisionKey,
           employee: assigned,
         }
       })
@@ -869,12 +899,16 @@ function UnitSectionPage() {
       turbine: assignForDivision('turbine'),
       other: assignForDivision('other'),
     }
-  }, [addDaysIso, allEmployeesFromSchedule, normalizedWorkplaces, scheduleByDay])
+  }, [canEmployeeCoverWorkplace, detectDivisionKey, normalizedWorkplaces, resolveEmployeesForShift])
 
   const activeShiftCode = shiftCodes[activeShiftIndex] || '—'
   const nextShiftCode = shiftCodes[(activeShiftIndex + 1) % shiftCodes.length] || '—'
   const nextShiftType = activeShiftType === 'day' ? 'night' : 'day'
   const nextShiftDate = nextShiftType === 'day' ? addDaysIso(activeShiftDate, 1) : activeShiftDate
+  const currentShiftEmployees = useMemo(
+    () => resolveEmployeesForShift('current', activeShiftDate, activeShiftType),
+    [activeShiftDate, activeShiftType, resolveEmployeesForShift],
+  )
   const currentRoster = useMemo(
     () => buildShiftRoster('current', activeShiftDate, activeShiftType),
     [activeShiftDate, activeShiftType, buildShiftRoster],
@@ -882,6 +916,10 @@ function UnitSectionPage() {
   const nextRoster = useMemo(
     () => buildShiftRoster('next', activeShiftDate, activeShiftType),
     [activeShiftDate, activeShiftType, buildShiftRoster],
+  )
+  const assignmentKey = useCallback(
+    (date, shiftType, workplaceId) => `${date}|${shiftType}|${workplaceId}`,
+    [],
   )
 
   const loadSchedule = useCallback(
@@ -940,7 +978,7 @@ function UnitSectionPage() {
     const positionIds = filteredPositions.map((p) => p.id)
     const { data, error } = await scheduleService.fetchEmployeesByUnit({
       positionIds,
-      query: filterQuery || null,
+      query: null,
     })
     if (error) {
       setStaffError(error.message)
@@ -951,7 +989,7 @@ function UnitSectionPage() {
     setSelectedCells([])
     setSelectionAnchor(null)
     setLoadingStaff(false)
-  }, [scheduleService, section, user, filterCategory, filterSection, positionFilter, filterQuery, positionsList])
+  }, [scheduleService, section, user, filterCategory, filterSection, positionFilter, positionsList])
 
   const loadShiftTemplates = useCallback(async () => {
     const { data, error } = await scheduleService.fetchShiftTemplates()
@@ -1354,24 +1392,72 @@ function UnitSectionPage() {
     })
   }
 
-  const renderRosterColumn = useCallback((title, rows) => {
+  const renderRosterColumn = useCallback((title, rows, editable = false) => {
     return (
       <div className="rounded-xl border border-border bg-background/70 p-3">
         <p className="text-[11px] uppercase tracking-[0.2em] text-grayText">{title}</p>
         <div className="mt-2 space-y-2">
-          {rows.map((row) => (
-            <div key={row.workplaceId}>
-              <p className="text-[11px] text-grayText">{row.workplaceName}</p>
-              <p className="text-xs text-dark">
-                {row.employee?.label || '—'}
-              </p>
-            </div>
-          ))}
+          {rows.map((row) => {
+            const key = assignmentKey(activeShiftDate, activeShiftType, row.workplaceId)
+            const divisionCandidates = currentShiftEmployees.filter((emp) => {
+              const divisionKey = detectDivisionKey(emp)
+              if (row.divisionKey === 'other') return divisionKey === 'other'
+              return divisionKey === row.divisionKey || divisionKey === 'other'
+            })
+            const candidates = divisionCandidates.filter((emp) =>
+              canEmployeeCoverWorkplace(emp, { positionText: row.requiredPositionText, allowedPositions: [] }),
+            )
+            const manualEmployeeId = manualWorkplaceAssignments[key]
+            const manualEmployee = candidates.find((emp) => String(emp.id) === String(manualEmployeeId)) || null
+            const selectedEmployee = manualEmployee || row.employee || null
+            return (
+              <div key={row.workplaceId}>
+                <p className="text-[11px] text-grayText">{row.workplaceName}</p>
+                {editable ? (
+                  <div className="mt-1 space-y-1">
+                    <select
+                      value={manualEmployeeId ? String(manualEmployeeId) : ''}
+                      onChange={(e) => {
+                        const nextValue = e.target.value
+                        setManualWorkplaceAssignments((prev) => {
+                          if (!nextValue) {
+                            const next = { ...prev }
+                            delete next[key]
+                            return next
+                          }
+                          return { ...prev, [key]: nextValue }
+                        })
+                      }}
+                      className="w-full rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
+                    >
+                      <option value="">Авто: {row.employee?.label || 'не назначен'}</option>
+                      {candidates.map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-dark">{selectedEmployee?.label || '—'}</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-dark">{row.employee?.label || '—'}</p>
+                )}
+              </div>
+            )
+          })}
           {!rows.length && <p className="text-xs text-grayText">Нет рабочих мест в таблице `workplace`.</p>}
         </div>
       </div>
     )
-  }, [])
+  }, [
+    activeShiftDate,
+    activeShiftType,
+    assignmentKey,
+    canEmployeeCoverWorkplace,
+    currentShiftEmployees,
+    detectDivisionKey,
+    manualWorkplaceAssignments,
+  ])
 
   if (!unitData || !sectionLabel) {
     return (
@@ -1597,8 +1683,8 @@ function UnitSectionPage() {
               </div>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              {renderRosterColumn('Котельное', currentRoster.boiler)}
-              {renderRosterColumn('Турбинное', currentRoster.turbine)}
+              {renderRosterColumn('Котельное', currentRoster.boiler, true)}
+              {renderRosterColumn('Турбинное', currentRoster.turbine, true)}
             </div>
             <div className="mt-3 rounded-xl border border-border bg-background/70 p-3 text-xs">
               <p className="text-[11px] uppercase tracking-[0.2em] text-grayText">Смену принимает</p>
