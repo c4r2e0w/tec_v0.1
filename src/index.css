@@ -32,15 +32,15 @@ body {
 @keyframes cellGlow {
   0% {
     transform: translateY(0) scale(1);
-    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.06);
+    box-shadow: 0 0 0 0 rgba(62, 219, 138, 0.08);
   }
   50% {
     transform: translateY(-1px) scale(1.04);
-    box-shadow: 0 10px 24px 4px rgba(56, 189, 248, 0.16);
+    box-shadow: 0 10px 24px 4px rgba(62, 219, 138, 0.2);
   }
   100% {
     transform: translateY(-1px) scale(1.02);
-    box-shadow: 0 12px 32px 6px rgba(56, 189, 248, 0.2);
+    box-shadow: 0 12px 32px 6px rgba(62, 219, 138, 0.24);
   }
 }
 
@@ -119,11 +119,26 @@ body {
 
 .border-sky-300,
 .border-sky-400,
+.focus\:border-sky-300:focus,
+.focus\:border-sky-400:focus,
 .hover\:border-sky-300:hover,
 .hover\:border-sky-400\/40:hover,
 .hover\:border-sky-400\/60:hover,
 .hover\:border-sky-400\/70:hover {
   border-color: #3edb8a !important;
+}
+
+.ring-sky-200,
+.ring-sky-200\/80,
+.ring-sky-300,
+.focus-visible\:ring-sky-300:focus-visible {
+  --tw-ring-color: rgba(62, 219, 138, 0.45) !important;
+}
+
+.shadow-sky-900\/10,
+.shadow-\[0_10px_40px_-12px_rgba\(56\,189\,248\,0\.35\)\],
+.hover\:shadow-\[0_18px_50px_-12px_rgba\(56\,189\,248\,0\.45\)\]:hover {
+  box-shadow: 0 12px 34px -16px rgba(31, 107, 67, 0.55) !important;
 }
 
 .text-emerald-100,

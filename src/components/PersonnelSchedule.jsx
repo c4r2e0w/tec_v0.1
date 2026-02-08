@@ -423,14 +423,14 @@ const ScheduleCell = memo(function ScheduleCell({
   return (
     <td
       onClick={(e) => onClick(employeeId, date, e)}
-      className={`relative cursor-pointer px-0.5 py-0.5 align-top transition hover:bg-sky-500/10 sm:px-1 sm:py-1 ${
-        selected ? 'bg-sky-500/10' : ''
+      className={`relative cursor-pointer px-0.5 py-0.5 align-top transition hover:bg-accent/10 sm:px-1 sm:py-1 ${
+        selected ? 'bg-accent/10' : ''
       }`}
     >
       <div
         className={`relative flex min-h-[38px] items-end justify-center rounded border px-2 pt-3 pb-1 text-[10px] font-semibold text-slate-100 transition sm:min-h-[44px] sm:px-3 sm:pt-4 sm:text-[11px] ${
           selected
-            ? 'scale-[1.02] border-sky-300/80 bg-sky-500/10 ring-2 ring-sky-200/80 ring-offset-2 ring-offset-slate-900'
+            ? 'scale-[1.02] border-accent/70 bg-accent/10 ring-2 ring-accent/45 ring-offset-2 ring-offset-slate-900'
             : 'bg-white/5 border-white/10'
         }`}
         title={tooltip}
@@ -998,7 +998,7 @@ function PersonnelSchedule(props) {
                     </td>
                     <td className="text-right font-semibold text-white">{row.total.toFixed(1)}</td>
                     <td
-                      className={`text-right font-semibold ${row.overtime > 0 ? 'text-amber-300' : row.overtime < 0 ? 'text-sky-300' : 'text-slate-300'}`}
+                      className={`text-right font-semibold ${row.overtime > 0 ? 'text-amber-300' : row.overtime < 0 ? 'text-slate-300' : 'text-slate-300'}`}
                     >
                       {row.overtime.toFixed(1)}
                     </td>

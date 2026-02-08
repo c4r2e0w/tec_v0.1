@@ -73,7 +73,7 @@ function Layout({ children }) {
                   <span className="text-xs text-grayText">{expanded ? '–' : '+'}</span>
                 </button>
                 {expanded && (
-                  <div className="flex flex-col border-t border-border">
+                  <div className="flex flex-col gap-1 border-t border-border p-2">
                     {['personnel', 'equipment', 'docs'].map((section) => (
                       <NavLink
                         key={section}
@@ -81,10 +81,10 @@ function Layout({ children }) {
                         onClick={() => setMobileNavOpen(false)}
                         className={({ isActive }) =>
                           [
-                            'px-4 py-2 text-sm transition',
+                            'rounded-lg border px-4 py-2 text-sm transition',
                             isActive
-                              ? 'bg-primary/20 text-accent border-l-2 border-accent'
-                              : 'hover:bg-background hover:text-accent',
+                              ? 'border-accent/60 bg-primary/25 text-accent shadow-sm shadow-accent/10'
+                              : 'border-transparent text-grayText hover:border-accent/35 hover:bg-background hover:text-dark',
                           ].join(' ')
                         }
                       >
