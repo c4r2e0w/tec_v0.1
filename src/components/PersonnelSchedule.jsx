@@ -423,15 +423,15 @@ const ScheduleCell = memo(function ScheduleCell({
   return (
     <td
       onClick={(e) => onClick(employeeId, date, e)}
-      className={`relative cursor-pointer px-0.5 py-0.5 align-top transition hover:bg-accent/10 sm:px-1 sm:py-1 ${
-        selected ? 'bg-accent/10' : ''
+      className={`group relative cursor-pointer px-0.5 py-0.5 align-top transition sm:px-1 sm:py-1 ${
+        selected ? 'bg-accent/5' : ''
       }`}
     >
       <div
-        className={`relative flex min-h-[38px] items-end justify-center rounded border px-2 pt-3 pb-1 text-[10px] font-semibold text-slate-100 transition sm:min-h-[44px] sm:px-3 sm:pt-4 sm:text-[11px] ${
+        className={`relative flex min-h-[38px] items-end justify-center rounded-xl border px-2 pt-3 pb-1 text-[10px] font-semibold text-slate-100 transition-all duration-200 sm:min-h-[44px] sm:px-3 sm:pt-4 sm:text-[11px] ${
           selected
-            ? 'scale-[1.02] border-accent/70 bg-accent/10 ring-2 ring-accent/45 ring-offset-2 ring-offset-slate-900'
-            : 'bg-white/5 border-white/10'
+            ? 'scale-[1.02] border-accent/70 bg-accent/12 ring-2 ring-accent/45 ring-offset-2 ring-offset-slate-900 shadow-[0_0_0_1px_rgba(62,219,138,0.2),0_10px_26px_rgba(0,0,0,0.35)]'
+            : 'border-white/10 bg-white/5 group-hover:-translate-y-[1px] group-hover:border-accent/45 group-hover:bg-accent/8 group-hover:shadow-[0_0_0_1px_rgba(62,219,138,0.15),0_8px_20px_rgba(0,0,0,0.32)]'
         }`}
         title={tooltip}
       >
