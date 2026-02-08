@@ -26,17 +26,17 @@ function EquipmentPage() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
-        <div className="flex items-center justify-between">
+      <div className="rounded-2xl border border-border bg-white p-6 shadow-lg">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Оборудование</p>
-            <h1 className="text-xl font-semibold text-white">Реестр оборудования</h1>
+            <p className="text-xs uppercase tracking-[0.2em] text-grayText">Оборудование</p>
+            <h1 className="text-xl font-semibold text-dark">Реестр оборудования</h1>
           </div>
-          <button className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-100 transition hover:border-sky-400/70 hover:text-white">
+          <button className="rounded-full border border-border px-3 py-1 text-xs text-dark transition hover:border-accent/70 hover:text-dark">
             Фильтр
           </button>
         </div>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-grayText">
           {loading ? 'Загрузка данных из Supabase…' : 'Данные подгружаются из таблицы equipment.'}
         </p>
         {error && <p className="text-sm text-orange-300">Ошибка: {error}</p>}
@@ -46,20 +46,20 @@ function EquipmentPage() {
         {equipment.map((eq) => (
           <div
             key={eq.id || `${eq.name}-${eq.area}`}
-            className="rounded-xl border border-white/5 bg-white/5 p-4 text-sm text-slate-200 transition hover:border-sky-400/50"
+            className="rounded-xl border border-border bg-background p-4 text-sm text-dark transition hover:border-accent/50"
           >
-            <div className="flex items-center justify-between text-xs text-slate-400">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-grayText">
               <span>{eq.area || eq.zone || '—'}</span>
               <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-100">
                 {eq.status || 'В работе'}
               </span>
             </div>
-            <p className="mt-2 text-lg font-semibold text-white">{eq.name || eq.id || eq.code || 'Без имени'}</p>
-            <p className="text-xs text-slate-300">{eq.note || eq.description || '—'}</p>
+            <p className="mt-2 text-lg font-semibold text-dark">{eq.name || eq.id || eq.code || 'Без имени'}</p>
+            <p className="text-xs text-grayText">{eq.note || eq.description || '—'}</p>
           </div>
         ))}
         {!loading && !error && equipment.length === 0 && (
-          <div className="rounded-xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-slate-300">
+          <div className="rounded-xl border border-dashed border-border bg-background p-4 text-sm text-grayText">
             Нет записей в equipment.
           </div>
         )}
