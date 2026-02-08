@@ -1,8 +1,8 @@
 const colorMap = {
   neutral: 'border border-border bg-white text-grayText',
   sky: 'border border-accent/40 bg-accent/10 text-primary',
-  emerald: 'border border-eco/40 bg-eco-light text-eco',
-  orange: 'border border-orange-300/40 bg-orange-50 text-orange-700',
+  emerald: 'border border-eco/40 bg-eco-light text-eco-dark',
+  orange: 'border border-warning/40 bg-warning-light text-warning',
   red: 'border border-red-400/40 bg-red-50 text-red-700',
 }
 

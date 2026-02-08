@@ -75,13 +75,13 @@ function StartPage() {
               безопасностью и держите курс на стабильную генерацию.
             </p>
             <div className="flex flex-wrap gap-2 text-xs text-white/85">
-              <span className="rounded-full border border-emerald-400/60 bg-emerald-500/10 px-3 py-1 text-emerald-100">
+              <span className="rounded-full border border-eco/60 bg-eco/20 px-3 py-1 text-white">
                 Рейтинг безопасности 98%
               </span>
-              <span className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-white">
+              <span className="rounded-full border border-eco-dark/60 bg-eco-dark/30 px-3 py-1 text-white">
                 Новые идеи: 12
               </span>
-              <span className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-white">
+              <span className="rounded-full border border-warning/70 bg-warning/35 px-3 py-1 text-white">
                 ППР на неделе: 6
               </span>
             </div>
@@ -113,10 +113,10 @@ function StartPage() {
           <button className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover">
             Запустить смену
           </button>
-          <button className="rounded-full border border-border px-5 py-2 text-sm text-dark transition hover:border-accent/70 hover:text-primary">
+          <button className="rounded-full border border-white/40 px-5 py-2 text-sm text-white transition hover:border-white hover:text-white">
             Создать объявление
           </button>
-          <button className="rounded-full border border-border px-5 py-2 text-sm text-dark transition hover:border-accent/70 hover:text-primary">
+          <button className="rounded-full border border-white/40 px-5 py-2 text-sm text-white transition hover:border-white hover:text-white">
             Быстрый наряд
           </button>
         </div>

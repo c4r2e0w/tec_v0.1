@@ -18,7 +18,12 @@ export default {
         border: "#E5E7EB",
         eco: {
           DEFAULT: "#2E8B57",
+          dark: "#1F6B43",
           light: "#E6F4EA",
+        },
+        warning: {
+          DEFAULT: "#C66A12",
+          light: "#FFF4E8",
         },
       },
     },

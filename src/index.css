@@ -69,9 +69,7 @@ body {
 .bg-slate-800\/80,
 .bg-slate-950\/60,
 .bg-slate-950\/70,
-.bg-slate-950\/85,
-.bg-white\/5,
-.bg-white\/10 {
+.bg-slate-950\/85 {
   background-color: #ffffff !important;
 }
 
@@ -103,9 +101,19 @@ body {
   border-color: #0076ce !important;
 }
 
-.hover\:text-white:hover,
 .text-emerald-100,
 .text-emerald-200,
 .text-emerald-300 {
-  color: #2e8b57 !important;
+  color: #1f6b43 !important;
+}
+
+/* Keep text white where we intentionally use dark/colored backgrounds. */
+.bg-primary.text-white,
+.bg-primary-hover.text-white,
+.bg-emerald-500.text-white,
+.bg-warning.text-white,
+.bg-primary .text-white,
+.from-primary .text-white,
+.to-primary-hover .text-white {
+  color: #ffffff !important;
 }
