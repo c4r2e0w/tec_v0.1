@@ -418,18 +418,60 @@ function UnitSectionPage() {
     return hour >= 20 || hour < 8 ? 'night' : 'day'
   }, [])
   const shiftCodes = useMemo(() => ['А', 'Б', 'В', 'Г'], [])
-  const todayShiftIndex = useMemo(() => {
-    const now = new Date()
-    const yearStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1))
-    const dayNumber = Math.floor((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - yearStart.getTime()) / 86400000)
+  const shiftSlotTypeLabel = useCallback((type) => (type === 'night' ? 'Ночь' : 'День'), [])
+  const shiftCodeByDate = useCallback((dateStr) => {
+    const d = new Date(dateStr)
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+    const dayNumber = Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - yearStart.getTime()) / 86400000)
     return ((dayNumber % 4) + 4) % 4
   }, [])
-  const [viewedShiftOffset, setViewedShiftOffset] = useState(0)
-  const activeShiftIndex = useMemo(
-    () => ((todayShiftIndex + viewedShiftOffset) % shiftCodes.length + shiftCodes.length) % shiftCodes.length,
-    [todayShiftIndex, viewedShiftOffset, shiftCodes.length],
+  const baseShiftDate = useMemo(() => {
+    if (currentShiftType !== 'night') return currentShiftDate
+    const nowHour = new Date().getHours()
+    // Ночная смена 20:00-08:00 относится к дате начала смены.
+    if (nowHour < 8) return addDaysIso(currentShiftDate, -1)
+    return currentShiftDate
+  }, [addDaysIso, currentShiftDate, currentShiftType])
+  const baseShiftType = useMemo(() => currentShiftType, [currentShiftType])
+  const resolveShiftSlot = useCallback(
+    (delta = 0) => {
+      let date = baseShiftDate
+      let type = baseShiftType
+      let remain = delta
+      while (remain > 0) {
+        if (type === 'day') {
+          type = 'night'
+        } else {
+          type = 'day'
+          date = addDaysIso(date, 1)
+        }
+        remain -= 1
+      }
+      while (remain < 0) {
+        if (type === 'night') {
+          type = 'day'
+        } else {
+          type = 'night'
+          date = addDaysIso(date, -1)
+        }
+        remain += 1
+      }
+      return { date, type }
+    },
+    [addDaysIso, baseShiftDate, baseShiftType],
   )
-  const activeShiftDate = useMemo(() => addDaysIso(currentShiftDate, viewedShiftOffset), [addDaysIso, currentShiftDate, viewedShiftOffset])
+  const baseShiftCodeIndex = useMemo(() => {
+    const dayIndex = shiftCodeByDate(baseShiftDate)
+    return baseShiftType === 'night' ? (dayIndex + 1) % shiftCodes.length : dayIndex
+  }, [baseShiftDate, baseShiftType, shiftCodeByDate, shiftCodes.length])
+  const [viewedShiftOffset, setViewedShiftOffset] = useState(0)
+  const activeShiftSlot = useMemo(() => resolveShiftSlot(viewedShiftOffset), [resolveShiftSlot, viewedShiftOffset])
+  const activeShiftDate = activeShiftSlot.date
+  const activeShiftType = activeShiftSlot.type
+  const activeShiftIndex = useMemo(
+    () => ((baseShiftCodeIndex + viewedShiftOffset) % shiftCodes.length + shiftCodes.length) % shiftCodes.length,
+    [baseShiftCodeIndex, viewedShiftOffset, shiftCodes.length],
+  )
 
   const scopeForEntryType = useCallback((entryType) => {
     if (entryType === 'daily') return 'daily_statement'
@@ -541,6 +583,7 @@ function UnitSectionPage() {
     const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
     return new Map(source.map((row) => [`${row.employee_id}-${row.date}`, row]))
   }, [scheduleRows, unit])
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const scheduleByDay = useMemo(() => {
     const map = new Map()
     const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
@@ -738,20 +781,29 @@ function UnitSectionPage() {
       .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'ru'))
   }, [workplaces])
 
-  const buildShiftRoster = useCallback((mode, targetDate) => {
+  const buildShiftRoster = useCallback((mode, targetDate, targetShiftType) => {
     const nextDate = addDaysIso(targetDate, 1)
-    const byCurrentShiftHours = employeesFromSchedule.filter((emp) => {
+    const byDayShiftHours = employeesFromSchedule.filter((emp) => {
       const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
       return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
     })
-    const byReplacementShiftHours = employeesFromSchedule.filter((emp) => {
+    const byNightShiftHours = employeesFromSchedule.filter((emp) => {
       const todayEntries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
       const nextEntries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
       const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
       const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
       return has3Today && has9Next
     })
-    const roster = mode === 'next' ? byReplacementShiftHours : byCurrentShiftHours
+    const byNextDayShiftHours = employeesFromSchedule.filter((emp) => {
+      const entries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
+      return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
+    })
+    let roster = []
+    if (mode === 'current') {
+      roster = targetShiftType === 'night' ? byNightShiftHours : byDayShiftHours
+    } else {
+      roster = targetShiftType === 'night' ? byNextDayShiftHours : byNightShiftHours
+    }
     const normalizeText = (value) =>
       String(value || '')
         .toLowerCase()
@@ -809,8 +861,16 @@ function UnitSectionPage() {
 
   const activeShiftCode = shiftCodes[activeShiftIndex] || '—'
   const nextShiftCode = shiftCodes[(activeShiftIndex + 1) % shiftCodes.length] || '—'
-  const currentRoster = useMemo(() => buildShiftRoster('current', activeShiftDate), [buildShiftRoster, activeShiftDate])
-  const nextRoster = useMemo(() => buildShiftRoster('next', activeShiftDate), [buildShiftRoster, activeShiftDate])
+  const nextShiftType = activeShiftType === 'day' ? 'night' : 'day'
+  const nextShiftDate = nextShiftType === 'day' ? addDaysIso(activeShiftDate, 1) : activeShiftDate
+  const currentRoster = useMemo(
+    () => buildShiftRoster('current', activeShiftDate, activeShiftType),
+    [activeShiftDate, activeShiftType, buildShiftRoster],
+  )
+  const nextRoster = useMemo(
+    () => buildShiftRoster('next', activeShiftDate, activeShiftType),
+    [activeShiftDate, activeShiftType, buildShiftRoster],
+  )
 
   const loadSchedule = useCallback(
     async (opts = {}) => {
@@ -1500,8 +1560,10 @@ function UnitSectionPage() {
           <div className="rounded-2xl border border-border bg-surface/95 p-4 shadow-lg">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.22em] text-grayText">Сейчас на смене</p>
-                <p className="text-lg font-semibold text-dark">Вахта {activeShiftCode}</p>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-grayText">На смене</p>
+                <p className="text-lg font-semibold text-dark">
+                  {new Date(activeShiftDate).toLocaleDateString('ru-RU')} · Вахта {activeShiftCode} · {shiftSlotTypeLabel(activeShiftType)}
+                </p>
                 <p className="text-xs text-grayText">Начальник смены: {currentRoster.chief?.label || 'не назначен'}</p>
               </div>
               <div className="flex items-center gap-2">
@@ -1512,7 +1574,7 @@ function UnitSectionPage() {
                   ←
                 </button>
                 <span className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
-                  {new Date(activeShiftDate).toLocaleDateString('ru-RU')}
+                  {new Date(activeShiftDate).toLocaleDateString('ru-RU')} · {shiftSlotTypeLabel(activeShiftType)}
                 </span>
                 <button
                   onClick={() => setViewedShiftOffset((prev) => prev + 1)}
@@ -1529,7 +1591,7 @@ function UnitSectionPage() {
             <div className="mt-3 rounded-xl border border-border bg-background/70 p-3 text-xs">
               <p className="text-[11px] uppercase tracking-[0.2em] text-grayText">Смену принимает</p>
               <p className="mt-1 text-dark">
-                Вахта {nextShiftCode} · Начальник: {nextRoster.chief?.label || 'не назначен'}
+                {new Date(nextShiftDate).toLocaleDateString('ru-RU')} · Вахта {nextShiftCode} · {shiftSlotTypeLabel(nextShiftType)} · Начальник: {nextRoster.chief?.label || 'не назначен'}
               </p>
               <p className="mt-1 text-grayText">
                 Рабочих мест к приёмке: {(nextRoster.boiler?.length || 0) + (nextRoster.turbine?.length || 0)}.
