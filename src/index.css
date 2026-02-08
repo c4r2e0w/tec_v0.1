@@ -1,13 +1,13 @@
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  color: #1a1a1a;
-  background-color: #f5f7fa;
-  font-family: "Manrope", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #1d1d1b;
+  background-color: #ffffff;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
@@ -15,8 +15,12 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f5f7fa;
-  color: #1a1a1a;
+  color: #1d1d1b;
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(120deg, rgba(0, 166, 80, 0.045) 1px, transparent 1px),
+    linear-gradient(60deg, rgba(167, 169, 172, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px, 64px 64px;
 }
 
 #root {
@@ -51,13 +55,13 @@ body {
 .text-slate-400,
 .text-slate-500,
 .text-white {
-  color: #1a1a1a !important;
+  color: #1d1d1b !important;
 }
 
 .text-sky-100,
 .text-sky-200,
 .text-sky-300 {
-  color: #0076ce !important;
+  color: #00a650 !important;
 }
 
 .bg-slate-950,
@@ -70,7 +74,7 @@ body {
 .bg-slate-950\/60,
 .bg-slate-950\/70,
 .bg-slate-950\/85 {
-  background-color: #ffffff !important;
+  background-color: #f4f4f4 !important;
 }
 
 .border-white\/5,
@@ -78,18 +82,18 @@ body {
 .border-white\/15,
 .border-white\/20,
 .border-slate-400 {
-  border-color: #e5e7eb !important;
+  border-color: #f4f4f4 !important;
 }
 
 .bg-sky-500,
 .hover\:bg-sky-400:hover {
-  background-color: #003b73 !important;
+  background-color: #00a650 !important;
 }
 
 .bg-sky-500\/10,
 .bg-sky-500\/15,
 .bg-sky-500\/20 {
-  background-color: rgba(0, 59, 115, 0.1) !important;
+  background-color: rgba(0, 166, 80, 0.1) !important;
 }
 
 .border-sky-300,
@@ -98,7 +102,7 @@ body {
 .hover\:border-sky-400\/40:hover,
 .hover\:border-sky-400\/60:hover,
 .hover\:border-sky-400\/70:hover {
-  border-color: #0076ce !important;
+  border-color: #00a650 !important;
 }
 
 .text-emerald-100,

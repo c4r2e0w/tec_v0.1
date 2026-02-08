@@ -8,18 +8,20 @@ export default {
     extend: {
       colors: {
         primary: {
-          DEFAULT: "#003B73",
-          hover: "#0056A6",
+          DEFAULT: "#00A650",
+          hover: "#008A43",
         },
-        accent: "#0076CE",
-        background: "#F5F7FA",
-        dark: "#1A1A1A",
-        grayText: "#6B7280",
-        border: "#E5E7EB",
+        accent: "#00A650",
+        background: "#FFFFFF",
+        dark: "#1D1D1B",
+        grayText: "#A7A9AC",
+        border: "#F4F4F4",
+        surface: "#F4F4F4",
+        silver: "#A7A9AC",
         eco: {
-          DEFAULT: "#2E8B57",
-          dark: "#1F6B43",
-          light: "#E6F4EA",
+          DEFAULT: "#00A650",
+          dark: "#008A43",
+          light: "#EAF8F0",
         },
         warning: {
           DEFAULT: "#C66A12",
