@@ -525,6 +525,22 @@ function UnitSectionPage() {
     },
     [scheduleByDay],
   )
+  const applyPendingToScheduleRows = useCallback((pending) => {
+    if (!pending?.size) return
+    setScheduleRows((prev) => {
+      const byKey = new Map()
+      prev.forEach((row) => {
+        const key = `${row.employee_id}-${row.date}`
+        const list = byKey.get(key) || []
+        list.push(row)
+        byKey.set(key, list)
+      })
+      pending.forEach((entries, key) => {
+        byKey.set(key, Array.isArray(entries) ? entries : [])
+      })
+      return Array.from(byKey.values()).flat()
+    })
+  }, [])
   const pentagramTypesInSchedule = useMemo(() => {
     const types = new Set()
     scheduleRows.forEach((row) => {
@@ -833,14 +849,16 @@ function UnitSectionPage() {
   const handleApplyShift = async (employeeId, date, shiftIdArg, opts = {}) => {
     if (!user || !employeeId || !date) return
     const shiftId = shiftIdArg ?? selectedShiftId
-    const pending = opts.pending
+    const pending = opts.pending ?? new Map()
+    const isBatch = Boolean(opts.pending)
     const skipReload = opts.skipReload
     if (!shiftId) return
     if (shiftId === 'clear') {
       await deleteNightParts(employeeId, [date], pending)
       await scheduleService.deleteEntry({ employeeId: Number(employeeId), date })
-      if (pending?.set) pending.set(`${employeeId}-${date}`, [])
-      if (!skipReload) loadSchedule({ silent: true })
+      pending.set(`${employeeId}-${date}`, [])
+      if (!isBatch) applyPendingToScheduleRows(pending)
+      if (!skipReload) void loadSchedule({ silent: true })
       return
     }
     if (shiftId === 'off') {
@@ -857,7 +875,9 @@ function UnitSectionPage() {
         note: 'Выходной',
       }
       await scheduleService.createEntry(payload)
-      if (!skipReload) loadSchedule({ silent: true })
+      pending.set(`${employeeId}-${date}`, [payload])
+      if (!isBatch) applyPendingToScheduleRows(pending)
+      if (!skipReload) void loadSchedule({ silent: true })
       return
     }
 
@@ -894,10 +914,8 @@ function UnitSectionPage() {
             note: 'Ночная (9/3, подряд)',
           }
           await scheduleService.createEntry(updatedToday)
-          if (pending?.set) {
-            const key = `${employeeId}-${date}`
-            pending.set(key, [updatedToday])
-          }
+          const key = `${employeeId}-${date}`
+          pending.set(key, [updatedToday])
         } else {
           const noteToday = 'Ночная (3/9)'
           const entryToday = {
@@ -912,11 +930,9 @@ function UnitSectionPage() {
             note: noteToday,
           }
           await scheduleService.createEntry(entryToday)
-          if (pending?.set) {
-            const key = `${employeeId}-${date}`
-            const list = mergeEntriesForDate(employeeId, date, pending).filter((e) => e !== entryToday)
-            pending.set(key, [...list.filter((e) => e.source !== 'status-night'), entryToday])
-          }
+          const key = `${employeeId}-${date}`
+          const list = mergeEntriesForDate(employeeId, date, pending).filter((e) => e !== entryToday)
+          pending.set(key, [...list.filter((e) => e.source !== 'status-night'), entryToday])
         }
 
         const entryNext = {
@@ -931,11 +947,10 @@ function UnitSectionPage() {
           note: 'Отсыпной после ночи (9ч)',
         }
         await scheduleService.createEntry(entryNext)
-        if (pending?.set) {
-          const keyNext = `${employeeId}-${nextDate}`
-          pending.set(keyNext, [...mergeEntriesForDate(employeeId, nextDate, pending).filter((e) => e !== entryNext), entryNext])
-        }
-        if (!skipReload) loadSchedule({ silent: true })
+        const keyNext = `${employeeId}-${nextDate}`
+        pending.set(keyNext, [...mergeEntriesForDate(employeeId, nextDate, pending).filter((e) => e !== entryNext), entryNext])
+        if (!isBatch) applyPendingToScheduleRows(pending)
+        if (!skipReload) void loadSchedule({ silent: true })
         return
       }
       const payload = {
@@ -950,11 +965,10 @@ function UnitSectionPage() {
         note: custom.note || custom.label || 'Статус',
       }
       await scheduleService.createEntry(payload)
-      if (pending?.set) {
-        const key = `${employeeId}-${date}`
-        pending.set(key, [...mergeEntriesForDate(employeeId, date, pending), { ...payload, source: 'status' }])
-      }
-      if (!skipReload) loadSchedule({ silent: true })
+      const key = `${employeeId}-${date}`
+      pending.set(key, [...mergeEntriesForDate(employeeId, date, pending), { ...payload, source: 'status' }])
+      if (!isBatch) applyPendingToScheduleRows(pending)
+      if (!skipReload) void loadSchedule({ silent: true })
       return
     }
 
@@ -998,15 +1012,13 @@ function UnitSectionPage() {
             source: 'template-night',
             template_id: tmpl.id,
             note: `${baseNote} (часть 1 · ${dayOneHours}ч)`,
-          }
+      }
       await scheduleService.createEntry(entryToday)
-      if (pending?.set) {
-        const key = `${employeeId}-${date}`
-        if (hasTailFromPrev) {
-          pending.set(key, [entryToday])
-        } else {
-          pending.set(key, [...mergeEntriesForDate(employeeId, date, pending).filter((e) => e !== entryToday), entryToday])
-        }
+      const key = `${employeeId}-${date}`
+      if (hasTailFromPrev) {
+        pending.set(key, [entryToday])
+      } else {
+        pending.set(key, [...mergeEntriesForDate(employeeId, date, pending).filter((e) => e !== entryToday), entryToday])
       }
       const entryNext = {
         employee_id: Number(employeeId),
@@ -1023,11 +1035,10 @@ function UnitSectionPage() {
           : `Отсыпной после ночи (${dayTwoHours}ч)`,
       }
       await scheduleService.createEntry(entryNext)
-      if (pending?.set) {
-        const keyNext = `${employeeId}-${nextDate}`
-        pending.set(keyNext, [...mergeEntriesForDate(employeeId, nextDate, pending).filter((e) => e !== entryNext), entryNext])
-      }
-      if (!skipReload) loadSchedule({ silent: true })
+      const keyNext = `${employeeId}-${nextDate}`
+      pending.set(keyNext, [...mergeEntriesForDate(employeeId, nextDate, pending).filter((e) => e !== entryNext), entryNext])
+      if (!isBatch) applyPendingToScheduleRows(pending)
+      if (!skipReload) void loadSchedule({ silent: true })
       return
     }
 
@@ -1044,25 +1055,26 @@ function UnitSectionPage() {
       note: tmpl.name || tmpl.code || 'Смена',
     }
     await scheduleService.createEntry(payload)
-    if (pending?.set) {
-      const key = `${employeeId}-${date}`
-      pending.set(key, [...mergeEntriesForDate(employeeId, date, pending), { ...payload, source: tmpl.code || 'template' }])
-    }
-    if (!skipReload) loadSchedule({ silent: true })
+    const key = `${employeeId}-${date}`
+    pending.set(key, [...mergeEntriesForDate(employeeId, date, pending), { ...payload, source: tmpl.code || 'template' }])
+    if (!isBatch) applyPendingToScheduleRows(pending)
+    if (!skipReload) void loadSchedule({ silent: true })
   }
 
   const applyShiftToSelected = async (shiftId) => {
     if (!shiftId || !selectedCells.length) return
     setSelectedShiftId(shiftId)
+    setMenuCell(null)
     const unique = new Map()
     selectedCells.forEach((c) => unique.set(`${c.employeeId}-${c.date}`, c))
     const pending = new Map()
     for (const cell of unique.values()) {
       await handleApplyShift(cell.employeeId, cell.date, shiftId, { pending, skipReload: true })
     }
-    await loadSchedule({ silent: true })
+    applyPendingToScheduleRows(pending)
+    void loadSchedule({ silent: true })
     setSelectedCells([])
-    setMenuCell(null)
+    setSelectionAnchor(null)
   }
 
   if (!unitData || !sectionLabel) {

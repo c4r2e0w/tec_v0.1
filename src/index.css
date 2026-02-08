@@ -171,7 +171,7 @@ button {
   border-radius: 10px;
 }
 
-button:not(:disabled) {
+button:not(:disabled):not(.no-spy-btn) {
   position: relative;
   overflow: hidden;
   transition:
@@ -180,7 +180,7 @@ button:not(:disabled) {
     border-color 220ms ease;
 }
 
-button:not(:disabled)::after {
+button:not(:disabled):not(.no-spy-btn)::after {
   content: "";
   position: absolute;
   top: -40%;
@@ -200,7 +200,7 @@ button:not(:disabled)::after {
   );
 }
 
-button:not(:disabled):hover {
+button:not(:disabled):not(.no-spy-btn):hover {
   transform: translateY(-1px) scale(1.01);
   box-shadow:
     0 0 0 1px rgba(62, 219, 138, 0.35),
@@ -208,7 +208,7 @@ button:not(:disabled):hover {
     0 10px 28px rgba(0, 0, 0, 0.45);
 }
 
-button:not(:disabled):hover::after {
+button:not(:disabled):not(.no-spy-btn):hover::after {
   opacity: 1;
   animation: spySweep 820ms ease;
 }

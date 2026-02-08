@@ -890,7 +890,7 @@ function PersonnelSchedule(props) {
             >
               <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.15em] text-slate-400">
                 <span>Выбрать смену</span>
-                <button onClick={() => setMenuCell(null)} className="rounded-full px-2 py-0.5 text-[12px] font-semibold text-slate-200 transition hover:bg-white/10">
+                <button onClick={() => setMenuCell(null)} className="no-spy-btn rounded-full px-2 py-0.5 text-[12px] font-semibold text-slate-200 transition hover:bg-white/10">
                   ×
                 </button>
               </div>
@@ -905,8 +905,8 @@ function PersonnelSchedule(props) {
                   .map((opt) => {
                     const isClear = opt.value === 'clear'
                     return (
-                      <button
-                        key={opt.value}
+                        <button
+                          key={opt.value}
                         onClick={(e) => {
                           e.stopPropagation()
                           if (applyShiftToSelected) {
@@ -915,7 +915,7 @@ function PersonnelSchedule(props) {
                             handleApplyShift(selectedCell?.employeeId || 0, selectedCell?.date || '', opt.value)
                           }
                         }}
-                        className={`flex w-full items-center justify-between rounded-lg border px-2 py-1 text-left transition ${
+                        className={`no-spy-btn flex w-full items-center justify-between rounded-lg border px-2 py-1 text-left transition ${
                           isClear
                             ? 'border-rose-300/60 bg-rose-900/40 text-rose-50 hover:border-rose-200 hover:bg-rose-800/60'
                             : 'border-white/10 bg-slate-800/80 text-slate-100 hover:border-sky-400/60 hover:bg-slate-800'
@@ -954,7 +954,7 @@ function PersonnelSchedule(props) {
                     setSelectedEmployeeIds([])
                     setActionMenuRect(null)
                   }}
-                  className="rounded-full px-2 py-0.5 text-[12px] font-semibold text-slate-200 transition hover:bg-white/10"
+                  className="no-spy-btn rounded-full px-2 py-0.5 text-[12px] font-semibold text-slate-200 transition hover:bg-white/10"
                 >
                   ×
                 </button>
@@ -967,7 +967,7 @@ function PersonnelSchedule(props) {
                   setSelectedEmployeeIds([])
                   setActionMenuRect(null)
                 }}
-                className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-left transition hover:border-sky-400/60 hover:bg-slate-800"
+                className="no-spy-btn mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-left transition hover:border-sky-400/60 hover:bg-slate-800"
               >
                 Скрыть остальных ({selectedEmployeeIds.length})
               </button>
