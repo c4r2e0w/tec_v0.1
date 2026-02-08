@@ -50,14 +50,14 @@ function WeatherWidget() {
   }, [])
 
   if (data.loading) return <span className="text-xs text-white/80">Погода: ...</span>
-  if (data.error) return <span className="text-xs text-red-100">Погода: ошибка</span>
+  if (data.error) return <span className="text-xs text-red-200">Погода: ошибка</span>
 
   const w = data.payload || {}
   const status = weatherCodes[w.weather_code] || '—'
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white">
-      <span className="text-[11px] uppercase tracking-[0.2em] text-white/70">Усть-Илимск</span>
+    <div className="flex flex-wrap items-center gap-2 rounded-full border border-accent/35 bg-black/20 px-3 py-1 text-xs text-white shadow-[inset_0_0_20px_rgba(62,219,138,0.08)]">
+      <span className="text-[11px] uppercase tracking-[0.2em] text-accent/80">Усть-Илимск</span>
       <span className="font-semibold text-white">{Math.round(w.temperature_2m)}°C</span>
       <span className="text-white/90">{status}</span>
       <span className="text-white/70">ветер {w.wind_speed_10m ?? '—'} м/с</span>

@@ -9,9 +9,10 @@ function PillButton({
   const base = 'rounded-full px-1.5 py-0.5 text-[10px] transition'
   const activeStyles =
     activeClassName ||
-    'bg-primary text-white border border-primary shadow-sm hover:bg-primary-hover'
+    'bg-primary text-white border border-primary shadow-sm shadow-primary/20 hover:bg-primary-hover'
   const inactiveStyles =
-    inactiveClassName || 'border border-border bg-white text-dark hover:border-accent/60 hover:text-primary'
+    inactiveClassName ||
+    'border border-border bg-surface text-dark hover:border-accent/60 hover:bg-primary/10 hover:text-accent'
 
   return (
     <button {...props} className={[base, active ? activeStyles : inactiveStyles, className].join(' ')}>

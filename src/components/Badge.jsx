@@ -1,9 +1,9 @@
 const colorMap = {
-  neutral: 'border border-border bg-white text-grayText',
-  sky: 'border border-accent/40 bg-accent/10 text-primary',
-  emerald: 'border border-eco/40 bg-eco-light text-eco-dark',
+  neutral: 'border border-border bg-surface text-grayText',
+  sky: 'border border-accent/40 bg-accent/15 text-accent',
+  emerald: 'border border-eco/50 bg-eco-light/70 text-accent',
   orange: 'border border-warning/40 bg-warning-light text-warning',
-  red: 'border border-red-400/40 bg-red-50 text-red-700',
+  red: 'border border-red-400/45 bg-red-950/40 text-red-300',
 }
 
 function Badge({ variant = 'neutral', className = '', children, ...props }) {

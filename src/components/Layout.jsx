@@ -57,14 +57,14 @@ function Layout({ children }) {
           {units.map((unit) => {
             const expanded = openUnit === unit.key
             return (
-              <div key={unit.key} className="rounded-xl border border-border bg-white">
+              <div key={unit.key} className="rounded-xl border border-border bg-surface/90 shadow-[0_10px_26px_rgba(0,0,0,0.25)]">
                 <button
                   onClick={() => {
                     setOpenUnit(expanded ? null : unit.key)
                     navigate(`/${unit.key}`)
                     setMobileNavOpen(false)
                   }}
-                  className="flex w-full items-center justify-between px-4 py-2 text-left text-dark transition hover:border-accent/40 hover:text-primary"
+                  className="flex w-full items-center justify-between px-4 py-2 text-left text-dark transition hover:border-accent/40 hover:text-accent"
                 >
                   <span className="flex items-center gap-2">
                     <span className="w-6 text-center text-base">{unit.icon}</span>
@@ -83,8 +83,8 @@ function Layout({ children }) {
                           [
                             'px-4 py-2 text-sm transition',
                             isActive
-                              ? 'bg-primary/10 text-primary border-l-2 border-accent'
-                              : 'hover:bg-background hover:text-primary',
+                              ? 'bg-primary/20 text-accent border-l-2 border-accent'
+                              : 'hover:bg-background hover:text-accent',
                           ].join(' ')
                         }
                       >
@@ -112,8 +112,8 @@ function Layout({ children }) {
                 [
                   'rounded-xl px-4 py-2 transition',
                   isActive
-                    ? 'bg-primary/10 text-primary border border-accent/60 shadow-sm'
-                    : 'border border-border hover:border-accent/40 hover:text-primary',
+                    ? 'bg-primary/20 text-accent border border-accent/60 shadow-sm shadow-accent/10'
+                    : 'border border-border hover:border-accent/40 hover:text-accent',
                 ].join(' ')
               }
             >
@@ -129,7 +129,7 @@ function Layout({ children }) {
                 [
                   'rounded-xl px-4 py-2 transition',
                   isActive
-                    ? 'bg-eco/light text-eco border border-eco/60 shadow-sm'
+                    ? 'bg-eco-light/70 text-accent border border-eco/60 shadow-sm shadow-eco/10'
                     : 'border border-border hover:border-eco/40 hover:text-eco',
                 ].join(' ')
               }
@@ -152,7 +152,7 @@ function Layout({ children }) {
         <div className="absolute right-10 top-24 h-72 w-72 rounded-full bg-eco/10 blur-3xl" />
       </div>
 
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col gap-6 border-r border-border bg-white/95 px-6 py-8 shadow-lg backdrop-blur md:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col gap-6 border-r border-border bg-surface/95 px-6 py-8 shadow-[0_18px_38px_rgba(0,0,0,0.45)] backdrop-blur md:flex">
         <div
           onClick={() => navigate('/')}
           className="flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-2 py-1 transition hover:border-accent/40"
@@ -173,7 +173,7 @@ function Layout({ children }) {
         onClick={() => setMobileNavOpen(false)}
       />
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 flex-col gap-6 border-r border-border bg-white/95 px-6 py-8 shadow-lg backdrop-blur transition-transform duration-200 md:hidden ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-50 w-72 flex-col gap-6 border-r border-border bg-surface/95 px-6 py-8 shadow-[0_18px_38px_rgba(0,0,0,0.45)] backdrop-blur transition-transform duration-200 md:hidden ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className="flex items-center justify-between">
           <div
@@ -194,7 +194,7 @@ function Layout({ children }) {
           <button
             onClick={() => setMobileNavOpen(false)}
             aria-label="Закрыть меню"
-            className="rounded-full border border-border bg-background px-3 py-1 text-sm text-dark transition hover:border-accent/60"
+            className="rounded-full border border-border bg-background px-3 py-1 text-sm text-dark transition hover:border-accent/60 hover:text-accent"
           >
             ✕
           </button>
@@ -203,37 +203,40 @@ function Layout({ children }) {
       </aside>
 
       <div className={`relative z-10 flex flex-1 flex-col ${mainOffset}`}>
-        <header className="sticky top-0 flex flex-col gap-3 border-b border-border bg-primary px-4 py-3 text-white backdrop-blur md:z-10 md:flex-row md:flex-wrap md:items-center md:justify-between md:px-5 md:py-4">
+        <header className="sticky top-0 flex flex-col gap-3 border-b border-accent/30 bg-[linear-gradient(120deg,#08110e_0%,#10241d_52%,#173628_100%)] px-4 py-3 text-white shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur md:z-10 md:flex-row md:flex-wrap md:items-center md:justify-between md:px-5 md:py-4">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
           <div className="flex items-center gap-2 md:min-w-[180px]">
             {user && (
               <button
                 onClick={() => setMobileNavOpen((v) => !v)}
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-lg text-white transition hover:border-white md:hidden"
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-accent/35 bg-black/20 text-lg text-accent transition hover:border-accent hover:bg-black/35 md:hidden"
                 aria-label="Навигация"
               >
                 ☰
               </button>
             )}
-            <p className="text-sm font-semibold text-white">{currentUnit || 'УИ-ТЭЦ'}</p>
+            <p className="text-sm font-semibold text-white drop-shadow-[0_0_14px_rgba(62,219,138,0.25)]">
+              {currentUnit || 'УИ-ТЭЦ'}
+            </p>
           </div>
           <div className="flex w-full flex-wrap items-center justify-start gap-2 text-xs text-white/90 md:w-auto md:justify-end">
-            <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-white">
+            <span className="rounded-full border border-accent/35 bg-black/20 px-3 py-1 text-white">
               {dateFormatter.format(now)} (UTC+8)
             </span>
             <WeatherWidget />
             {user ? (
-              <div className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1">
+              <div className="flex items-center gap-2 rounded-full border border-accent/35 bg-black/20 px-3 py-1">
                 <span className="text-[11px] uppercase tracking-[0.2em] text-white/70">Вошли</span>
                 <span className="text-xs text-white">{user.email}</span>
                 <button
                   onClick={handleProfile}
-                  className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-primary transition hover:bg-background"
+                  className="rounded-full border border-accent/45 bg-accent/15 px-3 py-1 text-[11px] font-semibold text-accent transition hover:bg-accent/25 hover:text-white"
                 >
                   Профиль
                 </button>
                 <button
                   onClick={handleLogout}
-                  className="rounded-full border border-white/30 px-3 py-1 text-[11px] text-white transition hover:border-white hover:text-white"
+                  className="rounded-full border border-white/30 bg-black/20 px-3 py-1 text-[11px] text-white transition hover:border-accent hover:text-accent"
                 >
                   Выйти
                 </button>
