@@ -921,6 +921,72 @@ function UnitSectionPage() {
     (date, shiftType, workplaceId) => `${date}|${shiftType}|${workplaceId}`,
     [],
   )
+  const getPreviousShiftSlot = useCallback(
+    (date, shiftType) => {
+      if (shiftType === 'night') return { date, shiftType: 'day' }
+      return { date: addDaysIso(date, -1), shiftType: 'night' }
+    },
+    [addDaysIso],
+  )
+  const getCandidatesForWorkplace = useCallback(
+    (row) => {
+      const divisionCandidates = currentShiftEmployees.filter((emp) => {
+        const divisionKey = detectDivisionKey(emp)
+        if (row.divisionKey === 'other') return divisionKey === 'other'
+        return divisionKey === row.divisionKey || divisionKey === 'other'
+      })
+      return divisionCandidates.filter((emp) =>
+        canEmployeeCoverWorkplace(emp, {
+          positionText: row.requiredPositionText,
+          allowedPositions: [],
+        }),
+      )
+    },
+    [canEmployeeCoverWorkplace, currentShiftEmployees, detectDivisionKey],
+  )
+  const resolvedCurrentRoster = useMemo(() => {
+    const rows = [...(currentRoster.boiler || []), ...(currentRoster.turbine || [])]
+    const used = new Set()
+    const byId = new Map(currentShiftEmployees.map((emp) => [String(emp.id), emp]))
+    const prevSlot = getPreviousShiftSlot(activeShiftDate, activeShiftType)
+    const pickPreferredId = (row, candidates) => {
+      const currentKey = assignmentKey(activeShiftDate, activeShiftType, row.workplaceId)
+      const previousKey = assignmentKey(prevSlot.date, prevSlot.shiftType, row.workplaceId)
+      const manualId = manualWorkplaceAssignments[currentKey]
+      const previousId = manualWorkplaceAssignments[previousKey]
+      const autoId = row.employee?.id ? String(row.employee.id) : ''
+      const queue = [manualId, previousId, autoId].filter(Boolean).map(String)
+      const candidateIds = new Set(candidates.map((c) => String(c.id)))
+      const preferred = queue.find((id) => candidateIds.has(id) && !used.has(id))
+      if (preferred) return preferred
+      const fallback = candidates.find((c) => !used.has(String(c.id)))
+      return fallback ? String(fallback.id) : ''
+    }
+    const resolvedRows = rows.map((row) => {
+      const candidates = getCandidatesForWorkplace(row)
+      const selectedId = pickPreferredId(row, candidates)
+      if (selectedId) used.add(selectedId)
+      return {
+        ...row,
+        candidates,
+        selectedEmployee: selectedId ? byId.get(selectedId) || null : null,
+      }
+    })
+    return {
+      boiler: resolvedRows.filter((r) => r.divisionKey === 'boiler'),
+      turbine: resolvedRows.filter((r) => r.divisionKey === 'turbine'),
+    }
+  }, [
+    activeShiftDate,
+    activeShiftType,
+    assignmentKey,
+    currentRoster.boiler,
+    currentRoster.turbine,
+    currentShiftEmployees,
+    getCandidatesForWorkplace,
+    getPreviousShiftSlot,
+    manualWorkplaceAssignments,
+  ])
 
   const loadSchedule = useCallback(
     async (opts = {}) => {
@@ -1399,38 +1465,35 @@ function UnitSectionPage() {
         <div className="mt-2 space-y-2">
           {rows.map((row) => {
             const key = assignmentKey(activeShiftDate, activeShiftType, row.workplaceId)
-            const divisionCandidates = currentShiftEmployees.filter((emp) => {
-              const divisionKey = detectDivisionKey(emp)
-              if (row.divisionKey === 'other') return divisionKey === 'other'
-              return divisionKey === row.divisionKey || divisionKey === 'other'
-            })
-            const candidates = divisionCandidates.filter((emp) =>
-              canEmployeeCoverWorkplace(emp, { positionText: row.requiredPositionText, allowedPositions: [] }),
-            )
-            const manualEmployeeId = manualWorkplaceAssignments[key]
-            const manualEmployee = candidates.find((emp) => String(emp.id) === String(manualEmployeeId)) || null
-            const selectedEmployee = manualEmployee || row.employee || null
+            const candidates = row.candidates || []
+            const selectedEmployee = row.selectedEmployee || null
             return (
               <div key={row.workplaceId}>
                 <p className="text-[11px] text-grayText">{row.workplaceName}</p>
                 {editable ? (
                   <div className="mt-1 space-y-1">
                     <select
-                      value={manualEmployeeId ? String(manualEmployeeId) : ''}
+                      value={selectedEmployee?.id ? String(selectedEmployee.id) : ''}
                       onChange={(e) => {
                         const nextValue = e.target.value
                         setManualWorkplaceAssignments((prev) => {
-                          if (!nextValue) {
-                            const next = { ...prev }
-                            delete next[key]
-                            return next
+                          const next = { ...prev }
+                          if (!nextValue) delete next[key]
+                          else {
+                            const slotPrefix = `${activeShiftDate}|${activeShiftType}|`
+                            Object.keys(next).forEach((k) => {
+                              if (k !== key && k.startsWith(slotPrefix) && String(next[k]) === String(nextValue)) {
+                                delete next[k]
+                              }
+                            })
+                            next[key] = nextValue
                           }
-                          return { ...prev, [key]: nextValue }
+                          return next
                         })
                       }}
                       className="w-full rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
                     >
-                      <option value="">Авто: {row.employee?.label || 'не назначен'}</option>
+                      <option value="">—</option>
                       {candidates.map((emp) => (
                         <option key={emp.id} value={emp.id}>
                           {emp.label}
@@ -1453,10 +1516,6 @@ function UnitSectionPage() {
     activeShiftDate,
     activeShiftType,
     assignmentKey,
-    canEmployeeCoverWorkplace,
-    currentShiftEmployees,
-    detectDivisionKey,
-    manualWorkplaceAssignments,
   ])
 
   if (!unitData || !sectionLabel) {
@@ -1683,8 +1742,8 @@ function UnitSectionPage() {
               </div>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              {renderRosterColumn('Котельное', currentRoster.boiler, true)}
-              {renderRosterColumn('Турбинное', currentRoster.turbine, true)}
+              {renderRosterColumn('Котельное', resolvedCurrentRoster.boiler, true)}
+              {renderRosterColumn('Турбинное', resolvedCurrentRoster.turbine, true)}
             </div>
             <div className="mt-3 rounded-xl border border-border bg-background/70 p-3 text-xs">
               <p className="text-[11px] uppercase tracking-[0.2em] text-grayText">Смену принимает</p>
