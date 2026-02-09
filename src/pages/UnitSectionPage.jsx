@@ -270,6 +270,7 @@ function UnitSectionPage() {
   const [manualWorkplaceAssignments, setManualWorkplaceAssignments] = useState({})
   const [manualChiefAssignments, setManualChiefAssignments] = useState({})
   const [expandedWorkplaceSelects, setExpandedWorkplaceSelects] = useState({})
+  const [sessionEmployeeIdsBySlot, setSessionEmployeeIdsBySlot] = useState({})
   const [assignmentSessionId, setAssignmentSessionId] = useState(null)
   const [savingWorkplaces, setSavingWorkplaces] = useState(false)
   const [workplaceSaveMessage, setWorkplaceSaveMessage] = useState('')
@@ -886,6 +887,13 @@ function UnitSectionPage() {
   )
   const resolveEmployeesForShift = useCallback(
     (mode, targetDate, targetShiftType) => {
+      const slotKey = `${targetDate}|${targetShiftType}`
+      const sessionIds = sessionEmployeeIdsBySlot[slotKey]
+      if (mode === 'current' && Array.isArray(sessionIds) && sessionIds.length) {
+        const sessionIdSet = new Set(sessionIds.map((id) => String(id)))
+        const fromSession = operationalEmployeesFromSchedule.filter((emp) => sessionIdSet.has(String(emp.id)))
+        if (fromSession.length) return fromSession
+      }
       const nextDate = addDaysIso(targetDate, 1)
       const byDayShiftHours = operationalEmployeesFromSchedule.filter((emp) => {
         const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
@@ -911,7 +919,7 @@ function UnitSectionPage() {
       if (mode === 'current') return targetShiftType === 'night' ? byNightShiftHours : byDayShiftHours
       return targetShiftType === 'night' ? byNextDayShiftHours : byNightShiftHours
     },
-    [addDaysIso, operationalEmployeesFromSchedule, scheduleByDay],
+    [addDaysIso, operationalEmployeesFromSchedule, scheduleByDay, sessionEmployeeIdsBySlot],
   )
 
   const buildShiftRoster = useCallback((mode, targetDate, targetShiftType) => {
@@ -1103,6 +1111,11 @@ function UnitSectionPage() {
       })
       if (sessionRes.error || !sessionRes.data?.id) {
         setAssignmentSessionId(null)
+        setSessionEmployeeIdsBySlot((prev) => {
+          const next = { ...prev }
+          delete next[`${activeShiftDate}|${activeShiftType}`]
+          return next
+        })
         return
       }
       setAssignmentSessionId(sessionRes.data.id)
@@ -1114,10 +1127,12 @@ function UnitSectionPage() {
       if (assignmentsRes.error) return
       const slotPrefix = `${activeShiftDate}|${activeShiftType}|`
       const nextMap = {}
+      const presentEmployeeIds = []
       ;(assignmentsRes.data || []).forEach((row) => {
         const wpCode = row.workplace_code
         const empId = row.employee_id
         if (!wpCode || !empId) return
+        if (row.is_present !== false) presentEmployeeIds.push(String(empId))
         nextMap[`${slotPrefix}${wpCode}`] = String(empId)
       })
       setManualWorkplaceAssignments((prev) => {
@@ -1127,6 +1142,10 @@ function UnitSectionPage() {
         })
         return { ...merged, ...nextMap }
       })
+      setSessionEmployeeIdsBySlot((prev) => ({
+        ...prev,
+        [`${activeShiftDate}|${activeShiftType}`]: Array.from(new Set(presentEmployeeIds)),
+      }))
     }, 0)
     return () => clearTimeout(timer)
   }, [activeShiftDate, activeShiftType, assignmentKey, handoverService, section, unit, user])
