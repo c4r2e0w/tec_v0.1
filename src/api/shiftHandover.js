@@ -20,6 +20,26 @@ export async function fetchBriefingTopicForDate({ supabase, unit, shiftDate }) {
     .maybeSingle()
 }
 
+export async function fetchBriefingTopicsRange({ supabase, unit, from, to }) {
+  if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
+  let query = supabase
+    .from('briefing_topics')
+    .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
+    .order('briefing_date', { ascending: true })
+  if (unit) query = query.eq('unit', unit)
+  if (from) query = query.gte('briefing_date', from)
+  if (to) query = query.lte('briefing_date', to)
+  return query
+}
+
+export async function upsertBriefingTopics({ supabase, payload }) {
+  if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
+  return supabase
+    .from('briefing_topics')
+    .upsert(payload, { onConflict: 'unit,briefing_date' })
+    .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
+}
+
 export async function fetchShiftSession({ supabase, unit, shiftDate, shiftType = 'day' }) {
   if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
   return supabase

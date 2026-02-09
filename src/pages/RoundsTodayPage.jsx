@@ -5,6 +5,18 @@ import { createShiftWorkflowService } from '../services/shiftWorkflowService'
 import { createShiftHandoverService } from '../services/shiftHandoverService'
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
+const extractRoundTopic = (materials) => {
+  const raw = String(materials || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('{')) {
+    try {
+      return String(JSON.parse(raw)?.round_topic || '')
+    } catch {
+      return ''
+    }
+  }
+  return ''
+}
 
 function RoundsTodayPage() {
   const supabase = useSupabase()
@@ -22,11 +34,15 @@ function RoundsTodayPage() {
     const load = async () => {
       const date = todayIso()
       const topicRes = await handover.fetchTopicForDate({ unit, shiftDate: date })
-      if (!topicRes.error) setTopic(topicRes.data || null)
+      if (!topicRes.error) {
+        setTopic(topicRes.data || null)
+        const roundTopicFromBriefing = extractRoundTopic(topicRes.data?.materials)
+        if (roundTopicFromBriefing) setRoundTopic(roundTopicFromBriefing)
+      }
       const planRes = await workflow.fetchPlanForDate({ date, unit })
       if (!planRes.error) {
         const firstItem = planRes.data?.round_plan_items?.[0]?.inspection_items?.name || ''
-        setRoundTopic(firstItem)
+        setRoundTopic((prev) => prev || firstItem)
       }
     }
     void load()

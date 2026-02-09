@@ -107,6 +107,18 @@ const isChiefPosition = (value) => {
   return normalized.includes('начальник смены') || normalized.includes('нач смены')
 }
 const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
+const extractRoundTopic = (materials) => {
+  const raw = String(materials || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('{')) {
+    try {
+      return String(JSON.parse(raw)?.round_topic || '')
+    } catch {
+      return ''
+    }
+  }
+  return ''
+}
 
 const iconSvg = {
   sun: (
@@ -975,9 +987,11 @@ function UnitSectionPage() {
         shiftWorkflowService.fetchPlanForDate({ date: activeShiftDate, unit }),
       ])
       if (cancelled) return
-      setBriefingTopicTitle(topicRes.error ? '' : topicRes.data?.topic || '')
+      const briefingTopic = topicRes.error ? '' : topicRes.data?.topic || ''
+      const roundTopicFromBriefing = topicRes.error ? '' : extractRoundTopic(topicRes.data?.materials)
       const planTopic = planRes.error ? '' : planRes.data?.round_plan_items?.[0]?.inspection_items?.name || ''
-      setRoundTopicTitle(planTopic)
+      setBriefingTopicTitle(briefingTopic)
+      setRoundTopicTitle(roundTopicFromBriefing || planTopic)
     }
     void loadTopics()
     return () => {
@@ -2130,10 +2144,21 @@ function UnitSectionPage() {
                   </div>
                 )}
                 <div className="mt-2 space-y-1 text-xs text-grayText">
-                  <p>Тема пятиминутки: <span className="text-dark">{briefingTopicTitle || 'не задана'}</span></p>
+                  <p>
+                    Тема пятиминутки:{' '}
+                    <Link
+                      to={`/topics?unit=${unit}&date=${activeShiftDate}`}
+                      className="text-primary underline decoration-primary/50 underline-offset-2 hover:text-primary-hover"
+                    >
+                      {briefingTopicTitle || 'не задана'}
+                    </Link>
+                  </p>
                   <p>
                     Тема обхода:{' '}
-                    <Link to="/rounds/today" className="text-primary underline decoration-primary/50 underline-offset-2 hover:text-primary-hover">
+                    <Link
+                      to={`/topics?unit=${unit}&date=${activeShiftDate}`}
+                      className="text-primary underline decoration-primary/50 underline-offset-2 hover:text-primary-hover"
+                    >
                       {roundTopicTitle || 'не задана'}
                     </Link>
                   </p>
@@ -2169,9 +2194,6 @@ function UnitSectionPage() {
               {renderRosterColumn('Турбинное', resolvedCurrentRoster.turbine, true)}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Link to="/rounds/today" className="rounded-full border border-border px-3 py-1 text-xs text-dark hover:border-accent/60">
-                Сегодняшний обход
-              </Link>
               <button
                 onClick={() => void handleConfirmWorkplaceAssignments()}
                 disabled={savingWorkplaces || confirmingWorkplaces}
