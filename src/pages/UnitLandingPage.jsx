@@ -32,6 +32,57 @@ const addDaysLocalIso = (dateStr, days) => {
   return toIsoLocalDate(d)
 }
 
+const normalizeText = (value) => String(value || '').trim().toLowerCase()
+
+const workplaceDivision = (workplace) => {
+  const raw = [
+    workplace?.division_name,
+    workplace?.devision_name,
+    workplace?.division,
+    workplace?.department_name,
+    workplace?.departament_name,
+    workplace?.department,
+    workplace?.section,
+    workplace?.area,
+    workplace?.name,
+    workplace?.code,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  if (raw.includes('котел') || raw.includes('котель')) return 'boiler'
+  if (raw.includes('турбин')) return 'turbine'
+  return 'other'
+}
+
+const isReserveWorkplace = (workplace) => {
+  const raw = [workplace?.name, workplace?.code, workplace?.section, workplace?.area]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return raw.includes('резерв') || raw.includes('без пост')
+}
+
+const isChiefPosition = (value) => {
+  const normalized = normalizeText(value).replace(/\./g, ' ')
+  return normalized.includes('начальник смены') || normalized.includes('нач смены') || (normalized.includes('начальник') && normalized.includes('смен'))
+}
+
+const employeeDivision = (employee) => {
+  const division = normalizeText(employee?.division)
+  const department = normalizeText(employee?.department)
+  if (division.includes('котел') || division.includes('котель') || department.includes('котел') || department.includes('котель'))
+    return 'boiler'
+  if (division.includes('турбин') || department.includes('турбин')) return 'turbine'
+
+  const pos = normalizeText(employee?.position)
+  const hasBoiler = pos.includes('котел') || pos.includes('котель')
+  const hasTurbine = pos.includes('турбин')
+  if (hasBoiler && !hasTurbine) return 'boiler'
+  if (hasTurbine && !hasBoiler) return 'turbine'
+  return 'other'
+}
+
 function UnitLandingPage() {
   const { unit } = useParams()
   const navigate = useNavigate()
@@ -49,42 +100,6 @@ function UnitLandingPage() {
     boilerRows: [],
     turbineRows: [],
   })
-
-  const normalizeText = (value) => String(value || '').trim().toLowerCase()
-  const workplaceDivision = (workplace) => {
-    const raw = [
-      workplace?.division_name,
-      workplace?.devision_name,
-      workplace?.division,
-      workplace?.department_name,
-      workplace?.departament_name,
-      workplace?.department,
-      workplace?.section,
-      workplace?.area,
-      workplace?.name,
-      workplace?.code,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-    if (raw.includes('котел') || raw.includes('котель')) return 'boiler'
-    if (raw.includes('турбин')) return 'turbine'
-    return 'other'
-  }
-  const employeeDivision = (employee) => {
-    const division = normalizeText(employee?.division)
-    const department = normalizeText(employee?.department)
-    if (division.includes('котел') || division.includes('котель') || department.includes('котел') || department.includes('котель'))
-      return 'boiler'
-    if (division.includes('турбин') || department.includes('турбин')) return 'turbine'
-
-    const pos = normalizeText(employee?.position)
-    const hasBoiler = pos.includes('котел') || pos.includes('котель')
-    const hasTurbine = pos.includes('турбин')
-    if (hasBoiler && !hasTurbine) return 'boiler'
-    if (hasTurbine && !hasBoiler) return 'turbine'
-    return 'other'
-  }
 
   const getShiftCodeByDate = (dateStr, shiftType) => {
     const d = parseIsoLocalDate(dateStr)
@@ -165,9 +180,10 @@ function UnitLandingPage() {
           workplaceId: String(wp.id),
           workplaceName: String(wp.name || wp.code || `Пост ${wp.id}`),
           divisionKey: workplaceDivision(wp),
+          isReserve: isReserveWorkplace(wp),
           employeeName: '',
         }))
-        .filter((row) => row.divisionKey === 'boiler' || row.divisionKey === 'turbine')
+        .filter((row) => (row.divisionKey === 'boiler' || row.divisionKey === 'turbine') && !row.isReserve)
 
       const sessionRes = await handoverService.fetchSession({ unit, shiftDate, shiftType: currentType })
       const sessionId = sessionRes?.data?.id || null
@@ -179,6 +195,7 @@ function UnitLandingPage() {
 
       const assignmentNameByWorkplace = new Map()
       const occupiedEmployees = new Set()
+      const occupiedNames = new Set()
       ;(assignments || [])
         .filter((a) => a?.is_present !== false)
         .forEach((a) => {
@@ -190,12 +207,16 @@ function UnitLandingPage() {
           const fullName = employee
             ? [employee.last_name, employee.first_name, employee.middle_name].filter(Boolean).join(' ')
             : `ID ${a.employee_id}`
+          const fullNameKey = normalizeText(fullName)
           const wp = byWpId.get(key) || byWpCode.get(normalizeText(key))
           if (!wp) return
+          if (isReserveWorkplace(wp)) return
           const wpId = String(wp.id)
           if (assignmentNameByWorkplace.has(wpId)) return
+          if (fullNameKey && occupiedNames.has(fullNameKey)) return
           assignmentNameByWorkplace.set(wpId, fullName)
           occupiedEmployees.add(empId)
+          if (fullNameKey) occupiedNames.add(fullNameKey)
         })
 
       const rowsByWorkplace = baseRows.map((row) => ({
@@ -209,10 +230,17 @@ function UnitLandingPage() {
           const candidates = activeEmployees.filter((emp) => employeeDivision(emp) === divisionKey)
           let idx = 0
           places.forEach((row) => {
-            while (idx < candidates.length && occupiedEmployees.has(String(candidates[idx].id))) idx += 1
+            while (idx < candidates.length) {
+              const candidate = candidates[idx]
+              const candidateNameKey = normalizeText(candidate?.name)
+              if (!occupiedEmployees.has(String(candidate.id)) && (!candidateNameKey || !occupiedNames.has(candidateNameKey))) break
+              idx += 1
+            }
             if (idx >= candidates.length) return
             row.employeeName = candidates[idx].name
             occupiedEmployees.add(String(candidates[idx].id))
+            const candidateNameKey = normalizeText(candidates[idx].name)
+            if (candidateNameKey) occupiedNames.add(candidateNameKey)
             idx += 1
           })
         }
@@ -223,11 +251,11 @@ function UnitLandingPage() {
       const chiefFromAssignments =
         (assignments || [])
           .filter((a) => a?.is_present !== false)
-          .find((a) => normalizeText(a.position_name || a.employees?.positions?.name).includes('начальник смены'))?.employees || null
+          .find((a) => isChiefPosition(a.position_name || a.employees?.positions?.name))?.employees || null
 
       const chief = chiefFromAssignments
         ? [chiefFromAssignments.last_name, chiefFromAssignments.first_name, chiefFromAssignments.middle_name].filter(Boolean).join(' ')
-        : activeEmployees.find((e) => normalizeText(e.position).includes('начальник смены'))?.name || ''
+        : activeEmployees.find((e) => isChiefPosition(e.position))?.name || ''
 
       const boilerRows = rowsByWorkplace.filter((row) => row.divisionKey === 'boiler')
       const turbineRows = rowsByWorkplace.filter((row) => row.divisionKey === 'turbine')
