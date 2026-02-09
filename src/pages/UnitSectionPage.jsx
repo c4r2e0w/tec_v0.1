@@ -2047,45 +2047,12 @@ function UnitSectionPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.22em] text-grayText">На смене</p>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-grayText">
-                  <span>Начальник смены:</span>
-                  <select
-                    value={resolvedChief?.id ? String(resolvedChief.id) : ''}
-                    onChange={(e) => {
-                      const key = assignmentKey(activeShiftDate, activeShiftType, 'chief')
-                      const value = String(e.target.value || '')
-                      setManualChiefAssignments((prev) => {
-                        const next = { ...prev }
-                        if (!value) delete next[key]
-                        else next[key] = value
-                        return next
-                      })
-                    }}
-                    className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
-                  >
-                    <option value="">—</option>
-                    {chiefCandidates.map((emp) => (
-                      <option key={`chief-${emp.id}`} value={emp.id}>
-                        {emp.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setViewedShiftOffset((prev) => prev - 1)}
                     className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
                   >
                     ←
-                  </button>
-                  <span className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
-                    {new Date(activeShiftDate).toLocaleDateString('ru-RU')} · Вахта {activeShiftCode} · {shiftSlotTypeLabel(activeShiftType)}
-                  </span>
-                  <button
-                    onClick={() => setViewedShiftOffset((prev) => prev + 1)}
-                    className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
-                  >
-                    →
                   </button>
                   <button
                     onClick={() =>
@@ -2098,9 +2065,15 @@ function UnitSectionPage() {
                         return next
                       })
                     }
-                    className="rounded-full border border-border px-3 py-1 text-xs text-dark transition hover:border-accent/60"
+                    className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent transition hover:border-accent/70 hover:bg-accent/15"
                   >
-                    Календарь
+                    {new Date(activeShiftDate).toLocaleDateString('ru-RU')} · Вахта {activeShiftCode} · {shiftSlotTypeLabel(activeShiftType)}
+                  </button>
+                  <button
+                    onClick={() => setViewedShiftOffset((prev) => prev + 1)}
+                    className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
+                  >
+                    →
                   </button>
                 </div>
                 {showShiftCalendarNav && (
@@ -2136,6 +2109,30 @@ function UnitSectionPage() {
                     </button>
                   </div>
                 )}
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-grayText">
+                  <span>Начальник смены:</span>
+                  <select
+                    value={resolvedChief?.id ? String(resolvedChief.id) : ''}
+                    onChange={(e) => {
+                      const key = assignmentKey(activeShiftDate, activeShiftType, 'chief')
+                      const value = String(e.target.value || '')
+                      setManualChiefAssignments((prev) => {
+                        const next = { ...prev }
+                        if (!value) delete next[key]
+                        else next[key] = value
+                        return next
+                      })
+                    }}
+                    className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
+                  >
+                    <option value="">—</option>
+                    {chiefCandidates.map((emp) => (
+                      <option key={`chief-${emp.id}`} value={emp.id}>
+                        {emp.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
