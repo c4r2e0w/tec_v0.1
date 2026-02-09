@@ -11,6 +11,26 @@ const units = {
   fuel: { name: 'Цех топливоподачи', color: 'from-accent/10 to-background' },
 }
 
+const toIsoLocalDate = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+const parseIsoLocalDate = (dateStr) => {
+  const [y, m, d] = String(dateStr || '')
+    .split('-')
+    .map((value) => Number(value))
+  return new Date(y, (m || 1) - 1, d || 1)
+}
+
+const addDaysLocalIso = (dateStr, days) => {
+  const d = parseIsoLocalDate(dateStr)
+  d.setDate(d.getDate() + days)
+  return toIsoLocalDate(d)
+}
+
 function UnitLandingPage() {
   const { unit } = useParams()
   const navigate = useNavigate()
@@ -28,14 +48,8 @@ function UnitLandingPage() {
     turbine: [],
   })
 
-  const addDaysIso = (dateStr, days) => {
-    const d = new Date(dateStr)
-    d.setDate(d.getDate() + days)
-    return d.toISOString().slice(0, 10)
-  }
-
   const getShiftCodeByDate = (dateStr, shiftType) => {
-    const d = new Date(dateStr)
+    const d = parseIsoLocalDate(dateStr)
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
     const dayNumber = Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - yearStart.getTime()) / 86400000)
     const index = ((dayNumber % 4) + 4) % 4
@@ -47,10 +61,10 @@ function UnitLandingPage() {
     if (unit !== 'ktc') return
     const load = async () => {
       const now = new Date()
-      const currentDate = now.toISOString().slice(0, 10)
+      const currentDate = toIsoLocalDate(now)
       const currentType = now.getHours() >= 20 || now.getHours() < 8 ? 'night' : 'day'
-      const shiftDate = currentType === 'night' && now.getHours() < 8 ? addDaysIso(currentDate, -1) : currentDate
-      const nextDate = addDaysIso(shiftDate, 1)
+      const shiftDate = currentType === 'night' && now.getHours() < 8 ? addDaysLocalIso(currentDate, -1) : currentDate
+      const nextDate = addDaysLocalIso(shiftDate, 1)
       setShiftSummary((prev) => ({ ...prev, loading: true, error: '' }))
       const { data: rows, error } = await scheduleService.fetchRange({
         from: shiftDate,

@@ -79,6 +79,20 @@ const getIconType = (shift) => {
   return 'work'
 }
 
+const toIsoLocalDate = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+const parseIsoLocalDate = (dateStr) => {
+  const [y, m, d] = String(dateStr || '')
+    .split('-')
+    .map((value) => Number(value))
+  return new Date(y, (m || 1) - 1, d || 1)
+}
+
 const iconSvg = {
   sun: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -303,9 +317,9 @@ function UnitSectionPage() {
   }
 
   const addDays = (dateStr, days) => {
-    const d = new Date(dateStr)
+    const d = parseIsoLocalDate(dateStr)
     d.setDate(d.getDate() + days)
-    return d.toISOString().slice(0, 10)
+    return toIsoLocalDate(d)
   }
 
   const deleteNightParts = async (employeeId, dates, pending) => {
@@ -379,12 +393,12 @@ function UnitSectionPage() {
   const [monthStart, setMonthStart] = useState(() => {
     const d = new Date()
     d.setDate(1)
-    return d.toISOString().slice(0, 10)
+    return toIsoLocalDate(d)
   })
 
   const monthDates = useMemo(() => {
     const result = []
-    const start = new Date(monthStart)
+    const start = parseIsoLocalDate(monthStart)
     const end = new Date(start)
     end.setMonth(end.getMonth() + 1)
     end.setDate(0) // последний день месяца
@@ -392,7 +406,7 @@ function UnitSectionPage() {
     for (let i = 0; i < days; i++) {
       const d = new Date(start)
       d.setDate(start.getDate() + i)
-      result.push(d.toISOString().slice(0, 10))
+      result.push(toIsoLocalDate(d))
     }
     return result
   }, [monthStart])
@@ -416,11 +430,11 @@ function UnitSectionPage() {
     return sectionLabel
   }, [section, monthLabel, sectionLabel])
   const addDaysIso = useCallback((dateStr, days) => {
-    const d = new Date(dateStr)
+    const d = parseIsoLocalDate(dateStr)
     d.setDate(d.getDate() + days)
-    return d.toISOString().slice(0, 10)
+    return toIsoLocalDate(d)
   }, [])
-  const currentShiftDate = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const currentShiftDate = useMemo(() => toIsoLocalDate(new Date()), [])
   const currentShiftType = useMemo(() => {
     const hour = new Date().getHours()
     return hour >= 20 || hour < 8 ? 'night' : 'day'
@@ -428,7 +442,7 @@ function UnitSectionPage() {
   const shiftCodes = useMemo(() => ['А', 'Б', 'В', 'Г'], [])
   const shiftSlotTypeLabel = useCallback((type) => (type === 'night' ? 'Ночь' : 'День'), [])
   const shiftCodeByDate = useCallback((dateStr) => {
-    const d = new Date(dateStr)
+    const d = parseIsoLocalDate(dateStr)
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
     const dayNumber = Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - yearStart.getTime()) / 86400000)
     return ((dayNumber % 4) + 4) % 4
