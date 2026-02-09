@@ -8,6 +8,7 @@ import Badge from '../components/Badge'
 import { unitsMap, sectionsMap } from '../constants/units'
 import { createScheduleService } from '../services/scheduleService'
 import { createShiftHandoverService } from '../services/shiftHandoverService'
+import { createShiftWorkflowService } from '../services/shiftWorkflowService'
 import PersonnelSchedule from '../components/PersonnelSchedule'
 import { productionCalendar } from '../constants/productionCalendar'
 import { getMonthCalendarMeta } from '../lib/productionNorm'
@@ -184,6 +185,7 @@ function UnitSectionPage() {
   const supabase = useSupabase()
   const scheduleService = useMemo(() => createScheduleService(supabase), [supabase])
   const handoverService = useMemo(() => createShiftHandoverService(supabase), [supabase])
+  const shiftWorkflowService = useMemo(() => createShiftWorkflowService(supabase), [supabase])
   const { user } = useAuth()
   const profile = useProfile()
   const journalCode = 'ktc-docs'
@@ -238,6 +240,10 @@ function UnitSectionPage() {
   const [showSchedule, setShowSchedule] = useState(false)
   const [activeShiftPermissions, setActiveShiftPermissions] = useState([])
   const [manualWorkplaceAssignments, setManualWorkplaceAssignments] = useState({})
+  const [assignmentSessionId, setAssignmentSessionId] = useState(null)
+  const [savingWorkplaces, setSavingWorkplaces] = useState(false)
+  const [workplaceSaveMessage, setWorkplaceSaveMessage] = useState('')
+  const [workplaceSaveError, setWorkplaceSaveError] = useState('')
 
   useEffect(() => {
     const saved = localStorage.getItem(pinStorageKey)
@@ -986,6 +992,105 @@ function UnitSectionPage() {
     getCandidatesForWorkplace,
     getPreviousShiftSlot,
     manualWorkplaceAssignments,
+  ])
+
+  useEffect(() => {
+    if (section !== 'personnel' || !unit || !user) return
+    const timer = setTimeout(async () => {
+      const sessionRes = await handoverService.fetchSession({
+        unit,
+        shiftDate: activeShiftDate,
+        shiftType: activeShiftType,
+      })
+      if (sessionRes.error || !sessionRes.data?.id) {
+        setAssignmentSessionId(null)
+        return
+      }
+      setAssignmentSessionId(sessionRes.data.id)
+      const assignmentsRes = await handoverService.fetchAssignments({ sessionId: sessionRes.data.id })
+      if (assignmentsRes.error) return
+      const slotPrefix = `${activeShiftDate}|${activeShiftType}|`
+      const nextMap = {}
+      ;(assignmentsRes.data || []).forEach((row) => {
+        const wpCode = row.workplace_code
+        const empId = row.employee_id
+        if (!wpCode || !empId) return
+        nextMap[`${slotPrefix}${wpCode}`] = String(empId)
+      })
+      setManualWorkplaceAssignments((prev) => {
+        const merged = { ...prev }
+        Object.keys(merged).forEach((k) => {
+          if (k.startsWith(slotPrefix)) delete merged[k]
+        })
+        return { ...merged, ...nextMap }
+      })
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [activeShiftDate, activeShiftType, handoverService, section, unit, user])
+
+  const handleSaveWorkplaceAssignments = useCallback(async () => {
+    if (!user || section !== 'personnel' || !unit) return
+    setSavingWorkplaces(true)
+    setWorkplaceSaveError('')
+    setWorkplaceSaveMessage('')
+
+    let sessionId = assignmentSessionId
+    if (!sessionId) {
+      const createRes = await shiftWorkflowService.createOrGetBriefing({
+        date: activeShiftDate,
+        unit,
+        shiftType: activeShiftType,
+      })
+      if (createRes.error || !createRes.data) {
+        setWorkplaceSaveError(createRes.error?.message || 'Не удалось создать сессию смены')
+        setSavingWorkplaces(false)
+        return
+      }
+      sessionId = createRes.data
+      setAssignmentSessionId(sessionId)
+    }
+
+    const allRows = [...(resolvedCurrentRoster.boiler || []), ...(resolvedCurrentRoster.turbine || [])]
+    const assignedByEmployee = new Map()
+    allRows.forEach((row) => {
+      if (!row.selectedEmployee?.id) return
+      assignedByEmployee.set(String(row.selectedEmployee.id), row)
+    })
+
+    const payload = currentShiftEmployees.map((emp) => {
+      const assigned = assignedByEmployee.get(String(emp.id))
+      return {
+        session_id: sessionId,
+        employee_id: emp.id,
+        workplace_code: assigned ? String(assigned.workplaceId) : 'general',
+        position_name: emp.position || null,
+        source: assigned ? 'manual' : 'schedule',
+        is_present: true,
+        note: null,
+        confirmed_by_chief: false,
+      }
+    })
+
+    const saveRes = await handoverService.upsertAssignments(payload)
+    if (saveRes.error) {
+      setWorkplaceSaveError(saveRes.error.message || 'Не удалось сохранить расстановку')
+      setSavingWorkplaces(false)
+      return
+    }
+    setSavingWorkplaces(false)
+    setWorkplaceSaveMessage('Расстановка сохранена')
+  }, [
+    activeShiftDate,
+    activeShiftType,
+    assignmentSessionId,
+    currentShiftEmployees,
+    handoverService,
+    resolvedCurrentRoster.boiler,
+    resolvedCurrentRoster.turbine,
+    section,
+    shiftWorkflowService,
+    unit,
+    user,
   ])
 
   const loadSchedule = useCallback(
@@ -1744,6 +1849,18 @@ function UnitSectionPage() {
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               {renderRosterColumn('Котельное', resolvedCurrentRoster.boiler, true)}
               {renderRosterColumn('Турбинное', resolvedCurrentRoster.turbine, true)}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => void handleSaveWorkplaceAssignments()}
+                disabled={savingWorkplaces}
+                className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition hover:bg-primary-hover disabled:opacity-60"
+              >
+                {savingWorkplaces ? 'Сохраняем...' : 'Сохранить расстановку'}
+              </button>
+              {assignmentSessionId && <span className="text-xs text-grayText">Сессия: {assignmentSessionId}</span>}
+              {workplaceSaveMessage && <span className="text-xs text-eco">{workplaceSaveMessage}</span>}
+              {workplaceSaveError && <span className="text-xs text-red-300">{workplaceSaveError}</span>}
             </div>
             <div className="mt-3 rounded-xl border border-border bg-background/70 p-3 text-xs">
               <p className="text-[11px] uppercase tracking-[0.2em] text-grayText">Смену принимает</p>
