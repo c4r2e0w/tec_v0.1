@@ -5,6 +5,7 @@ Run in this exact order:
 
 1. `/Users/air/Desktop/tec_demo/supabase/2026-02-09-shift-rounds-module.sql`
 2. `/Users/air/Desktop/tec_demo/supabase/2026-02-09-shift-rounds-seed.sql`
+3. `/Users/air/Desktop/tec_demo/supabase/2026-02-09-ktc-temniki-seed.sql`
 
 ## 2) Quick smoke test
 1. Open `/shift/briefing` as shift chief profile.
