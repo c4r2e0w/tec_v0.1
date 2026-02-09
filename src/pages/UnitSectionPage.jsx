@@ -966,8 +966,8 @@ function UnitSectionPage() {
     [activeShiftDate, activeShiftType, buildShiftRoster],
   )
   const nextRoster = useMemo(
-    () => buildShiftRoster('next', activeShiftDate, activeShiftType),
-    [activeShiftDate, activeShiftType, buildShiftRoster],
+    () => buildShiftRoster('current', nextShiftDate, nextShiftType),
+    [buildShiftRoster, nextShiftDate, nextShiftType],
   )
   const assignmentKey = useCallback(
     (date, shiftType, workplaceId) => `${date}|${shiftType}|${workplaceId}`,
@@ -2036,9 +2036,6 @@ function UnitSectionPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.22em] text-grayText">На смене</p>
-                <p className="text-lg font-semibold text-dark">
-                  {new Date(activeShiftDate).toLocaleDateString('ru-RU')} · Вахта {activeShiftCode} · {shiftSlotTypeLabel(activeShiftType)}
-                </p>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-grayText">
                   <span>Начальник смены:</span>
                   <select
@@ -2072,7 +2069,7 @@ function UnitSectionPage() {
                   ←
                 </button>
                 <span className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
-                  {new Date(activeShiftDate).toLocaleDateString('ru-RU')} · {shiftSlotTypeLabel(activeShiftType)}
+                  {new Date(activeShiftDate).toLocaleDateString('ru-RU')} · Вахта {activeShiftCode} · {shiftSlotTypeLabel(activeShiftType)}
                 </span>
                 <button
                   onClick={() => setViewedShiftOffset((prev) => prev + 1)}
