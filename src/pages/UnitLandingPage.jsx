@@ -31,6 +31,8 @@ const addDaysLocalIso = (dateStr, days) => {
   d.setDate(d.getDate() + days)
   return toIsoLocalDate(d)
 }
+const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
+const SHIFT_CODES = ['А', 'Б', 'В', 'Г']
 
 const normalizeText = (value) => String(value || '').trim().toLowerCase()
 
@@ -120,12 +122,11 @@ function UnitLandingPage() {
   })
 
   const getShiftCodeByDate = (dateStr, shiftType) => {
-    const d = parseIsoLocalDate(dateStr)
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
-    const dayNumber = Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - yearStart.getTime()) / 86400000)
-    const index = ((dayNumber % 4) + 4) % 4
-    const codes = ['А', 'Б', 'В', 'Г']
-    return codes[shiftType === 'night' ? (index + 1) % 4 : index] || '—'
+    const diffMs = parseIsoLocalDate(dateStr).getTime() - parseIsoLocalDate(SHIFT_ANCHOR_DATE).getTime()
+    const diffDays = Math.floor(diffMs / 86400000)
+    const dayIndex = ((diffDays % SHIFT_CODES.length) + SHIFT_CODES.length) % SHIFT_CODES.length
+    const index = shiftType === 'night' ? ((dayIndex - 1 + SHIFT_CODES.length) % SHIFT_CODES.length) : dayIndex
+    return SHIFT_CODES[index] || '—'
   }
 
   useEffect(() => {

@@ -106,6 +106,7 @@ const isChiefPosition = (value) => {
   const normalized = normalizeRoleTextValue(value)
   return normalized.includes('начальник смены') || normalized.includes('нач смены')
 }
+const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
 
 const iconSvg = {
   sun: (
@@ -458,12 +459,13 @@ function UnitSectionPage() {
   }, [])
   const shiftCodes = useMemo(() => ['А', 'Б', 'В', 'Г'], [])
   const shiftSlotTypeLabel = useCallback((type) => (type === 'night' ? 'Ночь' : 'День'), [])
-  const shiftCodeByDate = useCallback((dateStr) => {
-    const d = parseIsoLocalDate(dateStr)
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
-    const dayNumber = Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - yearStart.getTime()) / 86400000)
-    return ((dayNumber % 4) + 4) % 4
-  }, [])
+  const shiftCodeForSlot = useCallback((dateStr, type) => {
+    const diffMs = parseIsoLocalDate(dateStr).getTime() - parseIsoLocalDate(SHIFT_ANCHOR_DATE).getTime()
+    const diffDays = Math.floor(diffMs / 86400000)
+    const dayIndex = ((diffDays % shiftCodes.length) + shiftCodes.length) % shiftCodes.length
+    const index = type === 'night' ? ((dayIndex - 1 + shiftCodes.length) % shiftCodes.length) : dayIndex
+    return shiftCodes[index] || '—'
+  }, [shiftCodes])
   const baseShiftDate = useMemo(() => {
     if (currentShiftType !== 'night') return currentShiftDate
     const nowHour = new Date().getHours()
@@ -499,10 +501,6 @@ function UnitSectionPage() {
     },
     [addDaysIso, baseShiftDate, baseShiftType],
   )
-  const baseShiftCodeIndex = useMemo(() => {
-    const dayIndex = shiftCodeByDate(baseShiftDate)
-    return baseShiftType === 'night' ? (dayIndex + 1) % shiftCodes.length : dayIndex
-  }, [baseShiftDate, baseShiftType, shiftCodeByDate, shiftCodes.length])
   const [viewedShiftOffset, setViewedShiftOffset] = useState(0)
   useEffect(() => {
     if (section !== 'personnel') return
@@ -512,10 +510,7 @@ function UnitSectionPage() {
   const activeShiftSlot = useMemo(() => resolveShiftSlot(viewedShiftOffset), [resolveShiftSlot, viewedShiftOffset])
   const activeShiftDate = activeShiftSlot.date
   const activeShiftType = activeShiftSlot.type
-  const activeShiftIndex = useMemo(
-    () => ((baseShiftCodeIndex + viewedShiftOffset) % shiftCodes.length + shiftCodes.length) % shiftCodes.length,
-    [baseShiftCodeIndex, viewedShiftOffset, shiftCodes.length],
-  )
+  const nextShiftSlot = useMemo(() => resolveShiftSlot(viewedShiftOffset + 1), [resolveShiftSlot, viewedShiftOffset])
 
   const scopeForEntryType = useCallback((entryType) => {
     if (entryType === 'daily') return 'daily_statement'
@@ -948,10 +943,16 @@ function UnitSectionPage() {
     }
   }, [canEmployeeCoverWorkplace, detectDivisionKey, normalizedWorkplaces, resolveEmployeesForShift])
 
-  const activeShiftCode = shiftCodes[activeShiftIndex] || '—'
-  const nextShiftCode = shiftCodes[(activeShiftIndex + 1) % shiftCodes.length] || '—'
-  const nextShiftType = activeShiftType === 'day' ? 'night' : 'day'
-  const nextShiftDate = nextShiftType === 'day' ? addDaysIso(activeShiftDate, 1) : activeShiftDate
+  const activeShiftCode = useMemo(
+    () => shiftCodeForSlot(activeShiftDate, activeShiftType),
+    [activeShiftDate, activeShiftType, shiftCodeForSlot],
+  )
+  const nextShiftType = nextShiftSlot.type
+  const nextShiftDate = nextShiftSlot.date
+  const nextShiftCode = useMemo(
+    () => shiftCodeForSlot(nextShiftDate, nextShiftType),
+    [nextShiftDate, nextShiftType, shiftCodeForSlot],
+  )
   const operationalStaffPool = useMemo(
     () => allEmployeesFromSchedule.filter((emp) => isOperationalType(emp.positionType)),
     [allEmployeesFromSchedule],
