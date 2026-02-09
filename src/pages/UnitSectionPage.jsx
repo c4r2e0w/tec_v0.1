@@ -272,6 +272,9 @@ function UnitSectionPage() {
   const [manualChiefAssignments, setManualChiefAssignments] = useState({})
   const [expandedWorkplaceSelects, setExpandedWorkplaceSelects] = useState({})
   const [sessionEmployeeIdsBySlot, setSessionEmployeeIdsBySlot] = useState({})
+  const [showShiftCalendarNav, setShowShiftCalendarNav] = useState(false)
+  const [calendarNavDate, setCalendarNavDate] = useState('')
+  const [calendarNavType, setCalendarNavType] = useState('day')
   const [assignmentSessionId, setAssignmentSessionId] = useState(null)
   const [savingWorkplaces, setSavingWorkplaces] = useState(false)
   const [workplaceSaveMessage, setWorkplaceSaveMessage] = useState('')
@@ -510,6 +513,14 @@ function UnitSectionPage() {
   const activeShiftSlot = useMemo(() => resolveShiftSlot(viewedShiftOffset), [resolveShiftSlot, viewedShiftOffset])
   const activeShiftDate = activeShiftSlot.date
   const activeShiftType = activeShiftSlot.type
+  const slotOrdinal = useCallback((dateStr, type) => {
+    const day = Math.floor(parseIsoLocalDate(dateStr).getTime() / 86400000)
+    return day * 2 + (type === 'night' ? 1 : 0)
+  }, [])
+  const slotOffsetFor = useCallback(
+    (dateStr, type) => slotOrdinal(dateStr, type) - slotOrdinal(baseShiftDate, baseShiftType),
+    [baseShiftDate, baseShiftType, slotOrdinal],
+  )
   const nextShiftSlot = useMemo(() => resolveShiftSlot(viewedShiftOffset + 1), [resolveShiftSlot, viewedShiftOffset])
 
   const scopeForEntryType = useCallback((entryType) => {
@@ -2060,23 +2071,71 @@ function UnitSectionPage() {
                     ))}
                   </select>
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setViewedShiftOffset((prev) => prev - 1)}
-                  className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
-                >
-                  ←
-                </button>
-                <span className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
-                  {new Date(activeShiftDate).toLocaleDateString('ru-RU')} · Вахта {activeShiftCode} · {shiftSlotTypeLabel(activeShiftType)}
-                </span>
-                <button
-                  onClick={() => setViewedShiftOffset((prev) => prev + 1)}
-                  className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
-                >
-                  →
-                </button>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setViewedShiftOffset((prev) => prev - 1)}
+                    className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
+                  >
+                    ←
+                  </button>
+                  <span className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
+                    {new Date(activeShiftDate).toLocaleDateString('ru-RU')} · Вахта {activeShiftCode} · {shiftSlotTypeLabel(activeShiftType)}
+                  </span>
+                  <button
+                    onClick={() => setViewedShiftOffset((prev) => prev + 1)}
+                    className="no-spy-btn rounded-full border border-border px-3 py-1 text-sm text-dark transition hover:border-accent/60"
+                  >
+                    →
+                  </button>
+                  <button
+                    onClick={() =>
+                      setShowShiftCalendarNav((prev) => {
+                        const next = !prev
+                        if (next) {
+                          setCalendarNavDate(activeShiftDate)
+                          setCalendarNavType(activeShiftType)
+                        }
+                        return next
+                      })
+                    }
+                    className="rounded-full border border-border px-3 py-1 text-xs text-dark transition hover:border-accent/60"
+                  >
+                    Календарь
+                  </button>
+                </div>
+                {showShiftCalendarNav && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <input
+                      type="date"
+                      value={calendarNavDate || activeShiftDate}
+                      onChange={(e) => setCalendarNavDate(e.target.value)}
+                      className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
+                    />
+                    <select
+                      value={calendarNavType || activeShiftType}
+                      onChange={(e) => setCalendarNavType(e.target.value)}
+                      className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
+                    >
+                      <option value="day">День</option>
+                      <option value="night">Ночь</option>
+                    </select>
+                    <button
+                      onClick={() => {
+                        if (!calendarNavDate) return
+                        setViewedShiftOffset(slotOffsetFor(calendarNavDate, calendarNavType))
+                      }}
+                      className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-white transition hover:bg-primary-hover"
+                    >
+                      Показать
+                    </button>
+                    <button
+                      onClick={() => setViewedShiftOffset(0)}
+                      className="rounded-full border border-border px-3 py-1 text-xs text-dark transition hover:border-accent/60"
+                    >
+                      Сегодня
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
