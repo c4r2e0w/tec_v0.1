@@ -99,7 +99,9 @@ export async function fetchPositions({ supabase }) {
   return supabase.from('positions').select('id, name, departament_name, devision_name, type, sort_weight').order('sort_weight', { ascending: true, nullsFirst: false }).order('name', { ascending: true })
 }
 
-export async function fetchWorkplaces({ supabase }) {
+export async function fetchWorkplaces({ supabase, unit }) {
   if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
-  return supabase.from('workplace').select('*').order('id', { ascending: true })
+  let query = supabase.from('workplace').select('*').order('id', { ascending: true })
+  if (unit) query = query.eq('unit', unit)
+  return query
 }

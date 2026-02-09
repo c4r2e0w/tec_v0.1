@@ -36,12 +36,16 @@ const normalizeText = (value) => String(value || '').trim().toLowerCase()
 
 const workplaceDivision = (workplace) => {
   const raw = [
+    workplace?.unit,
     workplace?.division_name,
     workplace?.devision_name,
     workplace?.division,
     workplace?.department_name,
     workplace?.departament_name,
+    workplace?.departament_id,
     workplace?.department,
+    workplace?.description,
+    workplace?.position_id,
     workplace?.section,
     workplace?.area,
     workplace?.name,
@@ -176,7 +180,7 @@ function UnitLandingPage() {
           .filter((wp) => wp.code)
           .map((wp) => [normalizeText(wp.code), wp]),
       )
-      const baseRows = workplaces
+      let baseRows = workplaces
         .map((wp) => ({
           workplaceId: String(wp.id),
           workplaceName: String(wp.name || wp.code || `Пост ${wp.id}`),
@@ -185,6 +189,18 @@ function UnitLandingPage() {
           employeeName: '',
         }))
         .filter((row) => (row.divisionKey === 'boiler' || row.divisionKey === 'turbine') && !row.isReserve)
+
+      if (!baseRows.length) {
+        baseRows = activeEmployees
+          .map((emp) => ({
+            workplaceId: `emp-${emp.id}`,
+            workplaceName: emp.position || `Сотрудник ${emp.id}`,
+            divisionKey: employeeDivision(emp),
+            isReserve: false,
+            employeeName: '',
+          }))
+          .filter((row) => row.divisionKey === 'boiler' || row.divisionKey === 'turbine')
+      }
 
       const sessionRes = await handoverService.fetchSession({ unit, shiftDate, shiftType: currentType })
       const sessionId = sessionRes?.data?.id || null
