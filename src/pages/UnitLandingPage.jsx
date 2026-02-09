@@ -66,6 +66,19 @@ const isReserveWorkplace = (workplace) => {
     .toLowerCase()
   return raw.includes('резерв') || raw.includes('без пост')
 }
+const isChiefWorkplace = (workplace) => {
+  const raw = [
+    workplace?.name,
+    workplace?.code,
+    workplace?.position_name,
+    workplace?.position_id,
+    workplace?.description,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return raw.includes('нс ктц') || raw.includes('начальник смены')
+}
 
 const isChiefPosition = (value) => {
   const normalized = normalizeText(value).replace(/\./g, ' ')
@@ -208,9 +221,10 @@ function UnitLandingPage() {
           requiredPositionText: String(wp.position_id || wp.position_name || wp.position || wp.description || ''),
           divisionKey: workplaceDivision(wp),
           isReserve: isReserveWorkplace(wp),
+          isChiefWorkplace: isChiefWorkplace(wp),
           employeeName: '',
         }))
-        .filter((row) => (row.divisionKey === 'boiler' || row.divisionKey === 'turbine') && !row.isReserve)
+        .filter((row) => (row.divisionKey === 'boiler' || row.divisionKey === 'turbine') && !row.isReserve && !row.isChiefWorkplace)
 
       if (!baseRows.length) {
         baseRows = activeEmployees
@@ -253,6 +267,7 @@ function UnitLandingPage() {
           const wp = byWpId.get(key) || byWpCode.get(normalizeText(key))
           if (!wp) return
           if (isReserveWorkplace(wp)) return
+          if (isChiefWorkplace(wp)) return
           const wpId = String(wp.id)
           if (assignmentNameByWorkplace.has(wpId)) return
           if (fullNameKey && occupiedNames.has(fullNameKey)) return
