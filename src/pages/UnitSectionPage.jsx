@@ -894,7 +894,6 @@ function UnitSectionPage() {
         const fromSession = operationalEmployeesFromSchedule.filter((emp) => sessionIdSet.has(String(emp.id)))
         if (fromSession.length) return fromSession
       }
-      const nextDate = addDaysIso(targetDate, 1)
       const byDayShiftHours = operationalEmployeesFromSchedule.filter((emp) => {
         const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
         const has12 = entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
@@ -903,23 +902,12 @@ function UnitSectionPage() {
         return has12 && !has3 && !has9
       })
       const byNightShiftHours = operationalEmployeesFromSchedule.filter((emp) => {
-        const todayEntries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
-        const nextEntries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
-        const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
-        const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
-        return has3Today && has9Next
+        const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
+        return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
       })
-      const byNextDayShiftHours = operationalEmployeesFromSchedule.filter((emp) => {
-        const entries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
-        const has12 = entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
-        const has3 = entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
-        const has9 = entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
-        return has12 && !has3 && !has9
-      })
-      if (mode === 'current') return targetShiftType === 'night' ? byNightShiftHours : byDayShiftHours
-      return targetShiftType === 'night' ? byNextDayShiftHours : byNightShiftHours
+      return targetShiftType === 'night' ? byNightShiftHours : byDayShiftHours
     },
-    [addDaysIso, operationalEmployeesFromSchedule, scheduleByDay, sessionEmployeeIdsBySlot],
+    [operationalEmployeesFromSchedule, scheduleByDay, sessionEmployeeIdsBySlot],
   )
 
   const buildShiftRoster = useCallback((mode, targetDate, targetShiftType) => {

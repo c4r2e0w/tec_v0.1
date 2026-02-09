@@ -100,26 +100,6 @@ const employeeDivision = (employee) => {
   if (hasTurbine && !hasBoiler) return 'turbine'
   return 'other'
 }
-const normalizeRoleText = (value) =>
-  String(value || '')
-    .toLowerCase()
-    .replaceAll('ё', 'е')
-    .replace(/[^a-zа-я0-9]+/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-const canEmployeeCoverWorkplace = (employee, workplace) => {
-  const employeeText = normalizeRoleText(employee?.position)
-  const workplaceText = normalizeRoleText(
-    workplace?.requiredPositionText || workplace?.workplaceName || '',
-  )
-  if (!employeeText || !workplaceText) return false
-  if (employeeText === workplaceText || employeeText.includes(workplaceText) || workplaceText.includes(employeeText)) return true
-  const empTokens = employeeText.split(' ').filter((t) => t.length > 2)
-  const wpTokens = workplaceText.split(' ').filter((t) => t.length > 2)
-  const common = wpTokens.filter((t) => empTokens.some((e) => e === t || e.startsWith(t) || t.startsWith(e))).length
-  return common >= Math.max(2, Math.ceil(wpTokens.length * 0.6))
-}
-
 function UnitLandingPage() {
   const { unit } = useParams()
   const navigate = useNavigate()
@@ -201,10 +181,7 @@ function UnitLandingPage() {
         if (currentType === 'day') {
           return dayEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 12)
         }
-        const nextEntries = byEmpDay.get(`${emp.id}|${nextDate}`) || []
-        const has3 = dayEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 3)
-        const has9 = nextEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 9)
-        return has3 && has9
+        return dayEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 3)
       })
 
       const workplaces = workplacesRes.data || []
@@ -281,52 +258,15 @@ function UnitLandingPage() {
         employeeName: assignmentNameByWorkplace.get(row.workplaceId) || '',
       }))
 
-      const assignDivisionFallback = (divisionKey, includeOthers = false) => {
-        const places = rowsByWorkplace.filter((row) => row.divisionKey === divisionKey)
-        let candidates = activeEmployees.filter((emp) => {
-          const empDivision = employeeDivision(emp)
-          return includeOthers ? empDivision !== 'boiler' && empDivision !== 'turbine' : empDivision === divisionKey
-        })
-        if (!includeOthers) {
-          candidates = candidates.filter((emp) => !isChiefPosition(emp.position))
-        }
-        let idx = 0
-        places.forEach((row) => {
-          if (row.employeeName) return
-          while (idx < candidates.length) {
-            const candidate = candidates[idx]
-            const candidateNameKey = normalizeText(candidate?.name)
-            const roleMatch = canEmployeeCoverWorkplace(candidate, row)
-            if (!roleMatch) {
-              idx += 1
-              continue
-            }
-            if (!occupiedEmployees.has(String(candidate.id)) && (!candidateNameKey || !occupiedNames.has(candidateNameKey))) break
-            idx += 1
-          }
-          if (idx >= candidates.length) return
-          row.employeeName = candidates[idx].name
-          occupiedEmployees.add(String(candidates[idx].id))
-          const candidateNameKey = normalizeText(candidates[idx].name)
-          if (candidateNameKey) occupiedNames.add(candidateNameKey)
-          idx += 1
-        })
-      }
-      if (isConfirmedSession) {
-        assignDivisionFallback('boiler')
-        assignDivisionFallback('turbine')
-        assignDivisionFallback('boiler', true)
-        assignDivisionFallback('turbine', true)
-      }
-
       const chiefFromAssignments =
         (assignments || [])
           .filter((a) => a?.is_present !== false)
           .find((a) => isChiefPosition(a.position_name || a.employees?.positions?.name))?.employees || null
+      const chiefFromSessionId = sessionRes?.data?.chief_employee_id ? employees.get(sessionRes.data.chief_employee_id) : null
 
       const chief = chiefFromAssignments
         ? [chiefFromAssignments.last_name, chiefFromAssignments.first_name, chiefFromAssignments.middle_name].filter(Boolean).join(' ')
-        : activeEmployees.find((e) => isChiefPosition(e.position))?.name || ''
+        : chiefFromSessionId?.name || ''
 
       const boilerRows = rowsByWorkplace.filter((row) => row.divisionKey === 'boiler')
       const turbineRows = rowsByWorkplace.filter((row) => row.divisionKey === 'turbine')
