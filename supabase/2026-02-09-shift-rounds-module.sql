@@ -14,7 +14,7 @@ create index if not exists idx_workplace_unit on public.workplace(unit);
 
 -- Backfill code for legacy rows if empty
 update public.workplace
-set code = lower(regexp_replace(coalesce(name, 'wp_' || id::text), '[^a-zA-Zа-яА-Я0-9]+', '_', 'g'))
+set code = lower(regexp_replace(coalesce(name::text, 'wp_' || id::text), '[^a-zA-Zа-яА-Я0-9]+', '_', 'g'))
 where code is null or btrim(code) = '';
 
 -- 2) Extend shift_sessions to align with briefing semantics
