@@ -6,7 +6,7 @@ export async function fetchBriefingTopicForDate({ supabase, unit, shiftDate }) {
 
   const byDay = await supabase
     .from('briefing_topics')
-    .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
+    .select('id, unit, month, briefing_date, topic, round_topic, materials, is_mandatory')
     .eq('unit', unit)
     .eq('briefing_date', shiftDate)
     .maybeSingle()
@@ -14,7 +14,7 @@ export async function fetchBriefingTopicForDate({ supabase, unit, shiftDate }) {
 
   const byTemplate = await supabase
     .from('briefing_topics')
-    .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
+    .select('id, unit, month, briefing_date, topic, round_topic, materials, is_mandatory')
     .eq('unit', unit)
     .eq('briefing_date', templateDate)
     .maybeSingle()
@@ -22,7 +22,7 @@ export async function fetchBriefingTopicForDate({ supabase, unit, shiftDate }) {
 
   return supabase
     .from('briefing_topics')
-    .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
+    .select('id, unit, month, briefing_date, topic, round_topic, materials, is_mandatory')
     .eq('unit', unit)
     .eq('month', month)
     .order('created_at', { ascending: false })
@@ -34,7 +34,7 @@ export async function fetchBriefingTopicsRange({ supabase, unit, from, to }) {
   if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
   let query = supabase
     .from('briefing_topics')
-    .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
+    .select('id, unit, month, briefing_date, topic, round_topic, materials, is_mandatory')
     .order('briefing_date', { ascending: true })
   if (unit) query = query.eq('unit', unit)
   if (from) query = query.gte('briefing_date', from)
@@ -47,7 +47,7 @@ export async function upsertBriefingTopics({ supabase, payload }) {
   return supabase
     .from('briefing_topics')
     .upsert(payload, { onConflict: 'unit,briefing_date' })
-    .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
+    .select('id, unit, month, briefing_date, topic, round_topic, materials, is_mandatory')
 }
 
 export async function fetchShiftSession({ supabase, unit, shiftDate, shiftType = 'day' }) {

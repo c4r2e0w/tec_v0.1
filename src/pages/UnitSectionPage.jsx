@@ -989,7 +989,7 @@ function UnitSectionPage() {
       ])
       if (cancelled) return
       const briefingTopic = topicRes.error ? '' : topicRes.data?.topic || ''
-      const roundTopicFromBriefing = topicRes.error ? '' : extractRoundTopic(topicRes.data?.materials)
+      const roundTopicFromBriefing = topicRes.error ? '' : String(topicRes.data?.round_topic || extractRoundTopic(topicRes.data?.materials) || '')
       const planTopic = planRes.error ? '' : planRes.data?.round_plan_items?.[0]?.inspection_items?.name || ''
       setBriefingTopicTitle(briefingTopic)
       setRoundTopicTitle(roundTopicFromBriefing || planTopic)

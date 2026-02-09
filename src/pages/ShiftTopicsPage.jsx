@@ -32,12 +32,6 @@ const getRoundTopicFromMaterials = (materials) => {
   return ''
 }
 
-const toMaterialsPayload = (roundTopic) => {
-  const value = String(roundTopic || '').trim()
-  if (!value) return null
-  return JSON.stringify({ round_topic: value })
-}
-
 function ShiftTopicsPage() {
   const supabase = useSupabase()
   const handover = useMemo(() => createShiftHandoverService(supabase), [supabase])
@@ -90,7 +84,7 @@ function ShiftTopicsPage() {
           return {
             date,
             topic: item?.topic || '',
-            roundTopic: getRoundTopicFromMaterials(item?.materials),
+            roundTopic: String(item?.round_topic || getRoundTopicFromMaterials(item?.materials) || ''),
             isMandatory: item?.is_mandatory ?? true,
           }
         })
@@ -111,7 +105,7 @@ function ShiftTopicsPage() {
       month: '2000-01-01',
       briefing_date: row.date,
       topic: String(row.topic || '').trim() || 'Тема не задана',
-      materials: toMaterialsPayload(row.roundTopic),
+      round_topic: String(row.roundTopic || '').trim() || null,
       is_mandatory: Boolean(row.isMandatory),
     }))
     const res = await handover.upsertTopics(payload)

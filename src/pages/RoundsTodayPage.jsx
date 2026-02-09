@@ -36,7 +36,7 @@ function RoundsTodayPage() {
       const topicRes = await handover.fetchTopicForDate({ unit, shiftDate: date })
       if (!topicRes.error) {
         setTopic(topicRes.data || null)
-        const roundTopicFromBriefing = extractRoundTopic(topicRes.data?.materials)
+        const roundTopicFromBriefing = String(topicRes.data?.round_topic || extractRoundTopic(topicRes.data?.materials) || '')
         if (roundTopicFromBriefing) setRoundTopic(roundTopicFromBriefing)
       }
       const planRes = await workflow.fetchPlanForDate({ date, unit })
