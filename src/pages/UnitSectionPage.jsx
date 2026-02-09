@@ -613,10 +613,13 @@ function UnitSectionPage() {
       })
     })
     return Array.from(map.values())
-      .filter((e) => isOperationalType(e.positionType))
       .map((e) => (e.weight !== undefined ? e : { ...e, weight: getPositionWeight(e.position) }))
       .sort((a, b) => a.weight - b.weight || a.label.localeCompare(b.label, 'ru'))
   }, [staffWithLabels, scheduleRows, getPositionWeight, unit])
+  const operationalEmployeesFromSchedule = useMemo(
+    () => allEmployeesFromSchedule.filter((emp) => isOperationalType(emp.positionType)),
+    [allEmployeesFromSchedule],
+  )
 
   const employeesFromSchedule = useMemo(() => {
     let list = [...allEmployeesFromSchedule]
@@ -884,25 +887,30 @@ function UnitSectionPage() {
   const resolveEmployeesForShift = useCallback(
     (mode, targetDate, targetShiftType) => {
       const nextDate = addDaysIso(targetDate, 1)
-      const byDayShiftHours = allEmployeesFromSchedule.filter((emp) => {
+      const isNightSource = (entry) => {
+        const source = normalizeRoleTextValue(entry?.source)
+        const note = normalizeRoleTextValue(entry?.note)
+        return source.includes('night') || note.includes('ноч')
+      }
+      const byDayShiftHours = operationalEmployeesFromSchedule.filter((emp) => {
         const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
-        return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
+        return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12 && !isNightSource(entry))
       })
-      const byNightShiftHours = allEmployeesFromSchedule.filter((emp) => {
+      const byNightShiftHours = operationalEmployeesFromSchedule.filter((emp) => {
         const todayEntries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
         const nextEntries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
-        const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
-        const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
+        const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3 && isNightSource(entry))
+        const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9 && isNightSource(entry))
         return has3Today && has9Next
       })
-      const byNextDayShiftHours = allEmployeesFromSchedule.filter((emp) => {
+      const byNextDayShiftHours = operationalEmployeesFromSchedule.filter((emp) => {
         const entries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
-        return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
+        return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12 && !isNightSource(entry))
       })
       if (mode === 'current') return targetShiftType === 'night' ? byNightShiftHours : byDayShiftHours
       return targetShiftType === 'night' ? byNextDayShiftHours : byNightShiftHours
     },
-    [addDaysIso, allEmployeesFromSchedule, scheduleByDay],
+    [addDaysIso, operationalEmployeesFromSchedule, scheduleByDay],
   )
 
   const buildShiftRoster = useCallback((mode, targetDate, targetShiftType) => {
@@ -942,8 +950,8 @@ function UnitSectionPage() {
   const nextShiftType = activeShiftType === 'day' ? 'night' : 'day'
   const nextShiftDate = nextShiftType === 'day' ? addDaysIso(activeShiftDate, 1) : activeShiftDate
   const operationalStaffPool = useMemo(
-    () => staffWithLabels.filter((emp) => isOperationalType(emp.positionType)),
-    [staffWithLabels],
+    () => allEmployeesFromSchedule.filter((emp) => isOperationalType(emp.positionType)),
+    [allEmployeesFromSchedule],
   )
   const currentShiftEmployees = useMemo(
     () => resolveEmployeesForShift('current', activeShiftDate, activeShiftType),
