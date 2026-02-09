@@ -71,6 +71,7 @@ const isChiefPosition = (value) => {
   const normalized = normalizeText(value).replace(/\./g, ' ')
   return normalized.includes('начальник смены') || normalized.includes('нач смены') || (normalized.includes('начальник') && normalized.includes('смен'))
 }
+const isOperationalType = (value) => normalizeText(value).includes('оператив')
 
 const employeeDivision = (employee) => {
   const division = normalizeText(employee?.division)
@@ -97,6 +98,7 @@ function UnitLandingPage() {
   const [shiftSummary, setShiftSummary] = useState({
     loading: false,
     error: '',
+    notice: '',
     shiftCode: '—',
     shiftType: 'day',
     shiftDate: '',
@@ -158,19 +160,19 @@ function UnitLandingPage() {
           position: row.employees?.positions?.name || '',
           division: row.employees?.positions?.devision_name || '',
           department: row.employees?.positions?.departament_name || '',
+          positionType: row.employees?.positions?.type || '',
         })
       })
       const activeEmployees = Array.from(employees.values()).filter((emp) => {
+        if (!isOperationalType(emp.positionType)) return false
         const dayEntries = byEmpDay.get(`${emp.id}|${shiftDate}`) || []
-        const nextEntries = byEmpDay.get(`${emp.id}|${nextDate}`) || []
-        const dayHours = dayEntries.reduce((sum, e) => sum + Number(e?.planned_hours || 0), 0)
-        const nextHours = nextEntries.reduce((sum, e) => sum + Number(e?.planned_hours || 0), 0)
         if (currentType === 'day') {
-          return dayHours > 0
+          return dayEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 12)
         }
+        const nextEntries = byEmpDay.get(`${emp.id}|${nextDate}`) || []
         const has3 = dayEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 3)
         const has9 = nextEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 9)
-        return has3 && has9 ? true : dayHours + nextHours > 0
+        return has3 && has9
       })
 
       const workplaces = workplacesRes.data || []
@@ -204,8 +206,10 @@ function UnitLandingPage() {
 
       const sessionRes = await handoverService.fetchSession({ unit, shiftDate, shiftType: currentType })
       const sessionId = sessionRes?.data?.id || null
+      const sessionStatus = normalizeText(sessionRes?.data?.status)
+      const isConfirmedSession = ['active', 'confirmed', 'closed'].includes(sessionStatus)
       let assignments = []
-      if (sessionId) {
+      if (sessionId && isConfirmedSession) {
         const assignmentsRes = await handoverService.fetchAssignments({ sessionId })
         if (!assignmentsRes.error) assignments = assignmentsRes.data || []
       }
@@ -264,10 +268,12 @@ function UnitLandingPage() {
           idx += 1
         })
       }
-      assignDivisionFallback('boiler')
-      assignDivisionFallback('turbine')
-      assignDivisionFallback('boiler', true)
-      assignDivisionFallback('turbine', true)
+      if (isConfirmedSession) {
+        assignDivisionFallback('boiler')
+        assignDivisionFallback('turbine')
+        assignDivisionFallback('boiler', true)
+        assignDivisionFallback('turbine', true)
+      }
 
       const chiefFromAssignments =
         (assignments || [])
@@ -284,6 +290,7 @@ function UnitLandingPage() {
       setShiftSummary({
         loading: false,
         error: '',
+        notice: isConfirmedSession ? '' : 'Состав смены появится после подтверждения начальником смены.',
         shiftCode: getShiftCodeByDate(shiftDate, currentType),
         shiftType: currentType,
         shiftDate,
@@ -346,6 +353,7 @@ function UnitLandingPage() {
               </p>
               <p className="text-xs text-grayText">{shiftSummary.shiftDate || '—'} · Начальник: {shiftSummary.chief || 'не назначен'}</p>
               <div className="mt-2 grid gap-2">
+                {shiftSummary.notice && <p className="text-[11px] text-grayText">{shiftSummary.notice}</p>}
                 <div className="rounded-lg border border-border bg-background p-2">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-grayText">Котельное</p>
                   {shiftSummary.loading ? (

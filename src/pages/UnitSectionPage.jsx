@@ -93,6 +93,20 @@ const parseIsoLocalDate = (dateStr) => {
   return new Date(y, (m || 1) - 1, d || 1)
 }
 
+const normalizeRoleTextValue = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replaceAll('ё', 'е')
+    .replace(/[^a-zа-я0-9]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const isOperationalType = (value) => normalizeRoleTextValue(value).includes('оператив')
+const isChiefPosition = (value) => {
+  const normalized = normalizeRoleTextValue(value)
+  return normalized.includes('начальник смены') || normalized.includes('нач смены')
+}
+
 const iconSvg = {
   sun: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -254,6 +268,8 @@ function UnitSectionPage() {
   const [showSchedule, setShowSchedule] = useState(false)
   const [activeShiftPermissions, setActiveShiftPermissions] = useState([])
   const [manualWorkplaceAssignments, setManualWorkplaceAssignments] = useState({})
+  const [manualChiefAssignments, setManualChiefAssignments] = useState({})
+  const [expandedWorkplaceSelects, setExpandedWorkplaceSelects] = useState({})
   const [assignmentSessionId, setAssignmentSessionId] = useState(null)
   const [savingWorkplaces, setSavingWorkplaces] = useState(false)
   const [workplaceSaveMessage, setWorkplaceSaveMessage] = useState('')
@@ -597,6 +613,7 @@ function UnitSectionPage() {
       })
     })
     return Array.from(map.values())
+      .filter((e) => isOperationalType(e.positionType))
       .map((e) => (e.weight !== undefined ? e : { ...e, weight: getPositionWeight(e.position) }))
       .sort((a, b) => a.weight - b.weight || a.label.localeCompare(b.label, 'ru'))
   }, [staffWithLabels, scheduleRows, getPositionWeight, unit])
@@ -829,13 +846,7 @@ function UnitSectionPage() {
   }, [workplaces])
 
   const normalizeRoleText = useCallback(
-    (value) =>
-      String(value || '')
-        .toLowerCase()
-        .replaceAll('ё', 'е')
-        .replace(/[^a-zа-я0-9]+/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim(),
+    (value) => normalizeRoleTextValue(value),
     [],
   )
   const splitRoleTokens = useCallback((value) => normalizeRoleText(value).split(' ').filter((t) => t.length > 2), [normalizeRoleText])
@@ -917,8 +928,7 @@ function UnitSectionPage() {
       })
       return rows
     }
-    const chief =
-      roster.find((emp) => String(emp.position || '').toLowerCase().includes('начальник смены')) || null
+    const chief = roster.find((emp) => isChiefPosition(emp.position)) || null
     return {
       chief,
       boiler: assignForDivision('boiler'),
@@ -931,6 +941,10 @@ function UnitSectionPage() {
   const nextShiftCode = shiftCodes[(activeShiftIndex + 1) % shiftCodes.length] || '—'
   const nextShiftType = activeShiftType === 'day' ? 'night' : 'day'
   const nextShiftDate = nextShiftType === 'day' ? addDaysIso(activeShiftDate, 1) : activeShiftDate
+  const operationalStaffPool = useMemo(
+    () => staffWithLabels.filter((emp) => isOperationalType(emp.positionType)),
+    [staffWithLabels],
+  )
   const currentShiftEmployees = useMemo(
     () => resolveEmployeesForShift('current', activeShiftDate, activeShiftType),
     [activeShiftDate, activeShiftType, resolveEmployeesForShift],
@@ -956,24 +970,50 @@ function UnitSectionPage() {
   )
   const getCandidatesForWorkplace = useCallback(
     (row) => {
-      const divisionCandidates = currentShiftEmployees.filter((emp) => {
-        const divisionKey = detectDivisionKey(emp)
-        if (row.divisionKey === 'other') return divisionKey === 'other'
-        return divisionKey === row.divisionKey || divisionKey === 'other'
-      })
-      return divisionCandidates.filter((emp) =>
-        canEmployeeCoverWorkplace(emp, {
-          positionText: row.requiredPositionText,
-          allowedPositions: [],
-        }),
-      )
+      const requiredWeight = getPositionWeight(row.requiredPositionText || row.workplaceName || '')
+      const byDivision = (pool) =>
+        pool.filter((emp) => {
+          const divisionKey = detectDivisionKey(emp)
+          if (row.divisionKey === 'other') return divisionKey === 'other'
+          return divisionKey === row.divisionKey || divisionKey === 'other'
+        })
+      const byWorkplaceAndRank = (pool) =>
+        byDivision(pool).filter((emp) => {
+          const rankOk = requiredWeight >= 900 || (Number.isFinite(emp.weight) ? emp.weight <= requiredWeight : true)
+          if (!rankOk) return false
+          return canEmployeeCoverWorkplace(emp, {
+            positionText: row.requiredPositionText,
+            allowedPositions: [],
+          })
+        })
+      const primary = byWorkplaceAndRank(currentShiftEmployees)
+      const all = byWorkplaceAndRank(operationalStaffPool)
+      const primaryIds = new Set(primary.map((emp) => String(emp.id)))
+      const extra = all.filter((emp) => !primaryIds.has(String(emp.id)))
+      return { primary, extra }
     },
-    [canEmployeeCoverWorkplace, currentShiftEmployees, detectDivisionKey],
+    [canEmployeeCoverWorkplace, currentShiftEmployees, detectDivisionKey, getPositionWeight, operationalStaffPool],
   )
+  const chiefCandidates = useMemo(() => {
+    const fromCurrent = currentShiftEmployees.filter((emp) => isChiefPosition(emp.position))
+    const fromAll = operationalStaffPool.filter((emp) => isChiefPosition(emp.position))
+    const map = new Map()
+    ;[...fromCurrent, ...fromAll].forEach((emp) => map.set(String(emp.id), emp))
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+  }, [currentShiftEmployees, operationalStaffPool])
+  const resolvedChief = useMemo(() => {
+    const key = assignmentKey(activeShiftDate, activeShiftType, 'chief')
+    const manual = String(manualChiefAssignments[key] || '')
+    if (manual) {
+      const found = chiefCandidates.find((emp) => String(emp.id) === manual)
+      if (found) return found
+    }
+    return currentRoster.chief || chiefCandidates[0] || null
+  }, [activeShiftDate, activeShiftType, assignmentKey, chiefCandidates, currentRoster.chief, manualChiefAssignments])
   const resolvedCurrentRoster = useMemo(() => {
     const rows = [...(currentRoster.boiler || []), ...(currentRoster.turbine || [])]
     const used = new Set()
-    const byId = new Map(currentShiftEmployees.map((emp) => [String(emp.id), emp]))
+    const byId = new Map([...currentShiftEmployees, ...operationalStaffPool].map((emp) => [String(emp.id), emp]))
     const prevSlot = getPreviousShiftSlot(activeShiftDate, activeShiftType)
     const pickFallbackId = (row, candidates) => {
       const previousKey = assignmentKey(prevSlot.date, prevSlot.shiftType, row.workplaceId)
@@ -988,7 +1028,9 @@ function UnitSectionPage() {
     }
     const rowsWithCandidates = rows.map((row) => ({
       ...row,
-      candidates: getCandidatesForWorkplace(row),
+      candidates: getCandidatesForWorkplace(row).primary,
+      extraCandidates: getCandidatesForWorkplace(row).extra,
+      allCandidates: [...getCandidatesForWorkplace(row).primary, ...getCandidatesForWorkplace(row).extra],
     }))
     const resolvedByWorkplaceId = new Map()
 
@@ -997,7 +1039,7 @@ function UnitSectionPage() {
       const currentKey = assignmentKey(activeShiftDate, activeShiftType, row.workplaceId)
       const manualId = String(manualWorkplaceAssignments[currentKey] || '')
       if (!manualId) return
-      const isAllowed = row.candidates.some((c) => String(c.id) === manualId)
+      const isAllowed = row.allCandidates.some((c) => String(c.id) === manualId)
       if (!isAllowed || used.has(manualId)) return
       used.add(manualId)
       resolvedByWorkplaceId.set(row.workplaceId, manualId)
@@ -1014,10 +1056,11 @@ function UnitSectionPage() {
 
     const resolvedRows = rowsWithCandidates.map((row) => {
       const selectedId = resolvedByWorkplaceId.get(row.workplaceId) || ''
-      const candidates = getCandidatesForWorkplace(row)
+      const candidateSets = getCandidatesForWorkplace(row)
       return {
         ...row,
-        candidates,
+        candidates: candidateSets.primary,
+        extraCandidates: candidateSets.extra,
         selectedEmployee: selectedId ? byId.get(selectedId) || null : null,
       }
     })
@@ -1035,6 +1078,7 @@ function UnitSectionPage() {
     getCandidatesForWorkplace,
     getPreviousShiftSlot,
     manualWorkplaceAssignments,
+    operationalStaffPool,
   ])
 
   useEffect(() => {
@@ -1050,6 +1094,10 @@ function UnitSectionPage() {
         return
       }
       setAssignmentSessionId(sessionRes.data.id)
+      const chiefKey = assignmentKey(activeShiftDate, activeShiftType, 'chief')
+      if (sessionRes.data?.chief_employee_id) {
+        setManualChiefAssignments((prev) => ({ ...prev, [chiefKey]: String(sessionRes.data.chief_employee_id) }))
+      }
       const assignmentsRes = await handoverService.fetchAssignments({ sessionId: sessionRes.data.id })
       if (assignmentsRes.error) return
       const slotPrefix = `${activeShiftDate}|${activeShiftType}|`
@@ -1069,7 +1117,7 @@ function UnitSectionPage() {
       })
     }, 0)
     return () => clearTimeout(timer)
-  }, [activeShiftDate, activeShiftType, handoverService, section, unit, user])
+  }, [activeShiftDate, activeShiftType, assignmentKey, handoverService, section, unit, user])
 
   const handleSaveWorkplaceAssignments = useCallback(async ({ quiet = false } = {}) => {
     if (!user || section !== 'personnel' || !unit) return
@@ -1101,20 +1149,37 @@ function UnitSectionPage() {
       if (!row.selectedEmployee?.id) return
       assignedByEmployee.set(String(row.selectedEmployee.id), row)
     })
+    const chiefEmployeeId = resolvedChief?.id ? String(resolvedChief.id) : ''
+    const employeePool = new Map(currentShiftEmployees.map((emp) => [String(emp.id), emp]))
+    operationalStaffPool.forEach((emp) => employeePool.set(String(emp.id), emp))
+    const includedEmployeeIds = new Set([...assignedByEmployee.keys(), ...currentShiftEmployees.map((emp) => String(emp.id))])
+    if (chiefEmployeeId) includedEmployeeIds.add(chiefEmployeeId)
 
-    const payload = currentShiftEmployees.map((emp) => {
+    const payload = Array.from(includedEmployeeIds).map((id) => {
+      const emp = employeePool.get(String(id))
+      if (!emp) return null
       const assigned = assignedByEmployee.get(String(emp.id))
+      const isChief = chiefEmployeeId && String(emp.id) === chiefEmployeeId
+      const isInCurrentShift = currentShiftEmployees.some((shiftEmp) => String(shiftEmp.id) === String(emp.id))
+      const isPresent = Boolean(assigned || isChief || isInCurrentShift)
       return {
         session_id: sessionId,
         employee_id: emp.id,
         workplace_code: assigned ? String(assigned.workplaceId) : 'general',
         position_name: emp.position || null,
-        source: assigned ? 'manual' : 'schedule',
-        is_present: true,
+        source: assigned || !isInCurrentShift || isChief ? 'manual' : 'schedule',
+        is_present: isPresent,
         note: null,
         confirmed_by_chief: false,
       }
-    })
+    }).filter(Boolean)
+
+    if (chiefEmployeeId) {
+      await handoverService.updateSession({
+        sessionId,
+        payload: { chief_employee_id: Number(chiefEmployeeId) },
+      })
+    }
 
     const saveRes = await handoverService.upsertAssignments(payload)
     if (saveRes.error) {
@@ -1131,15 +1196,17 @@ function UnitSectionPage() {
     assignmentSessionId,
     currentShiftEmployees,
     handoverService,
+    operationalStaffPool,
     resolvedCurrentRoster.boiler,
     resolvedCurrentRoster.turbine,
+    resolvedChief,
     section,
     shiftWorkflowService,
     unit,
     user,
   ])
 
-  const handleConfirmWorkplaceAssignments = useCallback(async () => {
+  const handleConfirmWorkplaceAssignments = async () => {
     if (!user || section !== 'personnel' || !unit) return
     setConfirmingWorkplaces(true)
     setWorkplaceSaveError('')
@@ -1156,15 +1223,45 @@ function UnitSectionPage() {
       setWorkplaceSaveError(confirmRes.error.message || 'Не удалось подтвердить смену')
       return
     }
+    const selectedIds = new Set(
+      [...(resolvedCurrentRoster.boiler || []), ...(resolvedCurrentRoster.turbine || [])]
+        .map((row) => row.selectedEmployee?.id)
+        .filter(Boolean)
+        .map((id) => String(id)),
+    )
+    if (resolvedChief?.id) selectedIds.add(String(resolvedChief.id))
+    const assignedList = Array.from(selectedIds)
+    if (assignedList.length) {
+      const shifts = activeShiftType === 'night'
+        ? [
+            { date: activeShiftDate, start_time: '20:00:00', end_time: '23:00:00', planned_hours: 3, note: 'Подмена (ночь, часть 1)' },
+            { date: addDaysIso(activeShiftDate, 1), start_time: '00:00:00', end_time: '09:00:00', planned_hours: 9, note: 'Подмена (ночь, часть 2)' },
+          ]
+        : [
+            { date: activeShiftDate, start_time: '08:00:00', end_time: '20:00:00', planned_hours: 12, note: 'Подмена (дневная смена)' },
+          ]
+      await Promise.all(
+        assignedList.flatMap((employeeId) =>
+          shifts.map((shift) =>
+            scheduleService.createEntry({
+              employee_id: Number(employeeId),
+              date: shift.date,
+              start_time: shift.start_time,
+              end_time: shift.end_time,
+              planned_hours: shift.planned_hours,
+              unit,
+              created_by: user.id,
+              source: 'manual-assignment',
+              note: shift.note,
+            }),
+          ),
+        ),
+      )
+      void loadSchedule({ silent: true })
+    }
     setConfirmingWorkplaces(false)
-    setWorkplaceSaveMessage('Смена принята, персонал проинструктирован')
-  }, [
-    handleSaveWorkplaceAssignments,
-    section,
-    shiftWorkflowService,
-    unit,
-    user,
-  ])
+    setWorkplaceSaveMessage('Смена принята, персонал проинструктирован. Календарь обновлен по подтвержденному составу.')
+  }
 
   const loadSchedule = useCallback(
     async (opts = {}) => {
@@ -1644,7 +1741,10 @@ function UnitSectionPage() {
           {rows.map((row) => {
             const key = assignmentKey(activeShiftDate, activeShiftType, row.workplaceId)
             const candidates = row.candidates || []
+            const extraCandidates = row.extraCandidates || []
+            const isExpanded = Boolean(expandedWorkplaceSelects[key])
             const selectedEmployee = row.selectedEmployee || null
+            const selectedInPrimary = selectedEmployee ? candidates.some((emp) => String(emp.id) === String(selectedEmployee.id)) : false
             return (
               <div key={row.workplaceId}>
                 <p className="text-[11px] text-grayText">{row.workplaceName}</p>
@@ -1654,6 +1754,10 @@ function UnitSectionPage() {
                       value={selectedEmployee?.id ? String(selectedEmployee.id) : ''}
                       onChange={(e) => {
                         const nextValue = e.target.value
+                        if (nextValue === '__more__') {
+                          setExpandedWorkplaceSelects((prev) => ({ ...prev, [key]: true }))
+                          return
+                        }
                         setManualWorkplaceAssignments((prev) => {
                           const next = { ...prev }
                           if (!nextValue) delete next[key]
@@ -1672,11 +1776,21 @@ function UnitSectionPage() {
                       className="w-full rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
                     >
                       <option value="">—</option>
+                      {selectedEmployee && !selectedInPrimary && (
+                        <option value={selectedEmployee.id}>{selectedEmployee.label}</option>
+                      )}
                       {candidates.map((emp) => (
                         <option key={emp.id} value={emp.id}>
                           {emp.label}
                         </option>
                       ))}
+                      {!isExpanded && extraCandidates.length > 0 && <option value="__more__">Еще…</option>}
+                      {isExpanded &&
+                        extraCandidates.map((emp) => (
+                          <option key={`extra-${emp.id}`} value={emp.id}>
+                            {emp.label}
+                          </option>
+                        ))}
                     </select>
                   </div>
                 ) : (
@@ -1693,6 +1807,7 @@ function UnitSectionPage() {
     activeShiftDate,
     activeShiftType,
     assignmentKey,
+    expandedWorkplaceSelects,
   ])
 
   if (!unitData || !sectionLabel) {
@@ -1898,7 +2013,30 @@ function UnitSectionPage() {
                 <p className="text-lg font-semibold text-dark">
                   {new Date(activeShiftDate).toLocaleDateString('ru-RU')} · Вахта {activeShiftCode} · {shiftSlotTypeLabel(activeShiftType)}
                 </p>
-                <p className="text-xs text-grayText">Начальник смены: {currentRoster.chief?.label || 'не назначен'}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-grayText">
+                  <span>Начальник смены:</span>
+                  <select
+                    value={resolvedChief?.id ? String(resolvedChief.id) : ''}
+                    onChange={(e) => {
+                      const key = assignmentKey(activeShiftDate, activeShiftType, 'chief')
+                      const value = String(e.target.value || '')
+                      setManualChiefAssignments((prev) => {
+                        const next = { ...prev }
+                        if (!value) delete next[key]
+                        else next[key] = value
+                        return next
+                      })
+                    }}
+                    className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
+                  >
+                    <option value="">—</option>
+                    {chiefCandidates.map((emp) => (
+                      <option key={`chief-${emp.id}`} value={emp.id}>
+                        {emp.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
