@@ -1,4 +1,5 @@
 import {
+  fetchRoundPlanForDate,
   fetchMyRoundRuns,
   fetchRoundRun,
   fetchRoundRunChecks,
@@ -28,5 +29,6 @@ export function createShiftWorkflowService(supabase) {
     updateCheck: ({ checkId, payload }) => updateRoundCheck({ supabase, checkId, payload }),
     insertRunFile: ({ payload }) => insertRoundRunFile({ supabase, payload }),
     fetchMyRuns: ({ from, to, status }) => fetchMyRoundRuns({ supabase, from, to, status }),
+    fetchPlanForDate: ({ date, unit }) => fetchRoundPlanForDate({ supabase, date, unit }),
   }
 }

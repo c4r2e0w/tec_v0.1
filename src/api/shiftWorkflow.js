@@ -84,3 +84,17 @@ export async function fetchMyRoundRuns({ supabase, from, to, status = '' }) {
   if (status) q = q.eq('status', status)
   return q
 }
+
+export async function fetchRoundPlanForDate({ supabase, date, unit = null }) {
+  if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
+  let q = supabase
+    .from('round_plans')
+    .select('id, plan_date, unit, round_plan_items(id, sort_order, inspection_items:item_id(id, code, name, description))')
+    .eq('plan_date', date)
+    .order('sort_order', { ascending: true, foreignTable: 'round_plan_items' })
+  if (unit) q = q.or(`unit.eq.${unit},unit.is.null`)
+  const res = await q
+  if (res.error || !Array.isArray(res.data) || !res.data.length) return res
+  const exact = res.data.find((p) => p.unit === unit) || res.data[0]
+  return { data: exact, error: null }
+}

@@ -14,16 +14,23 @@ function RoundsTodayPage() {
 
   const [unit, setUnit] = useState('ktc')
   const [topic, setTopic] = useState(null)
+  const [roundTopic, setRoundTopic] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     const load = async () => {
-      const topicRes = await handover.fetchTopicForDate({ unit, shiftDate: todayIso() })
+      const date = todayIso()
+      const topicRes = await handover.fetchTopicForDate({ unit, shiftDate: date })
       if (!topicRes.error) setTopic(topicRes.data || null)
+      const planRes = await workflow.fetchPlanForDate({ date, unit })
+      if (!planRes.error) {
+        const firstItem = planRes.data?.round_plan_items?.[0]?.inspection_items?.name || ''
+        setRoundTopic(firstItem)
+      }
     }
     void load()
-  }, [handover, unit])
+  }, [handover, unit, workflow])
 
   const handleStart = async () => {
     setLoading(true)
@@ -52,6 +59,10 @@ function RoundsTodayPage() {
       <div className="rounded-xl border border-border bg-background p-3 text-sm text-dark">
         <p className="text-xs uppercase tracking-[0.2em] text-grayText">Тема 5-минутки</p>
         <p className="mt-1">{topic?.topic || 'Тема не задана'}</p>
+      </div>
+      <div className="rounded-xl border border-border bg-background p-3 text-sm text-dark">
+        <p className="text-xs uppercase tracking-[0.2em] text-grayText">Тема обхода</p>
+        <p className="mt-1">{roundTopic || 'Тема обхода не задана'}</p>
       </div>
 
       {error && <p className="rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">{error}</p>}
