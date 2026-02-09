@@ -2093,18 +2093,11 @@ function UnitSectionPage() {
                 Сегодняшний обход
               </Link>
               <button
-                onClick={() => void handleSaveWorkplaceAssignments()}
-                disabled={savingWorkplaces}
-                className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition hover:bg-primary-hover disabled:opacity-60"
-              >
-                {savingWorkplaces ? 'Сохраняем...' : 'Сохранить расстановку'}
-              </button>
-              <button
                 onClick={() => void handleConfirmWorkplaceAssignments()}
                 disabled={savingWorkplaces || confirmingWorkplaces}
                 className="rounded-full bg-eco px-4 py-2 text-xs font-semibold text-white transition hover:bg-primary-hover disabled:opacity-60"
               >
-                {confirmingWorkplaces ? 'Подтверждаем...' : 'Смена принята, персонал проинструктирован'}
+                {confirmingWorkplaces || savingWorkplaces ? 'Подтверждаем...' : 'Подтвердить смену (инструктаж проведен)'}
               </button>
               {assignmentSessionId && <span className="text-xs text-grayText">Сессия: {assignmentSessionId}</span>}
               {workplaceSaveMessage && <span className="text-xs text-eco">{workplaceSaveMessage}</span>}
