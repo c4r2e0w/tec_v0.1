@@ -14,6 +14,11 @@ import ProfilePage from './pages/ProfilePage.jsx'
 import UnitSectionPage from './pages/UnitSectionPage.jsx'
 import UnitLandingPage from './pages/UnitLandingPage.jsx'
 import UnionPage from './pages/UnionPage.jsx'
+import ShiftBriefingPage from './pages/ShiftBriefingPage.jsx'
+import ShiftTodayPage from './pages/ShiftTodayPage.jsx'
+import RoundsTodayPage from './pages/RoundsTodayPage.jsx'
+import RoundRunPage from './pages/RoundRunPage.jsx'
+import RoundsHistoryPage from './pages/RoundsHistoryPage.jsx'
 
 const queryClient = new QueryClient()
 
@@ -55,6 +60,46 @@ createRoot(document.getElementById('root')).render(
                 element={
                   <ProtectedRoute>
                     <UnionPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="shift/briefing"
+                element={
+                  <ProtectedRoute>
+                    <ShiftBriefingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="shift/today"
+                element={
+                  <ProtectedRoute>
+                    <ShiftTodayPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="rounds/today"
+                element={
+                  <ProtectedRoute>
+                    <RoundsTodayPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="rounds/:id"
+                element={
+                  <ProtectedRoute>
+                    <RoundRunPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="rounds/history"
+                element={
+                  <ProtectedRoute>
+                    <RoundsHistoryPage />
                   </ProtectedRoute>
                 }
               />
