@@ -887,6 +887,12 @@ function UnitSectionPage() {
   )
   const resolveEmployeesForShift = useCallback(
     (mode, targetDate, targetShiftType) => {
+      const hasScheduleOnTargetDate = operationalEmployeesFromSchedule.some((emp) => {
+        const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
+        return entries.some((entry) => Number(entry?.planned_hours || 0) > 0)
+      })
+      if (!hasScheduleOnTargetDate) return []
+
       const slotKey = `${targetDate}|${targetShiftType}`
       const sessionIds = sessionEmployeeIdsBySlot[slotKey]
       if (mode === 'current' && Array.isArray(sessionIds) && sessionIds.length) {
