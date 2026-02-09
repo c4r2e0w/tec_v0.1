@@ -272,6 +272,8 @@ function UnitSectionPage() {
   const [manualChiefAssignments, setManualChiefAssignments] = useState({})
   const [expandedWorkplaceSelects, setExpandedWorkplaceSelects] = useState({})
   const [sessionEmployeeIdsBySlot, setSessionEmployeeIdsBySlot] = useState({})
+  const [briefingTopicTitle, setBriefingTopicTitle] = useState('')
+  const [roundTopicTitle, setRoundTopicTitle] = useState('')
   const [showShiftCalendarNav, setShowShiftCalendarNav] = useState(false)
   const [calendarNavDate, setCalendarNavDate] = useState('')
   const [calendarNavType, setCalendarNavType] = useState('day')
@@ -964,6 +966,24 @@ function UnitSectionPage() {
     () => shiftCodeForSlot(nextShiftDate, nextShiftType),
     [nextShiftDate, nextShiftType, shiftCodeForSlot],
   )
+  useEffect(() => {
+    if (section !== 'personnel' || !unit) return
+    let cancelled = false
+    const loadTopics = async () => {
+      const [topicRes, planRes] = await Promise.all([
+        handoverService.fetchTopicForDate({ unit, shiftDate: activeShiftDate }),
+        shiftWorkflowService.fetchPlanForDate({ date: activeShiftDate, unit }),
+      ])
+      if (cancelled) return
+      setBriefingTopicTitle(topicRes.error ? '' : topicRes.data?.topic || '')
+      const planTopic = planRes.error ? '' : planRes.data?.round_plan_items?.[0]?.inspection_items?.name || ''
+      setRoundTopicTitle(planTopic)
+    }
+    void loadTopics()
+    return () => {
+      cancelled = true
+    }
+  }, [activeShiftDate, handoverService, section, shiftWorkflowService, unit])
   const operationalStaffPool = useMemo(
     () => allEmployeesFromSchedule.filter((emp) => isOperationalType(emp.positionType)),
     [allEmployeesFromSchedule],
@@ -2109,6 +2129,15 @@ function UnitSectionPage() {
                     </button>
                   </div>
                 )}
+                <div className="mt-2 space-y-1 text-xs text-grayText">
+                  <p>Тема пятиминутки: <span className="text-dark">{briefingTopicTitle || 'не задана'}</span></p>
+                  <p>
+                    Тема обхода:{' '}
+                    <Link to="/rounds/today" className="text-primary underline decoration-primary/50 underline-offset-2 hover:text-primary-hover">
+                      {roundTopicTitle || 'не задана'}
+                    </Link>
+                  </p>
+                </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-grayText">
                   <span>Начальник смены:</span>
                   <select
@@ -2140,9 +2169,6 @@ function UnitSectionPage() {
               {renderRosterColumn('Турбинное', resolvedCurrentRoster.turbine, true)}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Link to="/shift/briefing" className="rounded-full border border-border px-3 py-1 text-xs text-dark hover:border-accent/60">
-                Инструктаж
-              </Link>
               <Link to="/rounds/today" className="rounded-full border border-border px-3 py-1 text-xs text-dark hover:border-accent/60">
                 Сегодняшний обход
               </Link>

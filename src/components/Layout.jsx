@@ -140,23 +140,6 @@ function Layout({ children }) {
               </span>
             </NavLink>
             <NavLink
-              to="/shift/briefing"
-              onClick={() => setMobileNavOpen(false)}
-              className={({ isActive }) =>
-                [
-                  'rounded-xl px-4 py-2 transition',
-                  isActive
-                    ? 'bg-primary/20 text-accent border border-accent/60 shadow-sm shadow-accent/10'
-                    : 'border border-border hover:border-accent/40 hover:text-accent',
-                ].join(' ')
-              }
-            >
-              <span className="flex items-center gap-2">
-                <span className="w-6 text-center text-base">🧭</span>
-                <span>Инструктаж</span>
-              </span>
-            </NavLink>
-            <NavLink
               to="/rounds/today"
               onClick={() => setMobileNavOpen(false)}
               className={({ isActive }) =>

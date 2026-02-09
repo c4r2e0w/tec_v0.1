@@ -111,9 +111,6 @@ function StartPage() {
             </div>
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link to="/shift/briefing" className="rounded-full bg-[#00A650] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#00bf5b]">
-            Предсменный инструктаж
-          </Link>
           <Link to="/rounds/today" className="rounded-full border border-white/40 bg-white/5 px-5 py-2 text-sm text-white transition hover:border-amber-300 hover:bg-white/10 hover:text-white">
             Сегодняшний обход
           </Link>

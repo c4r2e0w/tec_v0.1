@@ -14,7 +14,6 @@ import ProfilePage from './pages/ProfilePage.jsx'
 import UnitSectionPage from './pages/UnitSectionPage.jsx'
 import UnitLandingPage from './pages/UnitLandingPage.jsx'
 import UnionPage from './pages/UnionPage.jsx'
-import ShiftBriefingPage from './pages/ShiftBriefingPage.jsx'
 import ShiftTodayPage from './pages/ShiftTodayPage.jsx'
 import RoundsTodayPage from './pages/RoundsTodayPage.jsx'
 import RoundRunPage from './pages/RoundRunPage.jsx'
@@ -60,14 +59,6 @@ createRoot(document.getElementById('root')).render(
                 element={
                   <ProtectedRoute>
                     <UnionPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="shift/briefing"
-                element={
-                  <ProtectedRoute>
-                    <ShiftBriefingPage />
                   </ProtectedRoute>
                 }
               />
