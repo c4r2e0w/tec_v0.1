@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 import { useProfile } from '../hooks/useProfile'
 import { useJournal } from '../hooks/useJournal'
@@ -956,23 +956,46 @@ function UnitSectionPage() {
     const used = new Set()
     const byId = new Map(currentShiftEmployees.map((emp) => [String(emp.id), emp]))
     const prevSlot = getPreviousShiftSlot(activeShiftDate, activeShiftType)
-    const pickPreferredId = (row, candidates) => {
-      const currentKey = assignmentKey(activeShiftDate, activeShiftType, row.workplaceId)
+    const pickFallbackId = (row, candidates) => {
       const previousKey = assignmentKey(prevSlot.date, prevSlot.shiftType, row.workplaceId)
-      const manualId = manualWorkplaceAssignments[currentKey]
       const previousId = manualWorkplaceAssignments[previousKey]
       const autoId = row.employee?.id ? String(row.employee.id) : ''
-      const queue = [manualId, previousId, autoId].filter(Boolean).map(String)
+      const queue = [previousId, autoId].filter(Boolean).map(String)
       const candidateIds = new Set(candidates.map((c) => String(c.id)))
       const preferred = queue.find((id) => candidateIds.has(id) && !used.has(id))
       if (preferred) return preferred
       const fallback = candidates.find((c) => !used.has(String(c.id)))
       return fallback ? String(fallback.id) : ''
     }
-    const resolvedRows = rows.map((row) => {
+    const rowsWithCandidates = rows.map((row) => ({
+      ...row,
+      candidates: getCandidatesForWorkplace(row),
+    }))
+    const resolvedByWorkplaceId = new Map()
+
+    // Pass 1: strict manual override for current slot (always highest priority)
+    rowsWithCandidates.forEach((row) => {
+      const currentKey = assignmentKey(activeShiftDate, activeShiftType, row.workplaceId)
+      const manualId = String(manualWorkplaceAssignments[currentKey] || '')
+      if (!manualId) return
+      const isAllowed = row.candidates.some((c) => String(c.id) === manualId)
+      if (!isAllowed || used.has(manualId)) return
+      used.add(manualId)
+      resolvedByWorkplaceId.set(row.workplaceId, manualId)
+    })
+
+    // Pass 2: previous slot / auto / free candidate
+    rowsWithCandidates.forEach((row) => {
+      if (resolvedByWorkplaceId.has(row.workplaceId)) return
+      const selectedId = pickFallbackId(row, row.candidates)
+      if (!selectedId) return
+      used.add(selectedId)
+      resolvedByWorkplaceId.set(row.workplaceId, selectedId)
+    })
+
+    const resolvedRows = rowsWithCandidates.map((row) => {
+      const selectedId = resolvedByWorkplaceId.get(row.workplaceId) || ''
       const candidates = getCandidatesForWorkplace(row)
-      const selectedId = pickPreferredId(row, candidates)
-      if (selectedId) used.add(selectedId)
       return {
         ...row,
         candidates,
@@ -1607,7 +1630,7 @@ function UnitSectionPage() {
               <div key={row.workplaceId}>
                 <p className="text-[11px] text-grayText">{row.workplaceName}</p>
                 {editable ? (
-                  <div className="mt-1 space-y-1">
+                  <div className="mt-1">
                     <select
                       value={selectedEmployee?.id ? String(selectedEmployee.id) : ''}
                       onChange={(e) => {
@@ -1636,7 +1659,6 @@ function UnitSectionPage() {
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-dark">{selectedEmployee?.label || '—'}</p>
                   </div>
                 ) : (
                   <p className="text-xs text-dark">{row.employee?.label || '—'}</p>
@@ -1882,6 +1904,12 @@ function UnitSectionPage() {
               {renderRosterColumn('Турбинное', resolvedCurrentRoster.turbine, true)}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Link to="/shift/briefing" className="rounded-full border border-border px-3 py-1 text-xs text-dark hover:border-accent/60">
+                Инструктаж
+              </Link>
+              <Link to="/rounds/today" className="rounded-full border border-border px-3 py-1 text-xs text-dark hover:border-accent/60">
+                Сегодняшний обход
+              </Link>
               <button
                 onClick={() => void handleSaveWorkplaceAssignments()}
                 disabled={savingWorkplaces}
