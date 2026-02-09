@@ -294,6 +294,7 @@ function UnitSectionPage() {
   const [workplaceSaveMessage, setWorkplaceSaveMessage] = useState('')
   const [workplaceSaveError, setWorkplaceSaveError] = useState('')
   const [confirmingWorkplaces, setConfirmingWorkplaces] = useState(false)
+  const [confirmStatus, setConfirmStatus] = useState('idle')
 
   useEffect(() => {
     const saved = localStorage.getItem(pinStorageKey)
@@ -1280,17 +1281,21 @@ function UnitSectionPage() {
   const handleConfirmWorkplaceAssignments = async () => {
     if (!user || section !== 'personnel' || !unit) return
     setConfirmingWorkplaces(true)
+    setConfirmStatus('saving')
     setWorkplaceSaveError('')
     setWorkplaceSaveMessage('')
     const sessionId = await handleSaveWorkplaceAssignments({ quiet: true })
     if (!sessionId) {
       setConfirmingWorkplaces(false)
+      setConfirmStatus('error')
       setWorkplaceSaveError('Не удалось сохранить расстановку перед подтверждением')
       return
     }
+    setConfirmStatus('confirming')
     const confirmRes = await shiftWorkflowService.confirmBriefing({ briefingId: sessionId })
     if (confirmRes.error) {
       setConfirmingWorkplaces(false)
+      setConfirmStatus('error')
       setWorkplaceSaveError(confirmRes.error.message || 'Не удалось подтвердить смену')
       return
     }
@@ -1331,6 +1336,7 @@ function UnitSectionPage() {
       void loadSchedule({ silent: true })
     }
     setConfirmingWorkplaces(false)
+    setConfirmStatus('saved')
     setWorkplaceSaveMessage('Смена принята, персонал проинструктирован. Календарь обновлен по подтвержденному составу.')
   }
 
@@ -2145,22 +2151,22 @@ function UnitSectionPage() {
                 )}
                 <div className="mt-2 space-y-1 text-xs text-grayText">
                   <p>
-                    Тема пятиминутки:{' '}
                     <Link
                       to={`/topics?unit=${unit}&date=${activeShiftDate}`}
                       className="text-primary underline decoration-primary/50 underline-offset-2 hover:text-primary-hover"
                     >
-                      {briefingTopicTitle || 'не задана'}
+                      Тема пятиминутки
                     </Link>
+                    : <span className="text-dark">{briefingTopicTitle || 'не задана'}</span>
                   </p>
                   <p>
-                    Тема обхода:{' '}
                     <Link
                       to={`/topics?unit=${unit}&date=${activeShiftDate}`}
                       className="text-primary underline decoration-primary/50 underline-offset-2 hover:text-primary-hover"
                     >
-                      {roundTopicTitle || 'не задана'}
+                      Тема обхода
                     </Link>
+                    : <span className="text-dark">{roundTopicTitle || 'не задана'}</span>
                   </p>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-grayText">
@@ -2199,9 +2205,16 @@ function UnitSectionPage() {
                 disabled={savingWorkplaces || confirmingWorkplaces}
                 className="rounded-full bg-eco px-4 py-2 text-xs font-semibold text-white transition hover:bg-primary-hover disabled:opacity-60"
               >
-                {confirmingWorkplaces || savingWorkplaces ? 'Подтверждаем...' : 'Подтвердить смену (инструктаж проведен)'}
+                {confirmStatus === 'saved'
+                  ? 'Сохранено'
+                  : confirmingWorkplaces || savingWorkplaces
+                    ? confirmStatus === 'saving'
+                      ? 'Сохраняем состав...'
+                      : 'Подтверждаем...'
+                    : confirmStatus === 'error'
+                      ? 'Ошибка, повторить'
+                      : 'Подтвердить смену (инструктаж проведен)'}
               </button>
-              {assignmentSessionId && <span className="text-xs text-grayText">Сессия: {assignmentSessionId}</span>}
               {workplaceSaveMessage && <span className="text-xs text-eco">{workplaceSaveMessage}</span>}
               {workplaceSaveError && <span className="text-xs text-red-300">{workplaceSaveError}</span>}
             </div>
