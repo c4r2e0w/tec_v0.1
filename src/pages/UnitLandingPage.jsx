@@ -87,6 +87,25 @@ const employeeDivision = (employee) => {
   if (hasTurbine && !hasBoiler) return 'turbine'
   return 'other'
 }
+const normalizeRoleText = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replaceAll('ё', 'е')
+    .replace(/[^a-zа-я0-9]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+const canEmployeeCoverWorkplace = (employee, workplace) => {
+  const employeeText = normalizeRoleText(employee?.position)
+  const workplaceText = normalizeRoleText(
+    workplace?.requiredPositionText || workplace?.workplaceName || '',
+  )
+  if (!employeeText || !workplaceText) return false
+  if (employeeText === workplaceText || employeeText.includes(workplaceText) || workplaceText.includes(employeeText)) return true
+  const empTokens = employeeText.split(' ').filter((t) => t.length > 2)
+  const wpTokens = workplaceText.split(' ').filter((t) => t.length > 2)
+  const common = wpTokens.filter((t) => empTokens.some((e) => e === t || e.startsWith(t) || t.startsWith(e))).length
+  return common >= Math.max(2, Math.ceil(wpTokens.length * 0.6))
+}
 
 function UnitLandingPage() {
   const { unit } = useParams()
@@ -186,6 +205,7 @@ function UnitLandingPage() {
         .map((wp) => ({
           workplaceId: String(wp.id),
           workplaceName: String(wp.name || wp.code || `Пост ${wp.id}`),
+          requiredPositionText: String(wp.position_id || wp.position_name || wp.position || wp.description || ''),
           divisionKey: workplaceDivision(wp),
           isReserve: isReserveWorkplace(wp),
           employeeName: '',
@@ -197,6 +217,7 @@ function UnitLandingPage() {
           .map((emp) => ({
             workplaceId: `emp-${emp.id}`,
             workplaceName: emp.position || `Сотрудник ${emp.id}`,
+            requiredPositionText: emp.position || '',
             divisionKey: employeeDivision(emp),
             isReserve: false,
             employeeName: '',
@@ -247,16 +268,24 @@ function UnitLandingPage() {
 
       const assignDivisionFallback = (divisionKey, includeOthers = false) => {
         const places = rowsByWorkplace.filter((row) => row.divisionKey === divisionKey)
-        const candidates = activeEmployees.filter((emp) => {
+        let candidates = activeEmployees.filter((emp) => {
           const empDivision = employeeDivision(emp)
           return includeOthers ? empDivision !== 'boiler' && empDivision !== 'turbine' : empDivision === divisionKey
         })
+        if (!includeOthers) {
+          candidates = candidates.filter((emp) => !isChiefPosition(emp.position))
+        }
         let idx = 0
         places.forEach((row) => {
           if (row.employeeName) return
           while (idx < candidates.length) {
             const candidate = candidates[idx]
             const candidateNameKey = normalizeText(candidate?.name)
+            const roleMatch = canEmployeeCoverWorkplace(candidate, row)
+            if (!roleMatch) {
+              idx += 1
+              continue
+            }
             if (!occupiedEmployees.has(String(candidate.id)) && (!candidateNameKey || !occupiedNames.has(candidateNameKey))) break
             idx += 1
           }

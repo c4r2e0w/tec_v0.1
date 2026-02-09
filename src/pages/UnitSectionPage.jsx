@@ -887,25 +887,26 @@ function UnitSectionPage() {
   const resolveEmployeesForShift = useCallback(
     (mode, targetDate, targetShiftType) => {
       const nextDate = addDaysIso(targetDate, 1)
-      const isNightSource = (entry) => {
-        const source = normalizeRoleTextValue(entry?.source)
-        const note = normalizeRoleTextValue(entry?.note)
-        return source.includes('night') || note.includes('ноч')
-      }
       const byDayShiftHours = operationalEmployeesFromSchedule.filter((emp) => {
         const entries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
-        return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12 && !isNightSource(entry))
+        const has12 = entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
+        const has3 = entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
+        const has9 = entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
+        return has12 && !has3 && !has9
       })
       const byNightShiftHours = operationalEmployeesFromSchedule.filter((emp) => {
         const todayEntries = scheduleByDay.get(`${emp.id}-${targetDate}`) || []
         const nextEntries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
-        const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3 && isNightSource(entry))
-        const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9 && isNightSource(entry))
+        const has3Today = todayEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
+        const has9Next = nextEntries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
         return has3Today && has9Next
       })
       const byNextDayShiftHours = operationalEmployeesFromSchedule.filter((emp) => {
         const entries = scheduleByDay.get(`${emp.id}-${nextDate}`) || []
-        return entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12 && !isNightSource(entry))
+        const has12 = entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 12)
+        const has3 = entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 3)
+        const has9 = entries.some((entry) => Math.round(Number(entry?.planned_hours || 0)) === 9)
+        return has12 && !has3 && !has9
       })
       if (mode === 'current') return targetShiftType === 'night' ? byNightShiftHours : byDayShiftHours
       return targetShiftType === 'night' ? byNextDayShiftHours : byNightShiftHours
@@ -987,6 +988,9 @@ function UnitSectionPage() {
         })
       const byWorkplaceAndRank = (pool) =>
         byDivision(pool).filter((emp) => {
+          const isChief = isChiefPosition(emp.position)
+          const workplaceIsChief = isChiefPosition(row.requiredPositionText || row.workplaceName)
+          if (isChief && !workplaceIsChief && pool === currentShiftEmployees) return false
           const rankOk = requiredWeight >= 900 || (Number.isFinite(emp.weight) ? emp.weight <= requiredWeight : true)
           if (!rankOk) return false
           return canEmployeeCoverWorkplace(emp, {
