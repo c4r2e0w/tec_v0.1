@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 import { useEmployeeProfile } from '../hooks/useEmployeeProfile'
 
@@ -110,15 +111,15 @@ function StartPage() {
             </div>
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
-          <button className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover">
-            Запустить смену
-          </button>
-          <button className="rounded-full border border-white/40 px-5 py-2 text-sm text-white transition hover:border-white hover:text-white">
-            Создать объявление
-          </button>
-          <button className="rounded-full border border-white/40 px-5 py-2 text-sm text-white transition hover:border-white hover:text-white">
-            Быстрый наряд
-          </button>
+          <Link to="/shift/briefing" className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover">
+            Предсменный инструктаж
+          </Link>
+          <Link to="/rounds/today" className="rounded-full border border-white/40 px-5 py-2 text-sm text-white transition hover:border-white hover:text-white">
+            Сегодняшний обход
+          </Link>
+          <Link to="/rounds/history" className="rounded-full border border-white/40 px-5 py-2 text-sm text-white transition hover:border-white hover:text-white">
+            История обходов
+          </Link>
         </div>
       </div>
 
