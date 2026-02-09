@@ -157,15 +157,16 @@ function UnitLandingPage() {
         })
       })
       const activeEmployees = Array.from(employees.values()).filter((emp) => {
-        if (currentType === 'day') {
-          const entries = byEmpDay.get(`${emp.id}|${shiftDate}`) || []
-          return entries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 12)
-        }
         const dayEntries = byEmpDay.get(`${emp.id}|${shiftDate}`) || []
         const nextEntries = byEmpDay.get(`${emp.id}|${nextDate}`) || []
+        const dayHours = dayEntries.reduce((sum, e) => sum + Number(e?.planned_hours || 0), 0)
+        const nextHours = nextEntries.reduce((sum, e) => sum + Number(e?.planned_hours || 0), 0)
+        if (currentType === 'day') {
+          return dayHours > 0
+        }
         const has3 = dayEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 3)
         const has9 = nextEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 9)
-        return has3 && has9
+        return has3 && has9 ? true : dayHours + nextHours > 0
       })
 
       const workplaces = workplacesRes.data || []
@@ -224,29 +225,33 @@ function UnitLandingPage() {
         employeeName: assignmentNameByWorkplace.get(row.workplaceId) || '',
       }))
 
-      if (![...assignmentNameByWorkplace.values()].length) {
-        const assignDivisionFallback = (divisionKey) => {
-          const places = rowsByWorkplace.filter((row) => row.divisionKey === divisionKey)
-          const candidates = activeEmployees.filter((emp) => employeeDivision(emp) === divisionKey)
-          let idx = 0
-          places.forEach((row) => {
-            while (idx < candidates.length) {
-              const candidate = candidates[idx]
-              const candidateNameKey = normalizeText(candidate?.name)
-              if (!occupiedEmployees.has(String(candidate.id)) && (!candidateNameKey || !occupiedNames.has(candidateNameKey))) break
-              idx += 1
-            }
-            if (idx >= candidates.length) return
-            row.employeeName = candidates[idx].name
-            occupiedEmployees.add(String(candidates[idx].id))
-            const candidateNameKey = normalizeText(candidates[idx].name)
-            if (candidateNameKey) occupiedNames.add(candidateNameKey)
+      const assignDivisionFallback = (divisionKey, includeOthers = false) => {
+        const places = rowsByWorkplace.filter((row) => row.divisionKey === divisionKey)
+        const candidates = activeEmployees.filter((emp) => {
+          const empDivision = employeeDivision(emp)
+          return includeOthers ? empDivision !== 'boiler' && empDivision !== 'turbine' : empDivision === divisionKey
+        })
+        let idx = 0
+        places.forEach((row) => {
+          if (row.employeeName) return
+          while (idx < candidates.length) {
+            const candidate = candidates[idx]
+            const candidateNameKey = normalizeText(candidate?.name)
+            if (!occupiedEmployees.has(String(candidate.id)) && (!candidateNameKey || !occupiedNames.has(candidateNameKey))) break
             idx += 1
-          })
-        }
-        assignDivisionFallback('boiler')
-        assignDivisionFallback('turbine')
+          }
+          if (idx >= candidates.length) return
+          row.employeeName = candidates[idx].name
+          occupiedEmployees.add(String(candidates[idx].id))
+          const candidateNameKey = normalizeText(candidates[idx].name)
+          if (candidateNameKey) occupiedNames.add(candidateNameKey)
+          idx += 1
+        })
       }
+      assignDivisionFallback('boiler')
+      assignDivisionFallback('turbine')
+      assignDivisionFallback('boiler', true)
+      assignDivisionFallback('turbine', true)
 
       const chiefFromAssignments =
         (assignments || [])
