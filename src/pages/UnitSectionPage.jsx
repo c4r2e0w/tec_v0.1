@@ -244,6 +244,7 @@ function UnitSectionPage() {
   const [savingWorkplaces, setSavingWorkplaces] = useState(false)
   const [workplaceSaveMessage, setWorkplaceSaveMessage] = useState('')
   const [workplaceSaveError, setWorkplaceSaveError] = useState('')
+  const [confirmingWorkplaces, setConfirmingWorkplaces] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem(pinStorageKey)
@@ -1028,11 +1029,13 @@ function UnitSectionPage() {
     return () => clearTimeout(timer)
   }, [activeShiftDate, activeShiftType, handoverService, section, unit, user])
 
-  const handleSaveWorkplaceAssignments = useCallback(async () => {
+  const handleSaveWorkplaceAssignments = useCallback(async ({ quiet = false } = {}) => {
     if (!user || section !== 'personnel' || !unit) return
     setSavingWorkplaces(true)
-    setWorkplaceSaveError('')
-    setWorkplaceSaveMessage('')
+    if (!quiet) {
+      setWorkplaceSaveError('')
+      setWorkplaceSaveMessage('')
+    }
 
     let sessionId = assignmentSessionId
     if (!sessionId) {
@@ -1042,9 +1045,9 @@ function UnitSectionPage() {
         shiftType: activeShiftType,
       })
       if (createRes.error || !createRes.data) {
-        setWorkplaceSaveError(createRes.error?.message || 'Не удалось создать сессию смены')
+        if (!quiet) setWorkplaceSaveError(createRes.error?.message || 'Не удалось создать сессию смены')
         setSavingWorkplaces(false)
-        return
+        return null
       }
       sessionId = createRes.data
       setAssignmentSessionId(sessionId)
@@ -1073,12 +1076,13 @@ function UnitSectionPage() {
 
     const saveRes = await handoverService.upsertAssignments(payload)
     if (saveRes.error) {
-      setWorkplaceSaveError(saveRes.error.message || 'Не удалось сохранить расстановку')
+      if (!quiet) setWorkplaceSaveError(saveRes.error.message || 'Не удалось сохранить расстановку')
       setSavingWorkplaces(false)
-      return
+      return null
     }
     setSavingWorkplaces(false)
-    setWorkplaceSaveMessage('Расстановка сохранена')
+    if (!quiet) setWorkplaceSaveMessage('Расстановка сохранена')
+    return sessionId
   }, [
     activeShiftDate,
     activeShiftType,
@@ -1087,6 +1091,33 @@ function UnitSectionPage() {
     handoverService,
     resolvedCurrentRoster.boiler,
     resolvedCurrentRoster.turbine,
+    section,
+    shiftWorkflowService,
+    unit,
+    user,
+  ])
+
+  const handleConfirmWorkplaceAssignments = useCallback(async () => {
+    if (!user || section !== 'personnel' || !unit) return
+    setConfirmingWorkplaces(true)
+    setWorkplaceSaveError('')
+    setWorkplaceSaveMessage('')
+    const sessionId = await handleSaveWorkplaceAssignments({ quiet: true })
+    if (!sessionId) {
+      setConfirmingWorkplaces(false)
+      setWorkplaceSaveError('Не удалось сохранить расстановку перед подтверждением')
+      return
+    }
+    const confirmRes = await shiftWorkflowService.confirmBriefing({ briefingId: sessionId })
+    if (confirmRes.error) {
+      setConfirmingWorkplaces(false)
+      setWorkplaceSaveError(confirmRes.error.message || 'Не удалось подтвердить смену')
+      return
+    }
+    setConfirmingWorkplaces(false)
+    setWorkplaceSaveMessage('Смена принята, персонал проинструктирован')
+  }, [
+    handleSaveWorkplaceAssignments,
     section,
     shiftWorkflowService,
     unit,
@@ -1857,6 +1888,13 @@ function UnitSectionPage() {
                 className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition hover:bg-primary-hover disabled:opacity-60"
               >
                 {savingWorkplaces ? 'Сохраняем...' : 'Сохранить расстановку'}
+              </button>
+              <button
+                onClick={() => void handleConfirmWorkplaceAssignments()}
+                disabled={savingWorkplaces || confirmingWorkplaces}
+                className="rounded-full bg-eco px-4 py-2 text-xs font-semibold text-white transition hover:bg-primary-hover disabled:opacity-60"
+              >
+                {confirmingWorkplaces ? 'Подтверждаем...' : 'Смена принята, персонал проинструктирован'}
               </button>
               {assignmentSessionId && <span className="text-xs text-grayText">Сессия: {assignmentSessionId}</span>}
               {workplaceSaveMessage && <span className="text-xs text-eco">{workplaceSaveMessage}</span>}
