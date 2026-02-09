@@ -12,21 +12,21 @@ export async function fetchBriefingTopicForDate({ supabase, unit, shiftDate }) {
     .maybeSingle()
   if (!byDay.error && byDay.data) return byDay
 
-  const byMonth = await supabase
+  const byTemplate = await supabase
+    .from('briefing_topics')
+    .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
+    .eq('unit', unit)
+    .eq('briefing_date', templateDate)
+    .maybeSingle()
+  if (!byTemplate.error && byTemplate.data) return byTemplate
+
+  return supabase
     .from('briefing_topics')
     .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
     .eq('unit', unit)
     .eq('month', month)
     .order('created_at', { ascending: false })
     .limit(1)
-    .maybeSingle()
-  if (!byMonth.error && byMonth.data) return byMonth
-
-  return supabase
-    .from('briefing_topics')
-    .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
-    .eq('unit', unit)
-    .eq('briefing_date', templateDate)
     .maybeSingle()
 }
 
