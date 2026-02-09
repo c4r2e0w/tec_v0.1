@@ -473,6 +473,11 @@ function UnitSectionPage() {
     return baseShiftType === 'night' ? (dayIndex + 1) % shiftCodes.length : dayIndex
   }, [baseShiftDate, baseShiftType, shiftCodeByDate, shiftCodes.length])
   const [viewedShiftOffset, setViewedShiftOffset] = useState(0)
+  useEffect(() => {
+    if (section !== 'personnel') return
+    const timer = setTimeout(() => setViewedShiftOffset(0), 0)
+    return () => clearTimeout(timer)
+  }, [section, unit])
   const activeShiftSlot = useMemo(() => resolveShiftSlot(viewedShiftOffset), [resolveShiftSlot, viewedShiftOffset])
   const activeShiftDate = activeShiftSlot.date
   const activeShiftType = activeShiftSlot.type
