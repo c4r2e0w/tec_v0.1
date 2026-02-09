@@ -71,6 +71,20 @@ function UnitLandingPage() {
     if (raw.includes('турбин')) return 'turbine'
     return 'other'
   }
+  const employeeDivision = (employee) => {
+    const division = normalizeText(employee?.division)
+    const department = normalizeText(employee?.department)
+    if (division.includes('котел') || division.includes('котель') || department.includes('котел') || department.includes('котель'))
+      return 'boiler'
+    if (division.includes('турбин') || department.includes('турбин')) return 'turbine'
+
+    const pos = normalizeText(employee?.position)
+    const hasBoiler = pos.includes('котел') || pos.includes('котель')
+    const hasTurbine = pos.includes('турбин')
+    if (hasBoiler && !hasTurbine) return 'boiler'
+    if (hasTurbine && !hasBoiler) return 'turbine'
+    return 'other'
+  }
 
   const getShiftCodeByDate = (dateStr, shiftType) => {
     const d = parseIsoLocalDate(dateStr)
@@ -106,6 +120,39 @@ function UnitLandingPage() {
         setShiftSummary((prev) => ({ ...prev, loading: false, error: workplacesRes.error.message }))
         return
       }
+      const byEmpDay = new Map()
+      ;(rows || []).forEach((row) => {
+        const key = `${row.employee_id}|${row.date}`
+        const list = byEmpDay.get(key) || []
+        list.push(row)
+        byEmpDay.set(key, list)
+      })
+      const employees = new Map()
+      ;(rows || []).forEach((row) => {
+        if (employees.has(row.employee_id)) return
+        const fullName = row.employees
+          ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ')
+          : `ID ${row.employee_id}`
+        employees.set(row.employee_id, {
+          id: row.employee_id,
+          name: fullName,
+          position: row.employees?.positions?.name || '',
+          division: row.employees?.positions?.devision_name || '',
+          department: row.employees?.positions?.departament_name || '',
+        })
+      })
+      const activeEmployees = Array.from(employees.values()).filter((emp) => {
+        if (currentType === 'day') {
+          const entries = byEmpDay.get(`${emp.id}|${shiftDate}`) || []
+          return entries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 12)
+        }
+        const dayEntries = byEmpDay.get(`${emp.id}|${shiftDate}`) || []
+        const nextEntries = byEmpDay.get(`${emp.id}|${nextDate}`) || []
+        const has3 = dayEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 3)
+        const has9 = nextEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 9)
+        return has3 && has9
+      })
+
       const workplaces = workplacesRes.data || []
       const byWpId = new Map(workplaces.map((wp) => [String(wp.id), wp]))
       const byWpCode = new Map(
@@ -131,19 +178,24 @@ function UnitLandingPage() {
       }
 
       const assignmentNameByWorkplace = new Map()
+      const occupiedEmployees = new Set()
       ;(assignments || [])
         .filter((a) => a?.is_present !== false)
         .forEach((a) => {
           const key = String(a.workplace_code || '')
           if (!key) return
+          const empId = String(a.employee_id || '')
+          if (!empId || occupiedEmployees.has(empId)) return
           const employee = a.employees
           const fullName = employee
             ? [employee.last_name, employee.first_name, employee.middle_name].filter(Boolean).join(' ')
             : `ID ${a.employee_id}`
           const wp = byWpId.get(key) || byWpCode.get(normalizeText(key))
-          if (wp) {
-            assignmentNameByWorkplace.set(String(wp.id), fullName)
-          }
+          if (!wp) return
+          const wpId = String(wp.id)
+          if (assignmentNameByWorkplace.has(wpId)) return
+          assignmentNameByWorkplace.set(wpId, fullName)
+          occupiedEmployees.add(empId)
         })
 
       const rowsByWorkplace = baseRows.map((row) => ({
@@ -151,61 +203,21 @@ function UnitLandingPage() {
         employeeName: assignmentNameByWorkplace.get(row.workplaceId) || '',
       }))
 
-      const unassignedNames = []
-      const rowsWithAssigned = rowsByWorkplace.filter((row) => row.employeeName)
-      if (!rowsWithAssigned.length) {
-        const byEmpDay = new Map()
-        ;(rows || []).forEach((row) => {
-          const key = `${row.employee_id}|${row.date}`
-          const list = byEmpDay.get(key) || []
-          list.push(row)
-          byEmpDay.set(key, list)
-        })
-
-        const employees = new Map()
-        ;(rows || []).forEach((row) => {
-          if (employees.has(row.employee_id)) return
-          const fullName = row.employees
-            ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ')
-            : `ID ${row.employee_id}`
-          employees.set(row.employee_id, {
-            id: row.employee_id,
-            name: fullName,
-            position: row.employees?.positions?.name || '',
-            division: row.employees?.positions?.devision_name || '',
-          })
-        })
-
-        const activeEmployees = Array.from(employees.values()).filter((emp) => {
-          if (currentType === 'day') {
-            const entries = byEmpDay.get(`${emp.id}|${shiftDate}`) || []
-            return entries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 12)
-          }
-          const dayEntries = byEmpDay.get(`${emp.id}|${shiftDate}`) || []
-          const nextEntries = byEmpDay.get(`${emp.id}|${nextDate}`) || []
-          const has3 = dayEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 3)
-          const has9 = nextEntries.some((e) => Math.round(Number(e?.planned_hours || 0)) === 9)
-          return has3 && has9
-        })
-
-        const addToDivision = (divisionKey, list) => {
-          const pool = rowsByWorkplace.filter((r) => r.divisionKey === divisionKey)
-          let index = 0
-          list.forEach((emp) => {
-            while (index < pool.length && pool[index].employeeName) index += 1
-            if (index < pool.length) {
-              pool[index].employeeName = emp.name
-              index += 1
-            } else {
-              unassignedNames.push(emp.name)
-            }
+      if (![...assignmentNameByWorkplace.values()].length) {
+        const assignDivisionFallback = (divisionKey) => {
+          const places = rowsByWorkplace.filter((row) => row.divisionKey === divisionKey)
+          const candidates = activeEmployees.filter((emp) => employeeDivision(emp) === divisionKey)
+          let idx = 0
+          places.forEach((row) => {
+            while (idx < candidates.length && occupiedEmployees.has(String(candidates[idx].id))) idx += 1
+            if (idx >= candidates.length) return
+            row.employeeName = candidates[idx].name
+            occupiedEmployees.add(String(candidates[idx].id))
+            idx += 1
           })
         }
-
-        const boilerPool = activeEmployees.filter((e) => normalizeText(`${e.division} ${e.position}`).includes('котел'))
-        const turbinePool = activeEmployees.filter((e) => normalizeText(`${e.division} ${e.position}`).includes('турбин'))
-        addToDivision('boiler', boilerPool)
-        addToDivision('turbine', turbinePool)
+        assignDivisionFallback('boiler')
+        assignDivisionFallback('turbine')
       }
 
       const chiefFromAssignments =
@@ -215,14 +227,10 @@ function UnitLandingPage() {
 
       const chief = chiefFromAssignments
         ? [chiefFromAssignments.last_name, chiefFromAssignments.first_name, chiefFromAssignments.middle_name].filter(Boolean).join(' ')
-        : ''
+        : activeEmployees.find((e) => normalizeText(e.position).includes('начальник смены'))?.name || ''
 
       const boilerRows = rowsByWorkplace.filter((row) => row.divisionKey === 'boiler')
       const turbineRows = rowsByWorkplace.filter((row) => row.divisionKey === 'turbine')
-      const extraRows =
-        unassignedNames.length > 0
-          ? [{ workplaceId: 'extra', workplaceName: 'Резерв / без поста', divisionKey: 'turbine', employeeName: unassignedNames.join(', ') }]
-          : []
 
       setShiftSummary({
         loading: false,
@@ -232,7 +240,7 @@ function UnitLandingPage() {
         shiftDate,
         chief,
         boilerRows,
-        turbineRows: [...turbineRows, ...extraRows],
+        turbineRows,
       })
     }
     void load()
