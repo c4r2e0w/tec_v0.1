@@ -10,18 +10,7 @@ const toIsoLocalDate = (date) => {
   return `${y}-${m}-${d}`
 }
 
-const parseIsoLocalDate = (dateStr) => {
-  const [y, m, d] = String(dateStr || '')
-    .split('-')
-    .map((value) => Number(value))
-  return new Date(y, (m || 1) - 1, d || 1)
-}
-
-const monthStartOf = (dateStr) => {
-  const d = parseIsoLocalDate(dateStr)
-  d.setDate(1)
-  return toIsoLocalDate(d)
-}
+const TOPIC_TEMPLATE_DATES = Array.from({ length: 31 }, (_, idx) => `2000-01-${String(idx + 1).padStart(2, '0')}`)
 
 const getRoundTopicFromMaterials = (materials) => {
   const raw = String(materials || '').trim()
@@ -50,21 +39,15 @@ function ShiftTopicsPage() {
 
   const unit = params.get('unit') || 'ktc'
   const initialDate = params.get('date') || toIsoLocalDate(new Date())
-  const [monthStart, setMonthStart] = useState(monthStartOf(initialDate))
   const [rows, setRows] = useState([])
+  const [baselineRows, setBaselineRows] = useState([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
-  const monthDates = useMemo(() => {
-    const start = parseIsoLocalDate(monthStart)
-    return Array.from({ length: 31 }, (_, idx) => {
-      const d = new Date(start)
-      d.setDate(start.getDate() + idx)
-      return toIsoLocalDate(d)
-    })
-  }, [monthStart])
+  const selectedDay = useMemo(() => Number(String(initialDate).slice(8, 10)) || 1, [initialDate])
+  const isDirty = useMemo(() => JSON.stringify(rows) !== JSON.stringify(baselineRows), [rows, baselineRows])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -72,17 +55,18 @@ function ShiftTopicsPage() {
         setLoading(true)
         setError('')
         setMessage('')
-        const from = monthDates[0]
-        const to = monthDates[monthDates.length - 1]
+        const from = TOPIC_TEMPLATE_DATES[0]
+        const to = TOPIC_TEMPLATE_DATES[TOPIC_TEMPLATE_DATES.length - 1]
         const res = await handover.fetchTopicsRange({ unit, from, to })
         if (res.error) {
           setError(res.error.message)
           setRows([])
+          setBaselineRows([])
           setLoading(false)
           return
         }
         const byDate = new Map((res.data || []).map((row) => [row.briefing_date, row]))
-        const nextRows = monthDates.map((date) => {
+        const nextRows = TOPIC_TEMPLATE_DATES.map((date) => {
           const item = byDate.get(date)
           return {
             date,
@@ -92,11 +76,12 @@ function ShiftTopicsPage() {
           }
         })
         setRows(nextRows)
+        setBaselineRows(nextRows)
         setLoading(false)
       })()
     }, 0)
     return () => clearTimeout(timer)
-  }, [handover, monthDates, unit])
+  }, [handover, unit])
 
   const handleSave = async () => {
     setSaving(true)
@@ -104,7 +89,7 @@ function ShiftTopicsPage() {
     setMessage('')
     const payload = rows.map((row) => ({
       unit,
-      month: monthStart,
+      month: '2000-01-01',
       briefing_date: row.date,
       topic: String(row.topic || '').trim() || 'Тема не задана',
       materials: toMaterialsPayload(row.roundTopic),
@@ -116,6 +101,7 @@ function ShiftTopicsPage() {
       setSaving(false)
       return
     }
+    setBaselineRows(rows)
     setMessage('Темы сохранены')
     setSaving(false)
   }
@@ -125,7 +111,7 @@ function ShiftTopicsPage() {
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-xs uppercase tracking-[0.22em] text-grayText">Темы смен</p>
-          <h1 className="text-xl font-semibold text-dark">Пятиминутка и обход (31 день)</h1>
+          <h1 className="text-xl font-semibold text-dark">Шаблон тем (31 день)</h1>
         </div>
         <Link to={`/${unit}/personnel`} className="rounded-full border border-border px-3 py-1 text-xs text-dark hover:border-accent/60">
           Назад к смене
@@ -133,22 +119,13 @@ function ShiftTopicsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <label className="text-grayText">
-          Месяц
-          <input
-            type="month"
-            value={monthStart.slice(0, 7)}
-            onChange={(e) => setMonthStart(`${e.target.value}-01`)}
-            className="ml-2 rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
-          />
-        </label>
         <span className="rounded-full border border-border px-3 py-1 text-xs text-grayText">Unit: {unit}</span>
         <button
           onClick={handleSave}
-          disabled={saving || loading}
+          disabled={saving || loading || !isDirty}
           className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition hover:bg-primary-hover disabled:opacity-60"
         >
-          {saving ? 'Сохраняем...' : 'Сохранить темы'}
+          {saving ? 'Сохраняем...' : isDirty ? 'Сохранить изменения' : 'Изменения сохранены'}
         </button>
       </div>
 
@@ -167,7 +144,10 @@ function ShiftTopicsPage() {
           <tbody>
             {rows.map((row, idx) => (
               <tr key={row.date} className="border-t border-border">
-                <td className="px-3 py-2 text-dark">{idx + 1}. {new Date(row.date).toLocaleDateString('ru-RU')}</td>
+                <td className="px-3 py-2 text-dark">
+                  {idx + 1}
+                  {idx + 1 === selectedDay ? ' (сегодня)' : ''}
+                </td>
                 <td className="px-3 py-2">
                   <input
                     value={row.topic}

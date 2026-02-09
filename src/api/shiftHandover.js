@@ -1,5 +1,7 @@
 export async function fetchBriefingTopicForDate({ supabase, unit, shiftDate }) {
   if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
+  const day = Number(String(shiftDate || '').slice(8, 10)) || 1
+  const templateDate = `2000-01-${String(Math.min(Math.max(day, 1), 31)).padStart(2, '0')}`
   const month = shiftDate.slice(0, 8) + '01'
 
   const byDay = await supabase
@@ -10,13 +12,21 @@ export async function fetchBriefingTopicForDate({ supabase, unit, shiftDate }) {
     .maybeSingle()
   if (!byDay.error && byDay.data) return byDay
 
-  return supabase
+  const byMonth = await supabase
     .from('briefing_topics')
     .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
     .eq('unit', unit)
     .eq('month', month)
     .order('created_at', { ascending: false })
     .limit(1)
+    .maybeSingle()
+  if (!byMonth.error && byMonth.data) return byMonth
+
+  return supabase
+    .from('briefing_topics')
+    .select('id, unit, month, briefing_date, topic, materials, is_mandatory')
+    .eq('unit', unit)
+    .eq('briefing_date', templateDate)
     .maybeSingle()
 }
 
