@@ -66,8 +66,8 @@ function StartPage() {
 
   return (
     <div className="space-y-6">
-      <div className="overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-primary to-primary-hover p-6 text-white shadow-2xl sm:p-8">
-        <p className="text-xs uppercase tracking-[0.3em] text-white/70">Смена · Инфопоток</p>
+      <div className="overflow-hidden rounded-3xl border border-emerald-600/30 bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.2),_transparent_35%),linear-gradient(145deg,#0f1714,#143123_55%,#0f1f17)] p-6 text-white shadow-2xl sm:p-8">
+        <p className="text-xs uppercase tracking-[0.3em] text-emerald-100/70">Смена · Инфопоток</p>
         <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-3">
             <h2 className="text-3xl font-semibold leading-tight">Привет, команда УИ-ТЭЦ</h2>
@@ -76,34 +76,34 @@ function StartPage() {
               безопасностью и держите курс на стабильную генерацию.
             </p>
             <div className="flex flex-wrap gap-2 text-xs text-white/85">
-              <span className="rounded-full border border-eco/60 bg-eco/20 px-3 py-1 text-white">
+              <span className="rounded-full border border-emerald-400/60 bg-emerald-400/15 px-3 py-1 text-white">
                 Рейтинг безопасности 98%
               </span>
-              <span className="rounded-full border border-eco-dark/60 bg-eco-dark/30 px-3 py-1 text-white">
+              <span className="rounded-full border border-emerald-500/60 bg-emerald-500/20 px-3 py-1 text-white">
                 Новые идеи: 12
               </span>
-              <span className="rounded-full border border-warning/70 bg-warning/35 px-3 py-1 text-white">
+              <span className="rounded-full border border-amber-400/70 bg-amber-400/20 px-3 py-1 text-white">
                 ППР на неделе: 6
               </span>
             </div>
           </div>
             <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-              <div className="rounded-2xl border border-white/20 bg-white/10 p-4">
+              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm">
                 <p className="text-xs text-white/70">Статус смены</p>
                 <p className="text-lg font-semibold text-white">Смена S-24 активна</p>
                 <p className="text-xs text-white/70">Диспетчер: М. Осипов</p>
               </div>
-              <div className="rounded-2xl border border-white/20 bg-white/10 p-4">
+              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm">
                 <p className="text-xs text-white/70">Коммуникации</p>
                 <p className="text-lg font-semibold">49 сообщений</p>
                 <p className="text-xs text-white/70">Новых за час: 7</p>
               </div>
-              <div className="rounded-2xl border border-white/20 bg-white/10 p-4">
+              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm">
                 <p className="text-xs text-white/70">Документы</p>
                 <p className="text-lg font-semibold">+3 обновления</p>
                 <p className="text-xs text-white/70">В работе: ППР, ОТиПБ</p>
               </div>
-              <div className="rounded-2xl border border-white/20 bg-white/10 p-4">
+              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm">
                 <p className="text-xs text-white/70">Серверы</p>
                 <p className="text-lg font-semibold text-white">Все системы стабильны</p>
                 <p className="text-xs text-white/70">API · База · VPN</p>
@@ -111,13 +111,13 @@ function StartPage() {
             </div>
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link to="/shift/briefing" className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover">
+          <Link to="/shift/briefing" className="rounded-full bg-[#00A650] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#00bf5b]">
             Предсменный инструктаж
           </Link>
-          <Link to="/rounds/today" className="rounded-full border border-white/40 px-5 py-2 text-sm text-white transition hover:border-white hover:text-white">
+          <Link to="/rounds/today" className="rounded-full border border-white/40 bg-white/5 px-5 py-2 text-sm text-white transition hover:border-amber-300 hover:bg-white/10 hover:text-white">
             Сегодняшний обход
           </Link>
-          <Link to="/rounds/history" className="rounded-full border border-white/40 px-5 py-2 text-sm text-white transition hover:border-white hover:text-white">
+          <Link to="/rounds/history" className="rounded-full border border-white/40 bg-white/5 px-5 py-2 text-sm text-white transition hover:border-amber-300 hover:bg-white/10 hover:text-white">
             История обходов
           </Link>
         </div>
