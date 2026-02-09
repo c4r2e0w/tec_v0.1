@@ -11,6 +11,12 @@ const toIsoLocalDate = (date) => {
 }
 
 const TOPIC_TEMPLATE_DATES = Array.from({ length: 31 }, (_, idx) => `2000-01-${String(idx + 1).padStart(2, '0')}`)
+const getMonthRange = (dateStr) => {
+  const [y, m] = String(dateStr || '').split('-').map(Number)
+  const start = new Date(y || new Date().getFullYear(), (m || 1) - 1, 1)
+  const end = new Date(y || new Date().getFullYear(), (m || 1), 0)
+  return { from: toIsoLocalDate(start), to: toIsoLocalDate(end) }
+}
 
 const getRoundTopicFromMaterials = (materials) => {
   const raw = String(materials || '').trim()
@@ -47,6 +53,7 @@ function ShiftTopicsPage() {
   const [message, setMessage] = useState('')
 
   const selectedDay = useMemo(() => Number(String(initialDate).slice(8, 10)) || 1, [initialDate])
+  const currentMonthRange = useMemo(() => getMonthRange(initialDate), [initialDate])
   const isDirty = useMemo(() => JSON.stringify(rows) !== JSON.stringify(baselineRows), [rows, baselineRows])
 
   useEffect(() => {
@@ -55,19 +62,31 @@ function ShiftTopicsPage() {
         setLoading(true)
         setError('')
         setMessage('')
-        const from = TOPIC_TEMPLATE_DATES[0]
-        const to = TOPIC_TEMPLATE_DATES[TOPIC_TEMPLATE_DATES.length - 1]
-        const res = await handover.fetchTopicsRange({ unit, from, to })
-        if (res.error) {
-          setError(res.error.message)
+        const [templateRes, monthRes] = await Promise.all([
+          handover.fetchTopicsRange({
+            unit,
+            from: TOPIC_TEMPLATE_DATES[0],
+            to: TOPIC_TEMPLATE_DATES[TOPIC_TEMPLATE_DATES.length - 1],
+          }),
+          handover.fetchTopicsRange({ unit, from: currentMonthRange.from, to: currentMonthRange.to }),
+        ])
+        if (templateRes.error && monthRes.error) {
+          setError(templateRes.error?.message || monthRes.error?.message || 'Не удалось загрузить темы')
           setRows([])
           setBaselineRows([])
           setLoading(false)
           return
         }
-        const byDate = new Map((res.data || []).map((row) => [row.briefing_date, row]))
+        const byTemplateDate = new Map((templateRes.data || []).map((row) => [row.briefing_date, row]))
+        const byDayOfMonth = new Map()
+        ;(monthRes.data || []).forEach((row) => {
+          const day = Number(String(row.briefing_date || '').slice(8, 10))
+          if (!day || byDayOfMonth.has(day)) return
+          byDayOfMonth.set(day, row)
+        })
         const nextRows = TOPIC_TEMPLATE_DATES.map((date) => {
-          const item = byDate.get(date)
+          const day = Number(String(date).slice(8, 10))
+          const item = byTemplateDate.get(date) || byDayOfMonth.get(day) || null
           return {
             date,
             topic: item?.topic || '',
@@ -81,7 +100,7 @@ function ShiftTopicsPage() {
       })()
     }, 0)
     return () => clearTimeout(timer)
-  }, [handover, unit])
+  }, [currentMonthRange.from, currentMonthRange.to, handover, unit])
 
   const handleSave = async () => {
     setSaving(true)
