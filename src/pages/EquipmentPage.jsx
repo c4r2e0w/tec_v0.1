@@ -46,7 +46,6 @@ function EquipmentPage() {
   const [drafts, setDrafts] = useState({})
   const [newRow, setNewRow] = useState({
     system_id: '',
-    system_name: '',
     subsystem_type_id: '',
     station_number: '',
     control_point: '',
@@ -72,17 +71,6 @@ function EquipmentPage() {
     () => new Map((systems || []).map((row) => [String(row.id), row])),
     [systems],
   )
-  const systemNameOptions = useMemo(() => {
-    const set = new Set()
-    for (const row of systems || []) {
-      if (row?.name) set.add(String(row.name))
-    }
-    for (const row of equipment || []) {
-      if (row?.equipment_system) set.add(String(row.equipment_system))
-    }
-    return [...set].sort((a, b) => a.localeCompare(b, 'ru'))
-  }, [systems, equipment])
-
   const subsystemById = useMemo(() => {
     const map = new Map()
     for (const row of subsystemTypes || []) {
@@ -306,10 +294,14 @@ function EquipmentPage() {
     }
 
     if (hasColumn('system_id')) {
+      if (!newRow.system_id) {
+        setError('Выберите систему из справочника equipment_systems.')
+        return
+      }
       payload.system_id = newRow.system_id ? Number(newRow.system_id) : null
-      payload.equipment_system = systemById.get(String(newRow.system_id || ''))?.name || newRow.system_name || null
+      payload.equipment_system = systemById.get(String(newRow.system_id || ''))?.name || null
     } else {
-      payload.equipment_system = newRow.system_name || null
+      payload.equipment_system = null
     }
 
     if (hasColumn('subsystem_type_id')) {
@@ -331,7 +323,6 @@ function EquipmentPage() {
     setEquipment((prev) => [...prev, data])
     setNewRow({
       system_id: '',
-      system_name: '',
       subsystem_type_id: '',
       station_number: '',
       control_point: '',
@@ -347,6 +338,11 @@ function EquipmentPage() {
         <p className="mt-2 text-sm text-grayText">
           {loading ? 'Загрузка...' : `Строк в equipment: ${equipment.length}`}
         </p>
+        {!loading && !systems.length && (
+          <p className="mt-2 text-sm text-rose-500">
+            Справочник `equipment_systems` пуст или недоступен. Заполните таблицу и проверьте RLS-политику чтения.
+          </p>
+        )}
         {error && <p className="mt-2 text-sm text-rose-500">Ошибка: {error}</p>}
       </div>
 
@@ -355,7 +351,7 @@ function EquipmentPage() {
         <div className="mt-2 grid gap-2 md:grid-cols-5">
           <select
             value={newRow.system_id}
-            onChange={(e) => setNewRow((prev) => ({ ...prev, system_id: e.target.value, system_name: '' }))}
+            onChange={(e) => setNewRow((prev) => ({ ...prev, system_id: e.target.value }))}
             className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
           >
             <option value="">Система</option>
@@ -365,20 +361,6 @@ function EquipmentPage() {
               </option>
             ))}
           </select>
-          {!systems.length && (
-            <select
-              value={newRow.system_name}
-              onChange={(e) => setNewRow((prev) => ({ ...prev, system_name: e.target.value }))}
-              className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
-            >
-              <option value="">Система (из equipment_system)</option>
-              {systemNameOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          )}
 
           <select
             value={newRow.subsystem_type_id}
