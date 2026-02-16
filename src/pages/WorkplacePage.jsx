@@ -227,6 +227,7 @@ function WorkplacePage() {
   }, [dailyEntries])
 
   const equipmentViewList = useMemo(() => {
+    if (isViewedCurrentShift) return equipmentList
     if (!latestSnapshotEntry?.body) return equipmentList
     try {
       const parsed = JSON.parse(latestSnapshotEntry.body)
@@ -243,7 +244,7 @@ function WorkplacePage() {
     } catch {
       return equipmentList
     }
-  }, [equipmentList, latestSnapshotEntry])
+  }, [equipmentList, latestSnapshotEntry, isViewedCurrentShift])
 
   const equipmentTree = useMemo(() => {
     const systemMap = new Map()
@@ -513,14 +514,6 @@ function WorkplacePage() {
       ],
       created_by_profile_id: user?.id || null,
       created_by_employee_id: profile?.employee?.id || null,
-      author_snapshot: profile?.employee
-        ? {
-            label: [profile.employee.last_name, profile.employee.first_name, profile.employee.middle_name]
-              .filter(Boolean)
-              .join(' '),
-            position: profile.employee.positions?.name || '',
-          }
-        : null,
     }
     const { error: saveError } = await supabase.from('entries').insert(payload)
     setSavingEntry(false)
@@ -622,14 +615,6 @@ function WorkplacePage() {
       `workplace_code:${String(workplace?.code || '')}`,
       ...shiftTags,
     ]
-    const authorSnapshot = profile?.employee
-      ? {
-          label: [profile.employee.last_name, profile.employee.first_name, profile.employee.middle_name]
-            .filter(Boolean)
-            .join(' '),
-          position: profile.employee.positions?.name || '',
-        }
-      : null
     if (journalId) {
       await supabase.from('entries').insert({
         journal_id: journalId,
@@ -640,33 +625,38 @@ function WorkplacePage() {
         tags: [...commonTags, 'entry_kind:equipment_state_change'],
         created_by_profile_id: user?.id || null,
         created_by_employee_id: profile?.employee?.id || null,
-        author_snapshot: authorSnapshot,
       })
 
+      const snapshotBody = buildSnapshotPayload(nextEquipmentList.length ? nextEquipmentList : equipmentList)
       await supabase.from('entries').insert({
         journal_id: journalId,
         title: 'Снимок состояния оборудования',
-        body: buildSnapshotPayload(nextEquipmentList.length ? nextEquipmentList : equipmentList),
+        body: snapshotBody,
         type: 'daily',
         unit,
         tags: [...commonTags, 'entry_kind:equipment_snapshot'],
         created_by_profile_id: user?.id || null,
         created_by_employee_id: profile?.employee?.id || null,
-        author_snapshot: authorSnapshot,
       })
-    }
 
-    setDailyEntries((prev) => [
-      ...prev,
-      {
-        id: `local-${Date.now()}`,
-        title: 'Изменение состояния оборудования',
-        body: eventBody,
-        created_at: new Date().toISOString(),
-        tags: [...commonTags, 'entry_kind:equipment_state_change'],
-        author_snapshot: authorSnapshot,
-      },
-    ])
+      setDailyEntries((prev) => [
+        ...prev,
+        {
+          id: `local-${Date.now()}-event`,
+          title: 'Изменение состояния оборудования',
+          body: eventBody,
+          created_at: new Date().toISOString(),
+          tags: [...commonTags, 'entry_kind:equipment_state_change'],
+        },
+        {
+          id: `local-${Date.now()}-snapshot`,
+          title: 'Снимок состояния оборудования',
+          body: snapshotBody,
+          created_at: new Date().toISOString(),
+          tags: [...commonTags, 'entry_kind:equipment_snapshot'],
+        },
+      ])
+    }
   }
 
   return (
@@ -718,18 +708,18 @@ function WorkplacePage() {
             </div>
             {activeTab === 'daily' ? (
               <div className="mt-3 space-y-3">
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
+                <div className="grid gap-3 lg:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]">
+                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-2.5">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Состав оборудования</p>
-                    <div className="mt-2 space-y-2">
+                    <div className="mt-1.5 space-y-1.5">
                       {equipmentTree.map((system) => (
-                        <div key={system.systemName} className="rounded-md border border-white/10 bg-white/5 p-2">
+                        <div key={system.systemName} className="rounded-md border border-white/10 bg-white/5 p-1.5">
                           <p className="text-[11px] font-semibold text-slate-300">{system.systemName}</p>
-                          <div className="mt-2 space-y-2">
+                          <div className="mt-1.5 space-y-1.5">
                             {system.subsystems.map((sub) => (
                               <div key={`${system.systemName}-${sub.subsystemName}`}>
                                 <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{sub.subsystemName}</p>
-                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                <div className="mt-1 flex flex-wrap gap-1">
                                   {sub.units.map((item) => (
                                     <div key={item.id} className="relative">
                                       <button
@@ -888,15 +878,14 @@ function WorkplacePage() {
                         {savingEntry ? 'Сохраняем...' : 'Добавить'}
                       </button>
                     </div>
-                    <div className="mt-2 space-y-2">
+                    <div className="mt-2 space-y-1.5">
                       {statementEntries.map((item) => (
-                        <div key={item.id} className="rounded-md border border-white/10 bg-white/5 p-2">
-                          <p className="text-xs text-slate-100">{item.body || '—'}</p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            {item.author_snapshot?.label || 'Сотрудник'} ·{' '}
-                            {item.created_at ? new Date(item.created_at).toLocaleString('ru-RU') : '—'}
-                          </p>
-                        </div>
+                        <p key={item.id} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-100">
+                          {item.created_at
+                            ? new Date(item.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+                            : '--:--'}{' '}
+                          : {item.body || '—'}
+                        </p>
                       ))}
                       {!statementEntries.length && <p className="text-xs text-slate-500">Записей за эту смену пока нет.</p>}
                     </div>
