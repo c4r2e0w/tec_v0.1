@@ -102,9 +102,17 @@ const normalizeRoleTextValue = (value) =>
     .trim()
 
 const isOperationalType = (value) => normalizeRoleTextValue(value).includes('оператив')
+const isAdministrativeType = (value) => normalizeRoleTextValue(value).includes('административ')
 const isChiefPosition = (value) => {
   const normalized = normalizeRoleTextValue(value)
   return normalized.includes('начальник смены') || normalized.includes('нач смены')
+}
+const detectEmployeeSectionKey = (employee) => {
+  const raw = `${employee?.division || ''} ${employee?.department || ''} ${employee?.position || ''}`
+  const normalized = normalizeRoleTextValue(raw)
+  if (normalized.includes('турбин')) return 'turbine'
+  if (normalized.includes('котел')) return 'boiler'
+  return 'other'
 }
 const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
 const extractRoundTopic = (materials) => {
@@ -645,6 +653,14 @@ function UnitSectionPage() {
 
   const employeesFromSchedule = useMemo(() => {
     let list = [...allEmployeesFromSchedule]
+    if (filterCategory === 'operational') {
+      list = list.filter((e) => isOperationalType(e.positionType))
+    } else if (filterCategory === 'administrative') {
+      list = list.filter((e) => isAdministrativeType(e.positionType))
+    }
+    if (filterSection) {
+      list = list.filter((e) => detectEmployeeSectionKey(e) === filterSection)
+    }
     const pinnedSet = new Set(pinnedEmployees)
     const hiddenSet = new Set(hiddenEmployees)
     if (pinnedSet.size) {
@@ -666,7 +682,7 @@ function UnitSectionPage() {
     }
     list.sort((a, b) => a.weight - b.weight || a.label.localeCompare(b.label, 'ru'))
     return list
-  }, [allEmployeesFromSchedule, pinnedEmployees, hiddenEmployees, positionFilter, filterQuery])
+  }, [allEmployeesFromSchedule, filterCategory, filterSection, pinnedEmployees, hiddenEmployees, positionFilter, filterQuery])
 
   const scheduleMap = useMemo(() => {
     const source = unit ? scheduleRows.filter((row) => row.unit === unit) : scheduleRows
