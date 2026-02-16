@@ -265,30 +265,6 @@ const isValidShiftDigit = (h) => {
   return v === 3 || v === 9 || v === 4 || v === 8 || v === 12
 }
 
-const normalizeNameToken = (value) =>
-  String(value || '')
-    .toLowerCase()
-    .replaceAll('ё', 'е')
-    .replace(/[^a-zа-я0-9]+/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-const parseImportLine = (line) => {
-  const raw = String(line || '').trim()
-  if (!raw) return null
-  const compact = raw.replace(/\s+/g, ' ')
-  const hoursMatch = compact.match(/(?:^|\s)(3|9|12)(?:\s*ч|\s*час|\s*$)/i)
-  const hours = hoursMatch ? Number(hoursMatch[1]) : null
-  const namePart = compact
-    .replace(/(?:^|\s)(3|9|12)(?:\s*ч|\s*час|\s*$)/gi, ' ')
-    .replace(/[|;,:]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  const parts = namePart.split(' ').filter(Boolean)
-  if (parts.length < 2) return null
-  return { raw: compact, nameRaw: namePart, normalizedName: normalizeNameToken(namePart), hours }
-}
-
 const ScheduleCell = memo(function ScheduleCell({
   employeeId,
   date,
@@ -554,14 +530,6 @@ function PersonnelSchedule(props) {
   } = props
 
   const personnelHref = useMemo(() => (unitCode ? `/${unitCode}/personnel` : '#'), [unitCode])
-  const [importShiftType, setImportShiftType] = useState('day')
-  const [importDate, setImportDate] = useState('')
-  const [importText, setImportText] = useState('')
-  const [importRows, setImportRows] = useState([])
-  const [importOverrides, setImportOverrides] = useState({})
-  const [importError, setImportError] = useState('')
-  const [importMessage, setImportMessage] = useState('')
-  const [importing, setImporting] = useState(false)
   const statusBadge = useMemo(() => {
     const isLoading = loadingStaff || loadingSchedule
     if (staffError || scheduleError) {
@@ -639,32 +607,6 @@ function PersonnelSchedule(props) {
   }, [activeDate, selectedCell, selectedCells])
   const selectedEmployeeSet = useMemo(() => new Set(selectedEmployeeIds), [selectedEmployeeIds])
   const hiddenEmployeesSet = useMemo(() => new Set(hiddenEmployees), [hiddenEmployees])
-  const employeeNameIndex = useMemo(() => {
-    const map = new Map()
-    employeesFromSchedule.forEach((emp) => {
-      const normalized = normalizeNameToken(emp.label)
-      if (!normalized) return
-      const list = map.get(normalized) || []
-      list.push(emp)
-      map.set(normalized, list)
-      const tokens = normalized.split(' ').filter(Boolean)
-      if (tokens.length >= 2) {
-        const short = `${tokens[0]} ${tokens[1]}`
-        const shortList = map.get(short) || []
-        shortList.push(emp)
-        map.set(short, shortList)
-      }
-    })
-    return map
-  }, [employeesFromSchedule])
-  const dayShiftOption = useMemo(
-    () => shiftOptions.find((option) => option.value === 'day12') || null,
-    [shiftOptions],
-  )
-  const nightShiftOption = useMemo(
-    () => shiftOptions.find((option) => option.value === 'night12') || null,
-    [shiftOptions],
-  )
   const handleCellClickStable = useCallback((empId, date, e) => handleCellClick(empId, date, e), [handleCellClick])
   const handleTogglePosition = useCallback(
     (pos, checked) => {
@@ -679,96 +621,6 @@ function PersonnelSchedule(props) {
     (pos) => setPositionFilter((prev) => prev.filter((p) => p !== pos)),
     [setPositionFilter],
   )
-  const importSummary = useMemo(() => {
-    const ready = importRows.filter((row, idx) => {
-      const manualId = importOverrides[idx]?.employeeId
-      return Boolean(manualId || row.employee?.id)
-    }).length
-    const unresolved = importRows.length - ready
-    return { total: importRows.length, ready, unresolved }
-  }, [importRows, importOverrides])
-
-  const detectImportRows = useCallback(() => {
-    const lines = importText
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-    const parsed = lines
-      .map((line) => parseImportLine(line))
-      .filter(Boolean)
-      .map((entry) => {
-        const matches = employeeNameIndex.get(entry.normalizedName) || []
-        const employee = matches[0] || null
-        return { ...entry, employee, candidates: matches.slice(0, 5) }
-      })
-    setImportRows(parsed)
-    setImportOverrides({})
-    setImportError(parsed.length ? '' : 'Не удалось распознать строки. Вставьте текст построчно: "ФИО 12".')
-    if (parsed.length) {
-      setImportMessage(`Черновик: ${parsed.length} строк(и), совпадений ${parsed.filter((r) => r.employee).length}.`)
-    } else {
-      setImportMessage('')
-    }
-  }, [employeeNameIndex, importText])
-
-  const applyImportDraft = useCallback(async () => {
-    const date = String(importDate || todayIso).trim()
-    if (!date) {
-      setImportError('Укажите дату смены для импорта.')
-      return
-    }
-    const shiftId = importShiftType === 'night' ? nightShiftOption?.value : dayShiftOption?.value
-    if (!shiftId) {
-      setImportError('В списке смен не найдена целевая смена (day12/night12).')
-      return
-    }
-    const readyRows = importRows
-      .map((row, idx) => {
-        const manualId = importOverrides[idx]?.employeeId
-        const employeeId = manualId ? Number(manualId) : row.employee?.id
-        return employeeId ? { ...row, employeeId } : null
-      })
-      .filter(Boolean)
-    if (!readyRows.length) {
-      setImportError('Нет сопоставленных сотрудников для импорта.')
-      return
-    }
-    setImporting(true)
-    setImportError('')
-    const tasks = readyRows.map((row, index) =>
-      handleApplyShift(row.employeeId, date, shiftId, { skipReload: index !== readyRows.length - 1 }),
-    )
-    const results = await Promise.allSettled(tasks)
-    const failed = results.filter((item) => item.status === 'rejected')
-    setImporting(false)
-    if (failed.length) {
-      setImportError(`Импорт частично выполнен: ошибок ${failed.length}, успешно ${readyRows.length - failed.length}.`)
-      return
-    }
-    setImportMessage(
-      `Импорт завершен: ${readyRows.length} сотрудников, смена ${importShiftType === 'night' ? 'Ночь' : 'День'} ${date}.`,
-    )
-    setImportRows([])
-    setImportText('')
-    setImportOverrides({})
-  }, [
-    dayShiftOption?.value,
-    handleApplyShift,
-    importDate,
-    importOverrides,
-    importRows,
-    importShiftType,
-    nightShiftOption?.value,
-    todayIso,
-  ])
-
-  const resetImportDraft = useCallback(() => {
-    setImportRows([])
-    setImportText('')
-    setImportOverrides({})
-    setImportError('')
-    setImportMessage('')
-  }, [])
 
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
@@ -955,116 +807,6 @@ function PersonnelSchedule(props) {
             ))}
           </div>
         </div>
-      </div>
-      <div className="mt-3 rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-xs text-slate-200">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Импорт графика (ручной)</p>
-        </div>
-        <div className="mt-2 grid gap-2 md:grid-cols-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Дата смены</span>
-            <input
-              type="date"
-              value={importDate}
-              onChange={(e) => setImportDate(e.target.value)}
-              className="rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Тип смены</span>
-            <select
-              value={importShiftType}
-              onChange={(e) => setImportShiftType(e.target.value)}
-              className="rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white"
-            >
-              <option value="day">День</option>
-              <option value="night">Ночь</option>
-            </select>
-          </label>
-          <div className="flex items-end gap-2">
-            <button
-              onClick={detectImportRows}
-              className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-100 transition hover:border-sky-400/60"
-            >
-              Сформировать черновик
-            </button>
-            <button
-              onClick={resetImportDraft}
-              className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-100 transition hover:border-red-400/60"
-            >
-              Очистить
-            </button>
-          </div>
-        </div>
-        <textarea
-          value={importText}
-          onChange={(e) => setImportText(e.target.value)}
-          rows={5}
-          placeholder="Вставьте распознанный текст построчно: Фамилия Имя Отчество 12"
-          className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white placeholder:text-slate-500"
-        />
-        <p className="mt-1 text-[11px] text-slate-500">
-          Вставьте текст графика вручную и сформируйте черновик.
-        </p>
-        {!!importRows.length && (
-          <div className="mt-3 rounded-xl border border-white/10 bg-slate-900/60 p-2">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-              <span className="text-slate-300">
-                Черновик: {importSummary.total} · готово: {importSummary.ready} · без сопоставления: {importSummary.unresolved}
-              </span>
-              <button
-                onClick={() => void applyImportDraft()}
-                disabled={importing}
-                className="rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
-              >
-                {importing ? 'Импортируем...' : 'Подтвердить импорт в график'}
-              </button>
-            </div>
-            <div className="max-h-56 overflow-auto">
-              <table className="w-full text-left text-[11px]">
-                <thead className="text-slate-400">
-                  <tr>
-                    <th className="py-1">Распознано</th>
-                    <th className="py-1">Сотрудник</th>
-                    <th className="py-1">Часы</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {importRows.map((row, idx) => {
-                    const selectedId = importOverrides[idx]?.employeeId || (row.employee?.id ? String(row.employee.id) : '')
-                    return (
-                      <tr key={`${row.nameRaw}-${idx}`} className="border-t border-white/5">
-                        <td className="py-1 text-slate-300">{row.nameRaw}</td>
-                        <td className="py-1">
-                          <select
-                            value={selectedId}
-                            onChange={(e) =>
-                              setImportOverrides((prev) => ({
-                                ...prev,
-                                [idx]: { ...prev[idx], employeeId: e.target.value },
-                              }))
-                            }
-                            className="w-full rounded-lg border border-white/10 bg-slate-950/70 px-2 py-1 text-[11px] text-white"
-                          >
-                            <option value="">Не сопоставлен</option>
-                            {(row.candidates?.length ? row.candidates : employeesFromSchedule.slice(0, 200)).map((emp) => (
-                              <option key={`${idx}-${emp.id}`} value={emp.id}>
-                                {emp.label}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-1 text-slate-300">{row.hours || (importShiftType === 'night' ? '3/9' : '12')}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-        {importError && <p className="mt-2 text-[11px] text-rose-300">{importError}</p>}
-        {importMessage && <p className="mt-2 text-[11px] text-emerald-300">{importMessage}</p>}
       </div>
       <div
         className="mt-2 relative isolate max-h-[70vh] overflow-x-auto overflow-y-auto rounded-2xl border border-white/10 bg-slate-950 shadow-inner"
