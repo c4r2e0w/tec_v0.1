@@ -209,6 +209,32 @@ function WorkplacePage() {
   useEffect(() => {
     let active = true
     async function loadEquipment() {
+      if (!workplace?.id) return
+      const mappedRes = await supabase
+        .from('equipment_control_points')
+        .select('id, is_primary, equipment:equipment_id(id, name, status, equipment_system, type_id)')
+        .eq('workplace_id', workplace.id)
+        .eq('is_primary', true)
+        .order('id', { ascending: true })
+
+      // Preferred source: explicit equipment->workplace mapping table.
+      if (!mappedRes.error && Array.isArray(mappedRes.data)) {
+        const mappedEquipment = (mappedRes.data || [])
+          .map((row) => row?.equipment)
+          .filter(Boolean)
+          .map((item) => {
+            const subsystem = findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
+            const index = extractEquipmentIndex(item?.name)
+            const dispatchLabel = subsystem?.name ? `${subsystem.name}${index ? ` ${index}` : ''}` : ''
+            return { ...item, dispatchLabel, subsystemName: subsystem?.name || null }
+          })
+          .filter((item) => String(item.subsystemName || '').trim())
+        mappedEquipment.sort((a, b) => String(a.dispatchLabel || '').localeCompare(String(b.dispatchLabel || ''), 'ru'))
+        if (active) setEquipmentList(mappedEquipment)
+        return
+      }
+
+      // Fallback: legacy heuristic by system/department.
       const { data, error: eqError } = await supabase
         .from('equipment')
         .select('id, name, status, equipment_system, type_id, equipment_types:equipment_types(name)')
