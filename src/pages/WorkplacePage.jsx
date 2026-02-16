@@ -81,6 +81,30 @@ function WorkplacePage() {
     return matches[matches.length - 1]
   }
 
+  const deriveDispatchLabel = (equipmentName) => {
+    const source = String(equipmentName || '').replace(/\s+/g, ' ').trim()
+    if (!source) return ''
+    const patterns = [
+      /ПНД\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /ПВД\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /КНТ\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /ПЭН\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /ОЭ\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /ТГ\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /ПТ\s*[-–]?\s*(\d+[-/]\d+[-/]\d+(?:\/\d+)?)/i,
+      /ТА\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /КА\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+    ]
+    for (const regex of patterns) {
+      const match = source.match(regex)
+      if (match) {
+        const label = String(regex.source).split('\\s')[0].replace(/[^A-Za-zА-Яа-я]/g, '').toUpperCase()
+        return `${label} ${String(match[1]).toUpperCase()}`
+      }
+    }
+    return source.length > 24 ? `${source.slice(0, 24)}…` : source
+  }
+
   const findSubsystemByEquipmentName = (equipmentName, subsystemRows) => {
     const full = normalizeToken(equipmentName)
     const sorted = [...(subsystemRows || [])].sort((a, b) => String(b?.name || '').length - String(a?.name || '').length)
@@ -192,10 +216,12 @@ function WorkplacePage() {
           const subsystem = findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
           const index = extractEquipmentIndex(item?.name)
           const appendIndex = Boolean(index && subsystem?.name && !/\d/.test(String(subsystem.name)))
-          const dispatchLabel = subsystem?.name ? `${subsystem.name}${appendIndex ? ` ${index}` : ''}` : ''
+          const dispatchLabel = subsystem?.name
+            ? `${subsystem.name}${appendIndex ? ` ${index}` : ''}`
+            : deriveDispatchLabel(item?.name)
           return { ...item, dispatchLabel, subsystemName: subsystem?.name || null }
         })
-        .filter((item) => String(item.subsystemName || '').trim())
+        .filter((item) => String(item.dispatchLabel || '').trim())
       mappedEquipment.sort((a, b) => String(a.dispatchLabel || '').localeCompare(String(b.dispatchLabel || ''), 'ru'))
       if (active) setEquipmentList(mappedEquipment)
     }
