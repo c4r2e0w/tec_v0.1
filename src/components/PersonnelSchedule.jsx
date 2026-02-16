@@ -289,6 +289,29 @@ const parseImportLine = (line) => {
   return { raw: compact, nameRaw: namePart, normalizedName: normalizeNameToken(namePart), hours }
 }
 
+const detectionsToText = (detections) => {
+  if (!Array.isArray(detections) || !detections.length) return ''
+  const rows = []
+  const sorted = [...detections].sort((a, b) => {
+    const ay = a?.boundingBox?.y || 0
+    const by = b?.boundingBox?.y || 0
+    if (Math.abs(ay - by) < 12) return (a?.boundingBox?.x || 0) - (b?.boundingBox?.x || 0)
+    return ay - by
+  })
+  sorted.forEach((item) => {
+    const y = item?.boundingBox?.y || 0
+    const text = String(item?.rawValue || '').trim()
+    if (!text) return
+    const last = rows[rows.length - 1]
+    if (!last || Math.abs(last.y - y) > 12) rows.push({ y, parts: [text] })
+    else last.parts.push(text)
+  })
+  return rows
+    .map((row) => row.parts.join(' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
 const ScheduleCell = memo(function ScheduleCell({
   employeeId,
   date,
@@ -754,37 +777,30 @@ function PersonnelSchedule(props) {
       setImportError('Сначала выберите файл для распознавания.')
       return
     }
+    if (String(sourceFileForOcr.type || '').includes('pdf')) {
+      setImportError('Локальный OCR не распознает PDF напрямую. Сохраните страницу в JPG/PNG и загрузите изображение.')
+      return
+    }
+    if (typeof window === 'undefined' || typeof window.TextDetector === 'undefined') {
+      setImportError('В этом браузере нет локального OCR (TextDetector). Используйте Chrome/Edge или загрузите текст вручную.')
+      return
+    }
     setOcrLoading(true)
-    setOcrProgressText('Отправляем файл в OCR...')
+    setOcrProgressText('Распознаем локально в браузере...')
     setImportError('')
     try {
-      const fileBuffer = await sourceFileForOcr.arrayBuffer()
-      const resp = await fetch('/api/ocr', {
-        method: 'POST',
-        headers: {
-          'content-type': sourceFileForOcr.type || 'application/octet-stream',
-          'x-filename': encodeURIComponent(sourceFileForOcr.name || 'upload.bin'),
-        },
-        body: fileBuffer,
-      })
-      if (!resp.ok) {
-        const errPayload = await resp.json().catch(() => ({}))
-        throw new Error(errPayload?.error || `OCR HTTP ${resp.status}`)
-      }
-      setOcrProgressText('Разбираем результат OCR...')
-      const payload = await resp.json()
-      const parsed = Array.isArray(payload?.ParsedResults)
-        ? payload.ParsedResults.map((item) => item?.ParsedText || '').join('\n')
-        : ''
+      const bitmap = await createImageBitmap(sourceFileForOcr)
+      const detector = new window.TextDetector()
+      const detections = await detector.detect(bitmap)
+      const parsed = detectionsToText(detections)
       if (!parsed.trim()) {
-        const message = payload?.ErrorMessage || payload?.ErrorDetails || 'OCR не вернул текст.'
-        throw new Error(Array.isArray(message) ? message.join('; ') : String(message))
+        throw new Error('Локальный OCR не смог извлечь текст из файла.')
       }
       setImportText((prev) => {
         const merged = prev?.trim() ? `${prev.trim()}\n${parsed.trim()}` : parsed.trim()
         return merged
       })
-      setImportMessage('OCR завершен. Проверьте текст и нажмите "Сформировать черновик".')
+      setImportMessage('Локальный OCR завершен. Проверьте текст и нажмите "Сформировать черновик".')
       setOcrProgressText('Готово')
     } catch (error) {
       setImportError(`Ошибка OCR: ${error?.message || 'не удалось распознать файл'}`)
@@ -1116,7 +1132,9 @@ function PersonnelSchedule(props) {
           </p>
         )}
         {ocrProgressText && <p className="mt-1 text-[11px] text-slate-400">{ocrProgressText}</p>}
-        <p className="mt-1 text-[11px] text-slate-500">OCR выполняется через сервер (`/api/ocr`) с ключом `OCR_SPACE_API_KEY`.</p>
+        <p className="mt-1 text-[11px] text-slate-500">
+          OCR выполняется локально в браузере (без внешнего сервиса). Для PDF сначала сохраните страницу как JPG/PNG.
+        </p>
         {!!importRows.length && (
           <div className="mt-3 rounded-xl border border-white/10 bg-slate-900/60 p-2">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
