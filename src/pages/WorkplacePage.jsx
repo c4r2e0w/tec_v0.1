@@ -48,6 +48,7 @@ function WorkplacePage() {
   const [equipmentSubsystems, setEquipmentSubsystems] = useState([])
   const [equipmentSystems, setEquipmentSystems] = useState([])
   const [equipmentMenuId, setEquipmentMenuId] = useState(null)
+  const [equipmentMenuStep, setEquipmentMenuStep] = useState('status')
   const [equipmentSavingId, setEquipmentSavingId] = useState(null)
   const [activeTab, setActiveTab] = useState('daily')
   const [dailyEntries, setDailyEntries] = useState([])
@@ -87,6 +88,46 @@ function WorkplacePage() {
     if (status === 'Резерв') return `(${base})`
     if (status === 'Ремонт') return `[${base}]`
     return base
+  }
+
+  const equipmentCellClass = (status) => {
+    const normalized = normalizeEquipmentStatus(status)
+    if (normalized === 'Резерв') return 'border-emerald-400/50 bg-emerald-500/15'
+    if (normalized === 'Ремонт') return 'border-slate-300/40 bg-slate-400/15'
+    return 'border-rose-400/50 bg-rose-500/15'
+  }
+
+  const isPumpEquipment = (item) => {
+    const source = [
+      item?.systemName,
+      item?.subsystemName,
+      item?.dispatchLabel,
+      item?.stationNumber,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return (
+      source.includes('насос') ||
+      /\bкнт\b|\bкнб\b|кнп|пэн|нтв|цн|нпс|нрс|нпт|ндб|нбнт|сл\.н|рмн|амн|пмн|нго|пожн|дцн|\bпн\b/.test(source)
+    )
+  }
+
+  const reserveModeLabel = (value) => {
+    const text = String(value || '').trim().toLowerCase()
+    if (!text) return ''
+    if (text.includes('гор')) return 'Г'
+    if (text.includes('хол')) return 'Х'
+    if (text.includes('авр')) return 'А'
+    return text[0]?.toUpperCase() || ''
+  }
+
+  const toDbReserveMode = (value) => {
+    const text = String(value || '').trim().toLowerCase()
+    if (text.includes('гор')) return 'горячий'
+    if (text.includes('хол')) return 'холодный'
+    if (text.includes('авр')) return 'АВР'
+    return null
   }
 
   const extractEquipmentIndex = (name) => {
@@ -395,20 +436,41 @@ function WorkplacePage() {
     setDailyEntries(filtered)
   }
 
-  const handleSetEquipmentStatus = async (item, nextStatus) => {
+  const handleSetEquipmentStatus = async (item, nextStatus, reserveMode = null) => {
     if (!item?.id) return
     setEquipmentSavingId(item.id)
     setError('')
     const dbStatus = toDbEquipmentStatus(nextStatus)
-    const { error: saveError } = await supabase.from('equipment').update({ status: dbStatus }).eq('id', item.id)
+    const payload = { status: dbStatus }
+    if (dbStatus === 'резерв' && isPumpEquipment(item)) {
+      payload.reserve_mode = toDbReserveMode(reserveMode)
+    } else {
+      payload.reserve_mode = null
+    }
+    let { error: saveError } = await supabase.from('equipment').update(payload).eq('id', item.id)
+    if (saveError && String(saveError.message || '').toLowerCase().includes('reserve_mode')) {
+      const retryPayload = { ...payload }
+      if (retryPayload.reserve_mode === 'АВР') retryPayload.reserve_mode = 'авр'
+      const retry = await supabase.from('equipment').update(retryPayload).eq('id', item.id)
+      saveError = retry.error
+    }
+    if (saveError && String(saveError.message || '').toLowerCase().includes('column') && String(saveError.message || '').includes('reserve_mode')) {
+      const fallback = await supabase.from('equipment').update({ status: dbStatus }).eq('id', item.id)
+      saveError = fallback.error
+    }
     setEquipmentSavingId(null)
     setEquipmentMenuId(null)
+    setEquipmentMenuStep('status')
     if (saveError) {
       setError(saveError.message || 'Не удалось изменить состояние оборудования')
       return
     }
     setEquipmentList((prev) =>
-      prev.map((row) => (String(row.id) === String(item.id) ? { ...row, status: dbStatus } : row)),
+      prev.map((row) =>
+        String(row.id) === String(item.id)
+          ? { ...row, status: dbStatus, reserve_mode: payload.reserve_mode }
+          : row,
+      ),
     )
   }
 
@@ -477,24 +539,81 @@ function WorkplacePage() {
                                     <div key={item.id} className="relative">
                                       <button
                                         type="button"
-                                        onClick={() => setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))}
-                                        className="rounded border border-white/20 bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-100"
+                                        onClick={() => {
+                                          setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))
+                                          setEquipmentMenuStep('status')
+                                        }}
+                                        className={`relative rounded border px-2 py-1 text-[11px] font-semibold text-slate-100 ${equipmentCellClass(item.status)}`}
                                         title="Изменить состояние"
                                       >
                                         {formatEquipmentStateLabel(item)}
+                                        {normalizeEquipmentStatus(item.status) === 'Резерв' && reserveModeLabel(item.reserve_mode) && (
+                                          <span className="absolute -right-1 -top-1 rounded-full border border-white/30 bg-slate-900 px-1 text-[9px] leading-none text-emerald-200">
+                                            {reserveModeLabel(item.reserve_mode)}
+                                          </span>
+                                        )}
                                       </button>
                                       {equipmentMenuId === item.id && (
                                         <div className="absolute left-0 top-8 z-20 w-28 rounded-md border border-white/15 bg-slate-900 p-1 shadow-xl">
-                                          {['Работа', 'Резерв', 'Ремонт'].map((statusOption) => (
-                                            <button
-                                              key={statusOption}
-                                              type="button"
-                                              onClick={() => void handleSetEquipmentStatus(item, statusOption)}
-                                              className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                            >
-                                              {statusOption}
-                                            </button>
-                                          ))}
+                                          {equipmentMenuStep === 'status' ? (
+                                            <>
+                                              <button
+                                                type="button"
+                                                onClick={() => void handleSetEquipmentStatus(item, 'Работа')}
+                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                              >
+                                                🔴 Работа
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  if (isPumpEquipment(item)) setEquipmentMenuStep('reserve')
+                                                  else void handleSetEquipmentStatus(item, 'Резерв')
+                                                }}
+                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                              >
+                                                🟢 Резерв
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => void handleSetEquipmentStatus(item, 'Ремонт')}
+                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                              >
+                                                ⚪️ Ремонт
+                                              </button>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <button
+                                                type="button"
+                                                onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'горячий')}
+                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                              >
+                                                Г · Горячий
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'холодный')}
+                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                              >
+                                                Х · Холодный
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'АВР')}
+                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                              >
+                                                А · АВР
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => setEquipmentMenuStep('status')}
+                                                className="mt-1 block w-full rounded px-2 py-1 text-left text-[11px] text-slate-400 hover:bg-white/10"
+                                              >
+                                                ← Назад
+                                              </button>
+                                            </>
+                                          )}
                                         </div>
                                       )}
                                       {equipmentSavingId === item.id && <span className="ml-1 text-[10px] text-slate-400">...</span>}
