@@ -52,6 +52,7 @@ function WorkplacePage() {
   const [assignee, setAssignee] = useState(null)
   const [equipmentList, setEquipmentList] = useState([])
   const [equipmentSubsystems, setEquipmentSubsystems] = useState([])
+  const [legacySubsystems, setLegacySubsystems] = useState([])
   const [equipmentSystems, setEquipmentSystems] = useState([])
   const [equipmentMenuId, setEquipmentMenuId] = useState(null)
   const [equipmentSavingId, setEquipmentSavingId] = useState(null)
@@ -71,6 +72,10 @@ function WorkplacePage() {
     () => new Map((equipmentSystems || []).map((row) => [String(row.id), row])),
     [equipmentSystems],
   )
+  const legacySubsystemsById = useMemo(
+    () => new Map((legacySubsystems || []).map((row) => [String(row.id), row])),
+    [legacySubsystems],
+  )
 
   const normalizeEquipmentStatus = (value) => {
     const text = normalizeKey(value)
@@ -78,6 +83,13 @@ function WorkplacePage() {
     if (text.includes('ремонт')) return 'Ремонт'
     if (text.includes('работ')) return 'Работа'
     return 'Работа'
+  }
+
+  const toDbEquipmentStatus = (value) => {
+    const text = normalizeKey(value)
+    if (text.includes('резерв')) return 'резерв'
+    if (text.includes('ремонт')) return 'ремонт'
+    return 'работа'
   }
 
   const equipmentStatusClass = (status) => {
@@ -250,6 +262,14 @@ function WorkplacePage() {
       const systemsRes = await supabase.from('equipment_systems').select('id, name').order('name', { ascending: true }).limit(1000)
       if (!active) return
       if (!systemsRes.error) setEquipmentSystems(systemsRes.data || [])
+
+      const legacyRes = await supabase
+        .from('equipment_subsystems')
+        .select('id, system, name, description')
+        .order('id', { ascending: true })
+        .limit(3000)
+      if (!active) return
+      if (!legacyRes.error) setLegacySubsystems(legacyRes.data || [])
     }
     void loadSubsystems()
     return () => {
@@ -293,9 +313,10 @@ function WorkplacePage() {
 
       const mappedEquipment = scopedEquipment.map((item) => {
         const byId = item?.subsystem_id ? subsystemsById.get(String(item.subsystem_id)) : null
+        const legacyById = item?.subsystem_id ? legacySubsystemsById.get(String(item.subsystem_id)) : null
         const byCatalogId = item?.subsystem_catalog_id ? subsystemsById.get(String(item.subsystem_catalog_id)) : null
-        const byName = byId ? null : findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
-        const subsystem = byCatalogId || byId || byName
+        const byName = byId || legacyById ? null : findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
+        const subsystem = byCatalogId || byId || legacyById || byName
         const fallbackStation = extractEquipmentIndex(item?.name)
         const stationNumber =
           normalizeStationValue(item?.station_number) || normalizeStationValue(item?.name) || fallbackStation
@@ -305,12 +326,12 @@ function WorkplacePage() {
           ...item,
           stationNumber,
           dispatchLabel,
-          subsystemName: subsystem?.name || null,
-          systemName:
-            systemsById.get(String(item?.system_id || ''))?.name ||
-            subsystem?.system ||
-            item?.equipment_system ||
-            null,
+            subsystemName: subsystem?.name || null,
+            systemName:
+              systemsById.get(String(item?.system_id || ''))?.name ||
+              subsystem?.system ||
+              item?.equipment_system ||
+              null,
         }
       })
 
@@ -320,7 +341,7 @@ function WorkplacePage() {
     return () => {
       active = false
     }
-  }, [supabase, workplace?.code, workplace?.name, equipmentSubsystems, subsystemsById, systemsById])
+  }, [supabase, workplace?.code, workplace?.name, equipmentSubsystems, subsystemsById, legacySubsystemsById, systemsById])
 
   useEffect(() => {
     if (!workplace?.code) {
@@ -437,7 +458,8 @@ function WorkplacePage() {
     if (!item?.id) return
     setEquipmentSavingId(item.id)
     setError('')
-    const { error: saveError } = await supabase.from('equipment').update({ status: nextStatus }).eq('id', item.id)
+    const dbStatus = toDbEquipmentStatus(nextStatus)
+    const { error: saveError } = await supabase.from('equipment').update({ status: dbStatus }).eq('id', item.id)
     setEquipmentSavingId(null)
     setEquipmentMenuId(null)
     if (saveError) {
@@ -445,7 +467,7 @@ function WorkplacePage() {
       return
     }
     setEquipmentList((prev) =>
-      prev.map((row) => (String(row.id) === String(item.id) ? { ...row, status: nextStatus } : row)),
+      prev.map((row) => (String(row.id) === String(item.id) ? { ...row, status: dbStatus } : row)),
     )
   }
 
