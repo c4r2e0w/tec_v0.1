@@ -25,7 +25,7 @@ export async function rpcStartRoundForToday({ supabase, unit = null }) {
 export async function fetchWorkplacesDictionary({ supabase, unit = null }) {
   if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
   let q = supabase.from('workplace').select('*').eq('is_active', true).order('name', { ascending: true })
-  if (unit) q = q.or(`unit.is.null,unit.eq.${unit}`)
+  if (unit) q = q.eq('unit', unit)
   return q
 }
 
@@ -92,9 +92,9 @@ export async function fetchRoundPlanForDate({ supabase, date, unit = null }) {
     .select('id, plan_date, unit, round_plan_items(id, sort_order, inspection_items:item_id(id, code, name, description))')
     .eq('plan_date', date)
     .order('sort_order', { ascending: true, foreignTable: 'round_plan_items' })
-  if (unit) q = q.or(`unit.eq.${unit},unit.is.null`)
+  if (unit) q = q.eq('unit', unit)
   const res = await q
   if (res.error || !Array.isArray(res.data) || !res.data.length) return res
-  const exact = res.data.find((p) => p.unit === unit) || res.data[0]
+  const exact = unit ? res.data.find((p) => p.unit === unit) : res.data[0]
   return { data: exact, error: null }
 }

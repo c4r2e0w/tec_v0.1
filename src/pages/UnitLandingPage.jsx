@@ -131,7 +131,21 @@ function UnitLandingPage() {
   }
 
   useEffect(() => {
-    if (unit !== 'ktc') return
+    if (unit !== 'ktc') {
+      setShiftSummary({
+        loading: false,
+        error: '',
+        notice: '',
+        shiftCode: '—',
+        shiftType: 'day',
+        shiftDate: '',
+        chief: '',
+        chiefId: null,
+        boilerRows: [],
+        turbineRows: [],
+      })
+      return
+    }
     const load = async () => {
       const now = new Date()
       const currentDate = toIsoLocalDate(now)

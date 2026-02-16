@@ -111,6 +111,19 @@ const SECTION_FIELD_MAP = {
   turbine: ['турбинное отделение', 'турбинное'],
   boiler: ['котельное отделение', 'котельное'],
 }
+const UNIT_POSITION_KEYWORDS = {
+  ktc: ['котлотурбин', 'ктц', 'котель', 'турбин'],
+  chem: ['хим'],
+  electro: ['электро'],
+  sai: ['автомат', 'кип', 'измер'],
+  fuel: ['топлив'],
+}
+const positionBelongsToUnit = (position, unit) => {
+  const keywords = UNIT_POSITION_KEYWORDS[unit] || []
+  if (!keywords.length) return true
+  const haystack = normalizeRoleTextValue([position?.name, position?.departament_name, position?.devision_name].filter(Boolean).join(' '))
+  return keywords.some((keyword) => haystack.includes(normalizeRoleTextValue(keyword)))
+}
 const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
 const extractRoundTopic = (materials) => {
   const raw = String(materials || '').trim()
@@ -281,7 +294,7 @@ function UnitSectionPage() {
   const [filterQueryInput, setFilterQueryInput] = useState('')
   const [positionsOpen, setPositionsOpen] = useState(false)
   const [filterQuery, setFilterQuery] = useState('')
-  const pinStorageKey = 'ktc_filters'
+  const pinStorageKey = `${unit || 'unit'}_filters`
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([])
   const [showSchedule, setShowSchedule] = useState(false)
   const [activeShiftPermissions, setActiveShiftPermissions] = useState([])
@@ -1391,7 +1404,7 @@ function UnitSectionPage() {
     setLoadingStaff(true)
     setStaffError('')
     // Отфильтруем должности заранее
-    let filteredPositions = positionsList
+    let filteredPositions = positionsList.filter((p) => positionBelongsToUnit(p, unit))
     if (filterCategory) {
       const cat = filterCategory === 'operational' ? 'Оперативный' : 'Административно-технический'
       filteredPositions = filteredPositions.filter((p) => (p.type || '').toLowerCase() === cat.toLowerCase())

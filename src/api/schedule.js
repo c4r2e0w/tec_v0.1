@@ -102,6 +102,6 @@ export async function fetchPositions({ supabase }) {
 export async function fetchWorkplaces({ supabase, unit }) {
   if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
   let query = supabase.from('workplace').select('*').order('id', { ascending: true })
-  if (unit) query = query.or(`unit.eq.${unit},unit.is.null`)
+  if (unit) query = query.eq('unit', unit)
   return query
 }

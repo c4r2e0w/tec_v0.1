@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 
 const normalize = (value) => String(value || '').trim().toLowerCase()
@@ -6,6 +7,7 @@ const normalize = (value) => String(value || '').trim().toLowerCase()
 const defaultStatuses = ['работа', 'резерв', 'ремонт']
 
 function EquipmentPage() {
+  const { unit } = useParams()
   const supabase = useSupabase()
 
   const [equipment, setEquipment] = useState([])
@@ -105,7 +107,11 @@ function EquipmentPage() {
         supabase.from('equipment_systems').select('id,name,system_type_id').order('id', { ascending: true }).limit(1000),
         supabase.from('subsystem_types').select('id,code,full_name').order('code', { ascending: true }).limit(3000),
         supabase.from('equipment_subsystems').select('id,name,description').order('id', { ascending: true }).limit(3000),
-        supabase.from('workplace').select('id,code,name').order('id', { ascending: true }).limit(500),
+        supabase
+          .from('workplace')
+          .select('id,code,name,unit')
+          .order('id', { ascending: true })
+          .limit(1000),
       ])
 
       if (!active) return
@@ -116,12 +122,33 @@ function EquipmentPage() {
         return
       }
 
-      setEquipment(eqRes.data || [])
+      const workplaceRows = wpRes.error ? [] : (wpRes.data || [])
+      const isKtcLegacy = unit === 'ktc'
+      const scopedWorkplaces = unit
+        ? workplaceRows.filter((row) => row?.unit === unit || (isKtcLegacy && !row?.unit))
+        : workplaceRows
+      const allowedControlPoints = new Set(
+        scopedWorkplaces
+          .flatMap((row) => [row?.name, row?.code])
+          .filter(Boolean)
+          .map((value) => normalize(value).replace(/\s+/g, '').replace(/_/g, '')),
+      )
+      const scopedEquipment = unit
+        ? (eqRes.data || []).filter((row) => {
+            const rowUnit = normalize(row?.unit || row?.unit_code || '')
+            if (rowUnit) return rowUnit === normalize(unit)
+            const cp = normalize(row?.control_point).replace(/\s+/g, '').replace(/_/g, '')
+            if (cp && allowedControlPoints.size) return allowedControlPoints.has(cp)
+            return isKtcLegacy
+          })
+        : (eqRes.data || [])
+
+      setEquipment(scopedEquipment)
       if (!stRes.error) setSystemTypes(stRes.data || [])
       if (!sysRes.error) setSystems(sysRes.data || [])
       if (!subTypeRes.error) setSubsystemTypes(subTypeRes.data || [])
       if (!legacySubRes.error) setLegacySubsystems(legacySubRes.data || [])
-      if (!wpRes.error) setWorkplaces(wpRes.data || [])
+      if (!wpRes.error) setWorkplaces(scopedWorkplaces)
 
       setLoading(false)
     }
@@ -130,7 +157,7 @@ function EquipmentPage() {
     return () => {
       active = false
     }
-  }, [supabase])
+  }, [supabase, unit])
 
   const rows = useMemo(() => {
     return (equipment || []).map((row) => {
@@ -285,7 +312,7 @@ function EquipmentPage() {
     <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-white p-6 shadow-lg">
         <p className="text-xs uppercase tracking-[0.2em] text-grayText">Оборудование</p>
-        <h1 className="text-xl font-semibold text-dark">База оборудования КТЦ</h1>
+        <h1 className="text-xl font-semibold text-dark">База оборудования{unit ? ` · ${unit.toUpperCase()}` : ''}</h1>
         <p className="mt-2 text-sm text-grayText">
           {loading ? 'Загрузка...' : `Строк в equipment: ${equipment.length}`}
         </p>
