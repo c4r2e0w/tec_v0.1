@@ -76,6 +76,9 @@ function SocialHubPage() {
   const [feed, setFeed] = useState([])
   const [loadingFeed, setLoadingFeed] = useState(true)
   const [feedError, setFeedError] = useState('')
+  const [employees, setEmployees] = useState([])
+  const [employeesError, setEmployeesError] = useState('')
+  const [loadingEmployees, setLoadingEmployees] = useState(true)
 
   const employee = profile.employee
   const role = useMemo(() => getRoleMeta(employee), [employee])
@@ -114,6 +117,31 @@ function SocialHubPage() {
     }
   }, [supabase])
 
+  useEffect(() => {
+    let active = true
+    async function loadEmployees() {
+      setLoadingEmployees(true)
+      setEmployeesError('')
+      const { data, error } = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, middle_name, positions:position_id(name, type, devision_name)')
+        .order('last_name', { ascending: true })
+        .limit(18)
+      if (!active) return
+      if (error) {
+        setEmployeesError(error.message || 'Не удалось загрузить сотрудников')
+        setEmployees([])
+      } else {
+        setEmployees(data || [])
+      }
+      setLoadingEmployees(false)
+    }
+    void loadEmployees()
+    return () => {
+      active = false
+    }
+  }, [supabase])
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
@@ -123,6 +151,22 @@ function SocialHubPage() {
           {profile.fio || 'Сотрудник'} · {role.title}
         </p>
         <p className="mt-1 text-xs text-slate-400">{role.description}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {employee?.id && (
+            <Link
+              to={`/people/${employee.id}`}
+              className="rounded-full border border-emerald-400/45 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-100 transition hover:border-emerald-300"
+            >
+              Моя страница
+            </Link>
+          )}
+          <Link
+            to={`/${preferredUnit}/personnel`}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 transition hover:border-sky-400/60"
+          >
+            Подразделение
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -176,6 +220,26 @@ function SocialHubPage() {
               Мой профиль
             </Link>
           </div>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 shadow-lg">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">Сотрудники</h3>
+        {loadingEmployees && <p className="mt-3 text-xs text-slate-400">Загружаем список…</p>}
+        {employeesError && <p className="mt-3 text-xs text-rose-300">{employeesError}</p>}
+        <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+          {employees.map((emp) => {
+            const fio = [emp.last_name, emp.first_name, emp.middle_name].filter(Boolean).join(' ') || `ID ${emp.id}`
+            return (
+              <Link
+                key={emp.id}
+                to={`/people/${emp.id}`}
+                className="rounded-xl border border-white/10 bg-slate-950/70 p-3 transition hover:border-emerald-400/60"
+              >
+                <p className="text-sm font-semibold text-white">{fio}</p>
+                <p className="mt-1 text-xs text-slate-400">{emp.positions?.name || 'Должность не указана'}</p>
+              </Link>
+            )
+          })}
         </div>
       </div>
     </div>

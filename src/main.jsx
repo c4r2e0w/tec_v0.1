@@ -4,7 +4,6 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App.jsx'
-import StartPage from './pages/StartPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import EquipmentPage from './pages/EquipmentPage.jsx'
 import RosterPage from './pages/RosterPage.jsx'
@@ -20,6 +19,7 @@ import RoundRunPage from './pages/RoundRunPage.jsx'
 import RoundsHistoryPage from './pages/RoundsHistoryPage.jsx'
 import ShiftTopicsPage from './pages/ShiftTopicsPage.jsx'
 import SocialHubPage from './pages/SocialHubPage.jsx'
+import EmployeeWorkspacePage from './pages/EmployeeWorkspacePage.jsx'
 
 const queryClient = new QueryClient()
 
@@ -30,7 +30,14 @@ createRoot(document.getElementById('root')).render(
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<App />}>
-              <Route index element={<StartPage />} />
+              <Route
+                index
+                element={
+                  <ProtectedRoute>
+                    <SocialHubPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="login" element={<LoginPage />} />
               <Route
                 path="equipment"
@@ -65,10 +72,10 @@ createRoot(document.getElementById('root')).render(
                 }
               />
               <Route
-                path="social"
+                path="people/:employeeId"
                 element={
                   <ProtectedRoute>
-                    <SocialHubPage />
+                    <EmployeeWorkspacePage />
                   </ProtectedRoute>
                 }
               />
