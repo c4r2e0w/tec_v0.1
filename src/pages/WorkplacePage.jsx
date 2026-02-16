@@ -27,6 +27,22 @@ const normalizeKey = (value) =>
     .trim()
     .toLowerCase()
 
+const extractSystemHints = (value) => {
+  const text = normalizeKey(value)
+  if (!text) return []
+  const out = new Set()
+  const matches = text.match(/(?:та|ка)\s*-?\s*\d+/g) || []
+  for (const raw of matches) {
+    const parts = raw.match(/(та|ка)\s*-?\s*(\d+)/)
+    if (parts) out.add(`${parts[1].toUpperCase()} ${parts[2]}`)
+  }
+  if (text.includes('теплосеть')) out.add('Теплосеть')
+  if (text.includes('техническ') && text.includes('вода')) out.add('Техническая вода')
+  if (text.includes('собствен') && text.includes('нужд')) out.add('Собственные нужды')
+  if (text.includes('станцион')) out.add('Станционное оборудование')
+  return [...out]
+}
+
 function WorkplacePage() {
   const { unit, workplaceId } = useParams()
   const supabase = useSupabase()
@@ -107,14 +123,24 @@ function WorkplacePage() {
   useEffect(() => {
     let active = true
     async function loadEquipment() {
-      const { data, error: eqError } = await supabase.from('equipment').select('*').limit(400)
+      const { data, error: eqError } = await supabase
+        .from('equipment')
+        .select('id, name, status, equipment_system, type_id, equipment_types:equipment_types(name)')
+        .order('name', { ascending: true })
+        .limit(2000)
       if (!active || eqError) return
       const code = normalizeKey(workplace?.code)
       const name = normalizeKey(workplace?.name)
       const id = normalizeKey(workplaceId)
+      const systemHints = new Set([
+        ...extractSystemHints(workplace?.name),
+        ...extractSystemHints(workplace?.code),
+        ...extractSystemHints(workplace?.description),
+      ])
       const matches = (data || []).filter((item) => {
         const byCode = normalizeKey(item?.workplace_code)
         const byId = normalizeKey(item?.workplace_id)
+        const bySystem = normalizeKey(item?.equipment_system)
         const full = normalizeKey(
           [
             item?.workplace,
@@ -122,12 +148,14 @@ function WorkplacePage() {
             item?.area,
             item?.zone,
             item?.section,
+            item?.equipment_system,
             item?.description,
             item?.note,
           ]
             .filter(Boolean)
             .join(' '),
         )
+        if (systemHints.size && bySystem && [...systemHints].some((hint) => normalizeKey(hint) === bySystem)) return true
         if (code && (byCode === code || full.includes(code))) return true
         if (id && byId === id) return true
         if (name && full.includes(name)) return true
@@ -300,7 +328,11 @@ function WorkplacePage() {
                   <div className="mt-2 space-y-1">
                     {equipmentList.map((item, idx) => (
                       <div key={`${item.id || item.code || idx}`} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200">
-                        {item.name || item.title || item.code || `Оборудование #${idx + 1}`}
+                        <p>{item.name || item.title || item.code || `Оборудование #${idx + 1}`}</p>
+                        <p className="text-[10px] text-slate-400">
+                          {item.equipment_system || 'Без системы'} · {item?.equipment_types?.name || 'Тип не указан'} ·{' '}
+                          {item.status || 'В работе'}
+                        </p>
                       </div>
                     ))}
                     {!equipmentList.length && <p className="text-xs text-slate-500">Закрепленное оборудование пока не найдено.</p>}
