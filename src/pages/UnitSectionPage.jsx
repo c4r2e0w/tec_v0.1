@@ -1428,6 +1428,7 @@ function UnitSectionPage() {
     const positionIds = filteredPositions.map((p) => p.id)
     const { data, error } = await scheduleService.fetchEmployeesByUnit({
       positionIds,
+      unit,
       query: null,
     })
     if (error) {

@@ -78,7 +78,7 @@ export async function fetchShiftTemplates({ supabase }) {
 
 export async function fetchEmployeesByUnit({ supabase, filters = {} }) {
   if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
-  const { positionIds, query } = filters
+  const { positionIds, query, unit } = filters
   let empQuery = supabase
     .from('employees')
     .select('id, first_name, last_name, middle_name, position_id, positions:position_id ( name, departament_name, devision_name, type, sort_weight )')
@@ -86,6 +86,7 @@ export async function fetchEmployeesByUnit({ supabase, filters = {} }) {
     .order('last_name', { ascending: true })
 
   if (Array.isArray(positionIds) && positionIds.length) empQuery = empQuery.in('position_id', positionIds)
+  if (unit) empQuery = empQuery.eq('unit', unit)
   if (query) {
     const pattern = `%${query}%`
     empQuery = empQuery.or(`last_name.ilike.${pattern},first_name.ilike.${pattern},middle_name.ilike.${pattern}`)

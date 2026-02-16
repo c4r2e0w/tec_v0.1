@@ -123,10 +123,7 @@ function EquipmentPage() {
       }
 
       const workplaceRows = wpRes.error ? [] : (wpRes.data || [])
-      const isKtcLegacy = unit === 'ktc'
-      const scopedWorkplaces = unit
-        ? workplaceRows.filter((row) => row?.unit === unit || (isKtcLegacy && !row?.unit))
-        : workplaceRows
+      const scopedWorkplaces = unit ? workplaceRows.filter((row) => row?.unit === unit) : workplaceRows
       const allowedControlPoints = new Set(
         scopedWorkplaces
           .flatMap((row) => [row?.name, row?.code])
@@ -139,7 +136,7 @@ function EquipmentPage() {
             if (rowUnit) return rowUnit === normalize(unit)
             const cp = normalize(row?.control_point).replace(/\s+/g, '').replace(/_/g, '')
             if (cp && allowedControlPoints.size) return allowedControlPoints.has(cp)
-            return isKtcLegacy
+            return false
           })
         : (eqRes.data || [])
 
