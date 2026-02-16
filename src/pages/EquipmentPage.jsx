@@ -31,6 +31,8 @@ function EquipmentPage() {
   const [systemTypes, setSystemTypes] = useState([])
   const [systems, setSystems] = useState([])
   const [subsystemTypes, setSubsystemTypes] = useState([])
+  const [systemSubsystemLinks, setSystemSubsystemLinks] = useState([])
+  const [systemControlPointLinks, setSystemControlPointLinks] = useState([])
   const [workplaces, setWorkplaces] = useState([])
 
   const [loading, setLoading] = useState(true)
@@ -73,16 +75,50 @@ function EquipmentPage() {
 
   const controlPointOptions = useMemo(() => {
     const values = new Map(CONTROL_POINTS.map((row) => [row.value, row.label]))
-    for (const row of workplaces || []) {
-      if (row?.code) values.set(String(row.code), String(row.name || row.code))
-    }
-    for (const row of equipment || []) {
-      if (row?.control_point) values.set(String(row.control_point), String(row.control_point))
+    for (const row of systemControlPointLinks || []) {
+      const value = String(row?.control_point || '').trim()
+      if (!value) continue
+      values.set(value, values.get(value) || value)
     }
     return [...values.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
-  }, [workplaces, equipment])
+  }, [systemControlPointLinks])
+
+  const allowedSubsystemIdsBySystem = useMemo(() => {
+    const map = new Map()
+    for (const row of systemSubsystemLinks || []) {
+      const systemId = String(row?.system_id || '')
+      const subsystemTypeId = String(row?.subsystem_type_id || '')
+      if (!systemId || !subsystemTypeId) continue
+      if (!map.has(systemId)) map.set(systemId, new Set())
+      map.get(systemId).add(subsystemTypeId)
+    }
+    return map
+  }, [systemSubsystemLinks])
+
+  const subsystemOptionsForNewRow = useMemo(() => {
+    const selectedSystemId = String(newRow.system_id || '')
+    if (!selectedSystemId) return []
+    const allowed = allowedSubsystemIdsBySystem.get(selectedSystemId)
+    if (!allowed || !allowed.size) return []
+    return [...subsystemById.entries()]
+      .filter(([id]) => allowed.has(String(id)))
+      .map(([id, info]) => ({ id, ...info }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'))
+  }, [newRow.system_id, allowedSubsystemIdsBySystem, subsystemById])
+
+  const controlPointOptionsForNewRow = useMemo(() => {
+    const selectedSystemId = String(newRow.system_id || '')
+    if (!selectedSystemId) return controlPointOptions
+    const allowed = (systemControlPointLinks || [])
+      .filter((row) => String(row?.system_id || '') === selectedSystemId)
+      .map((row) => String(row?.control_point || '').trim())
+      .filter(Boolean)
+    if (!allowed.length) return controlPointOptions
+    const allowedSet = new Set(allowed)
+    return controlPointOptions.filter((row) => allowedSet.has(String(row.value)))
+  }, [newRow.system_id, systemControlPointLinks, controlPointOptions])
 
   const statuses = useMemo(() => {
     const values = new Set(defaultStatuses)
@@ -99,11 +135,13 @@ function EquipmentPage() {
       setLoading(true)
       setError('')
 
-      const [eqRes, stRes, sysRes, subTypeRes, wpRes] = await Promise.all([
+      const [eqRes, stRes, sysRes, subTypeRes, linkRes, cpLinkRes, wpRes] = await Promise.all([
         supabase.from('equipment').select('*').order('id', { ascending: true }).limit(5000),
         supabase.from('system_types').select('id,name').order('id', { ascending: true }).limit(1000),
         supabase.from('equipment_systems').select('id,name,system_type_id').order('id', { ascending: true }).limit(1000),
         supabase.from('subsystem_types').select('id,code,full_name').order('code', { ascending: true }).limit(3000),
+        supabase.from('system_subsystems').select('system_id,subsystem_type_id').limit(10000),
+        supabase.from('equipment_system_control_points').select('system_id,control_point').limit(10000),
         supabase
           .from('workplace')
           .select('id,code,name,unit')
@@ -119,7 +157,7 @@ function EquipmentPage() {
         return
       }
 
-      const dictErrors = [stRes.error, sysRes.error, subTypeRes.error, wpRes.error].filter(Boolean)
+      const dictErrors = [stRes.error, sysRes.error, subTypeRes.error, linkRes.error, cpLinkRes.error, wpRes.error].filter(Boolean)
       if (dictErrors.length) {
         setError(dictErrors.map((e) => e.message).join(' · '))
       }
@@ -146,6 +184,8 @@ function EquipmentPage() {
       if (!stRes.error) setSystemTypes(stRes.data || [])
       if (!sysRes.error) setSystems(sysRes.data || [])
       if (!subTypeRes.error) setSubsystemTypes(subTypeRes.data || [])
+      if (!linkRes.error) setSystemSubsystemLinks(linkRes.data || [])
+      if (!cpLinkRes.error) setSystemControlPointLinks(cpLinkRes.data || [])
       if (!wpRes.error) setWorkplaces(scopedWorkplaces)
 
       setLoading(false)
@@ -270,6 +310,10 @@ function EquipmentPage() {
       setError('Выберите систему из справочника equipment_systems.')
       return
     }
+    if (!newRow.subsystem_type_id) {
+      setError('Выберите подсистему, связанную с выбранной системой.')
+      return
+    }
 
     setAdding(true)
     setError('')
@@ -312,7 +356,14 @@ function EquipmentPage() {
         <div className="mt-2 grid gap-2 md:grid-cols-5">
           <select
             value={newRow.system_id}
-            onChange={(e) => setNewRow((prev) => ({ ...prev, system_id: e.target.value }))}
+            onChange={(e) =>
+              setNewRow((prev) => ({
+                ...prev,
+                system_id: e.target.value,
+                subsystem_type_id: '',
+                control_point: '',
+              }))
+            }
             className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
           >
             <option value="">Система</option>
@@ -327,10 +378,11 @@ function EquipmentPage() {
             value={newRow.subsystem_type_id}
             onChange={(e) => setNewRow((prev) => ({ ...prev, subsystem_type_id: e.target.value }))}
             className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            disabled={!newRow.system_id}
           >
             <option value="">Подсистема</option>
-            {[...subsystemById.entries()].map(([id, info]) => (
-              <option key={id} value={id}>
+            {subsystemOptionsForNewRow.map((info) => (
+              <option key={info.id} value={info.id}>
                 {info.name}
               </option>
             ))}
@@ -347,9 +399,10 @@ function EquipmentPage() {
             value={newRow.control_point}
             onChange={(e) => setNewRow((prev) => ({ ...prev, control_point: e.target.value }))}
             className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            disabled={!newRow.system_id}
           >
             <option value="">Щит / пост</option>
-            {controlPointOptions.map((point) => (
+            {controlPointOptionsForNewRow.map((point) => (
               <option key={point.value} value={point.value}>
                 {point.label}
               </option>
