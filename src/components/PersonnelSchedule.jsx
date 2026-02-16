@@ -732,7 +732,14 @@ function PersonnelSchedule(props) {
       const res = await onUploadImportSource(file)
       setUploadingSource(false)
       if (res?.error) {
-        setImportError(res.error.message || 'Не удалось загрузить файл в Storage.')
+        const msg = String(res.error.message || '')
+        if (msg.toLowerCase().includes('bucket') && msg.toLowerCase().includes('not found')) {
+          setSourceUploadInfo(null)
+          setImportError('')
+          setImportMessage('Storage пока не настроен (bucket не найден), но OCR доступен: нажмите "Распознать OCR".')
+        } else {
+          setImportError(res.error.message || 'Не удалось загрузить файл в Storage.')
+        }
         return
       }
       setSourceUploadInfo(res?.data || null)

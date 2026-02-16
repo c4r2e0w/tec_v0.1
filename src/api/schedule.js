@@ -122,6 +122,15 @@ export async function uploadScheduleImportSource({ supabase, unit, file, userId 
     upsert: false,
     contentType: file.type || 'application/octet-stream',
   })
-  if (upload.error) return { data: null, error: upload.error }
+  if (upload.error) {
+    const rawMessage = String(upload.error?.message || '')
+    if (rawMessage.toLowerCase().includes('bucket not found')) {
+      return {
+        data: null,
+        error: new Error('Bucket `schedule-imports` не найден. Создайте его в Supabase Storage или продолжайте без сохранения файла в Storage.'),
+      }
+    }
+    return { data: null, error: upload.error }
+  }
   return { data: { path, bucket: 'schedule-imports', size: file.size, mime: file.type || '' }, error: null }
 }
