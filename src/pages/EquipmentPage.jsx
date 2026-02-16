@@ -5,6 +5,23 @@ import { useSupabase } from '../context/SupabaseProvider'
 const normalize = (value) => String(value || '').trim().toLowerCase()
 
 const defaultStatuses = ['работа', 'резерв', 'ремонт']
+const CONTROL_POINTS = [
+  { value: 'нс_ктц', label: 'НС КТЦ' },
+  { value: 'ст_машинист_по_ко', label: 'Ст. машинист по КО' },
+  { value: 'цтщупк_1', label: 'ЦТЩУпк 1' },
+  { value: 'цтщупк_2', label: 'ЦТЩУпк 2' },
+  { value: 'цтщупк_3', label: 'ЦТЩУпк 3' },
+  { value: 'машинист_обходчик_6р_по_ко', label: 'Машинист-обходчик 6р по КО' },
+  { value: 'машинист_обходчик_5р_по_ко', label: 'Машинист-обходчик 5р по КО' },
+  { value: 'машинист_обходчик_4р_по_ко', label: 'Машинист-обходчик 4р по КО' },
+  { value: 'ст_машинист_по_то', label: 'Ст. машинист по ТО' },
+  { value: 'цтщупт_1', label: 'ЦТЩУпт 1' },
+  { value: 'цтщупт_2', label: 'ЦТЩУпт 2' },
+  { value: 'цтщупт_3', label: 'ЦТЩУпт 3' },
+  { value: 'цтщупт_4', label: 'ЦТЩУпт 4' },
+  { value: 'машинист_обходчик_5р_по_то', label: 'Машинист-обходчик 5р по ТО' },
+  { value: 'машинист_обходчик_4р_по_то', label: 'Машинист-обходчик 4р по ТО' },
+]
 
 function EquipmentPage() {
   const { unit } = useParams()
@@ -29,6 +46,7 @@ function EquipmentPage() {
   const [drafts, setDrafts] = useState({})
   const [newRow, setNewRow] = useState({
     system_id: '',
+    system_name: '',
     subsystem_type_id: '',
     station_number: '',
     control_point: '',
@@ -75,15 +93,16 @@ function EquipmentPage() {
   }, [subsystemTypes, legacySubsystems])
 
   const controlPointOptions = useMemo(() => {
-    const values = new Set()
+    const values = new Map(CONTROL_POINTS.map((row) => [row.value, row.label]))
     for (const row of workplaces || []) {
-      if (row?.name) values.add(row.name)
-      if (row?.code) values.add(row.code)
+      if (row?.code) values.set(String(row.code), String(row.name || row.code))
     }
     for (const row of equipment || []) {
-      if (row?.control_point) values.add(row.control_point)
+      if (row?.control_point) values.set(String(row.control_point), String(row.control_point))
     }
-    return [...values].sort((a, b) => a.localeCompare(b, 'ru'))
+    return [...values.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
   }, [workplaces, equipment])
 
   const statuses = useMemo(() => {
@@ -120,6 +139,10 @@ function EquipmentPage() {
         setError(eqRes.error.message || 'Не удалось загрузить equipment')
         setLoading(false)
         return
+      }
+      const dictErrors = [stRes.error, sysRes.error, subTypeRes.error, wpRes.error].filter(Boolean)
+      if (dictErrors.length) {
+        setError(dictErrors.map((e) => e.message).join(' · '))
       }
 
       const workplaceRows = wpRes.error ? [] : (wpRes.data || [])
@@ -237,7 +260,7 @@ function EquipmentPage() {
 
     if (hasColumn('system_id')) {
       payload.system_id = draft.system_id ? Number(draft.system_id) : null
-      payload.equipment_system = systemById.get(String(draft.system_id || ''))?.name || null
+      payload.equipment_system = systemById.get(String(draft.system_id || ''))?.name || row.equipment_system || null
     } else {
       payload.equipment_system = row.equipment_system || null
     }
@@ -274,9 +297,9 @@ function EquipmentPage() {
 
     if (hasColumn('system_id')) {
       payload.system_id = newRow.system_id ? Number(newRow.system_id) : null
-      payload.equipment_system = systemById.get(String(newRow.system_id || ''))?.name || null
+      payload.equipment_system = systemById.get(String(newRow.system_id || ''))?.name || newRow.system_name || null
     } else {
-      payload.equipment_system = null
+      payload.equipment_system = newRow.system_name || null
     }
 
     if (hasColumn('subsystem_type_id')) {
@@ -298,6 +321,7 @@ function EquipmentPage() {
     setEquipment((prev) => [...prev, data])
     setNewRow({
       system_id: '',
+      system_name: '',
       subsystem_type_id: '',
       station_number: '',
       control_point: '',
@@ -321,7 +345,7 @@ function EquipmentPage() {
         <div className="mt-2 grid gap-2 md:grid-cols-5">
           <select
             value={newRow.system_id}
-            onChange={(e) => setNewRow((prev) => ({ ...prev, system_id: e.target.value }))}
+            onChange={(e) => setNewRow((prev) => ({ ...prev, system_id: e.target.value, system_name: '' }))}
             className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
           >
             <option value="">Система</option>
@@ -331,6 +355,14 @@ function EquipmentPage() {
               </option>
             ))}
           </select>
+          {!systems.length && (
+            <input
+              value={newRow.system_name}
+              onChange={(e) => setNewRow((prev) => ({ ...prev, system_name: e.target.value }))}
+              placeholder="Система (текст)"
+              className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            />
+          )}
 
           <select
             value={newRow.subsystem_type_id}
@@ -352,13 +384,18 @@ function EquipmentPage() {
             className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
           />
 
-          <input
+          <select
             value={newRow.control_point}
             onChange={(e) => setNewRow((prev) => ({ ...prev, control_point: e.target.value }))}
-            placeholder="Щит / пост"
-            list="control-point-options"
             className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
-          />
+          >
+            <option value="">Щит / пост</option>
+            {controlPointOptions.map((point) => (
+              <option key={point.value} value={point.value}>
+                {point.label}
+              </option>
+            ))}
+          </select>
 
           <select
             value={newRow.status}
@@ -372,11 +409,6 @@ function EquipmentPage() {
             ))}
           </select>
         </div>
-        <datalist id="control-point-options">
-          {controlPointOptions.map((point) => (
-            <option key={point} value={point} />
-          ))}
-        </datalist>
         <button
           onClick={() => void addRow()}
           disabled={adding}
@@ -456,12 +488,18 @@ function EquipmentPage() {
                                                   />
                                                 </td>
                                                 <td className="px-2 py-2">
-                                                  <input
+                                                  <select
                                                     value={draft.control_point}
                                                     onChange={(e) => setDraftField(row.id, 'control_point', e.target.value)}
-                                                    list="control-point-options"
                                                     className="w-36 rounded border border-border bg-white px-2 py-1"
-                                                  />
+                                                  >
+                                                    <option value="">—</option>
+                                                    {controlPointOptions.map((point) => (
+                                                      <option key={point.value} value={point.value}>
+                                                        {point.label}
+                                                      </option>
+                                                    ))}
+                                                  </select>
                                                 </td>
                                                 <td className="px-2 py-2">
                                                   <select
