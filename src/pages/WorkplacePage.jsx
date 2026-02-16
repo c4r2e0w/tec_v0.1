@@ -816,67 +816,57 @@ function WorkplacePage() {
                     </div>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Лента суточной ведомости</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                      <button
-                        type="button"
-                        onClick={() => setStatementShiftDate((prev) => addDays(prev, -1))}
-                        className="rounded-full border border-white/10 px-2 py-1 text-slate-300 hover:border-emerald-400/60"
-                      >
-                        ←
-                      </button>
-                      <input
-                        type="date"
-                        value={statementShiftDate}
-                        onChange={(e) => setStatementShiftDate(e.target.value)}
-                        className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
-                      />
-                      <select
-                        value={statementShiftType}
-                        onChange={(e) => setStatementShiftType(e.target.value)}
-                        className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
-                      >
-                        <option value="day">День</option>
-                        <option value="night">Ночь</option>
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => setStatementShiftDate((prev) => addDays(prev, 1))}
-                        className="rounded-full border border-white/10 px-2 py-1 text-slate-300 hover:border-emerald-400/60"
-                      >
-                        →
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const slot = getCurrentShiftSlot()
-                          setStatementShiftDate(slot.date)
-                          setStatementShiftType(slot.type)
-                        }}
-                        className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-1 text-emerald-200"
-                      >
-                        Текущая смена
-                      </button>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-300">
-                      {new Date(statementShiftDate).toLocaleDateString('ru-RU')} · {statementShiftType === 'night' ? 'Ночь' : 'День'} · Период {viewedShiftPeriod} · Вахта {viewedShiftCode}
-                    </p>
-                    <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/60 p-2">
-                      <p className="text-[11px] text-slate-400">Запись в ведомость</p>
-                      <textarea
-                        value={dailyInput}
-                        onChange={(e) => setDailyInput(e.target.value)}
-                        rows={2}
-                        placeholder="Добавить запись по смене..."
-                        className="mt-1 w-full rounded border border-white/10 bg-slate-950 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-500"
-                      />
-                      <button
-                        onClick={() => void handleAddDailyEntry()}
-                        disabled={savingEntry}
-                        className="mt-1 rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
-                      >
-                        {savingEntry ? 'Сохраняем...' : 'Добавить'}
-                      </button>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-300">Лента суточной ведомости</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => setStatementShiftDate((prev) => addDays(prev, -1))}
+                          className="rounded-full border border-white/10 px-2 py-1 text-slate-300 hover:border-emerald-400/60"
+                        >
+                          ←
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const picked = window.prompt('Введите дату в формате ГГГГ-ММ-ДД', statementShiftDate)
+                            if (!picked) return
+                            if (/^\d{4}-\d{2}-\d{2}$/.test(picked)) setStatementShiftDate(picked)
+                          }}
+                          className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
+                        >
+                          {new Date(statementShiftDate).toLocaleDateString('ru-RU')}
+                        </button>
+                        <select
+                          value={statementShiftType}
+                          onChange={(e) => setStatementShiftType(e.target.value)}
+                          className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
+                        >
+                          <option value="day">День</option>
+                          <option value="night">Ночь</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setStatementShiftDate((prev) => addDays(prev, 1))}
+                          className="rounded-full border border-white/10 px-2 py-1 text-slate-300 hover:border-emerald-400/60"
+                        >
+                          →
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const slot = getCurrentShiftSlot()
+                            setStatementShiftDate(slot.date)
+                            setStatementShiftType(slot.type)
+                          }}
+                          className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-1 text-emerald-200"
+                        >
+                          Текущая смена
+                        </button>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-300">
+                        {new Date(statementShiftDate).toLocaleDateString('ru-RU')} · {statementShiftType === 'night' ? 'Ночь' : 'День'} · Период {viewedShiftPeriod} · Вахта {viewedShiftCode}
+                      </p>
                     </div>
                     <div className="mt-2 space-y-1.5">
                       {statementEntries.map((item) => (
@@ -888,6 +878,28 @@ function WorkplacePage() {
                         </p>
                       ))}
                       {!statementEntries.length && <p className="text-xs text-slate-500">Записей за эту смену пока нет.</p>}
+                      <div className="rounded-md border border-emerald-500/25 bg-slate-900/70 px-2 py-1">
+                        <div className="flex gap-2">
+                          <span className="pt-1 text-xs text-emerald-200">
+                            {new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} :
+                          </span>
+                          <input
+                            value={dailyInput}
+                            onChange={(e) => setDailyInput(e.target.value)}
+                            placeholder="Действие..."
+                            className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-500 outline-none"
+                          />
+                        </div>
+                        <div className="mt-1 flex justify-end">
+                          <button
+                            onClick={() => void handleAddDailyEntry()}
+                            disabled={savingEntry || !dailyInput.trim()}
+                            className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
+                          >
+                            {savingEntry ? '...' : 'Добавить'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
