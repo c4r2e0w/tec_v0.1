@@ -32,6 +32,12 @@ const compactControlPoint = (value) =>
     .replace(/\s+/g, '')
     .replace(/_/g, '')
 
+const normalizeToken = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^a-zа-я0-9]+/gi, '')
+
 function WorkplacePage() {
   const { unit, workplaceId } = useParams()
   const supabase = useSupabase()
@@ -76,11 +82,11 @@ function WorkplacePage() {
   }
 
   const findSubsystemByEquipmentName = (equipmentName, subsystemRows) => {
-    const full = normalizeKey(equipmentName)
+    const full = normalizeToken(equipmentName)
     const sorted = [...(subsystemRows || [])].sort((a, b) => String(b?.name || '').length - String(a?.name || '').length)
     return (
       sorted.find((row) => {
-        const key = normalizeKey(row?.name)
+        const key = normalizeToken(row?.name)
         return key && full.includes(key)
       }) || null
     )
@@ -185,7 +191,8 @@ function WorkplacePage() {
         .map((item) => {
           const subsystem = findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
           const index = extractEquipmentIndex(item?.name)
-          const dispatchLabel = subsystem?.name ? `${subsystem.name}${index ? ` ${index}` : ''}` : ''
+          const appendIndex = Boolean(index && subsystem?.name && !/\d/.test(String(subsystem.name)))
+          const dispatchLabel = subsystem?.name ? `${subsystem.name}${appendIndex ? ` ${index}` : ''}` : ''
           return { ...item, dispatchLabel, subsystemName: subsystem?.name || null }
         })
         .filter((item) => String(item.subsystemName || '').trim())
