@@ -27,31 +27,6 @@ const normalizeKey = (value) =>
     .trim()
     .toLowerCase()
 
-const getWorkplaceSystemTargets = (workplace) => {
-  const name = normalizeKey(workplace?.name)
-  const code = normalizeKey(workplace?.code)
-  const department = normalizeKey(workplace?.departament_id)
-  const out = new Set()
-
-  const isChief = name.includes('нс ктц') || code === 'нс_ктц'
-  if (isChief) return { exactSystems: null, prefixes: ['ТА ', 'КА '] }
-
-  const to = department.includes('турбин') || code.includes('_по_то') || code.includes('упт')
-  const ko = department.includes('котель') || code.includes('_по_ко') || code.includes('упк')
-
-  const numberMatch = `${workplace?.name || ''} ${workplace?.code || ''}`.match(/(\d+)/)
-  const number = numberMatch ? String(numberMatch[1]) : ''
-
-  if (to && number) out.add(`ТА ${number}`)
-  if (ko && number) out.add(`КА ${number}`)
-
-  if (out.size) return { exactSystems: [...out], prefixes: [] }
-  if (to) return { exactSystems: null, prefixes: ['ТА '] }
-  if (ko) return { exactSystems: null, prefixes: ['КА '] }
-
-  return { exactSystems: null, prefixes: [] }
-}
-
 function WorkplacePage() {
   const { unit, workplaceId } = useParams()
   const supabase = useSupabase()
@@ -86,29 +61,6 @@ function WorkplacePage() {
     if (normalized === 'Резерв') return 'text-emerald-300'
     if (normalized === 'Ремонт') return 'text-slate-400'
     return 'text-rose-300'
-  }
-
-  const equipmentShortName = (name) => {
-    const source = String(name || '').trim()
-    if (!source) return 'Оборудование'
-    const normalized = source.replace(/Ё/g, 'Е').replace(/ё/g, 'е')
-    const patterns = [
-      { regex: /ПНД\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ПНД' },
-      { regex: /ПВД\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ПВД' },
-      { regex: /КНТ\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'КНТ' },
-      { regex: /ПЭН\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ПЭН' },
-      { regex: /ОЭ\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ОЭ' },
-      { regex: /ТГ\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ТГ' },
-      { regex: /ТА\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ТА' },
-      { regex: /КА\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'КА' },
-    ]
-    for (const pattern of patterns) {
-      const match = normalized.match(pattern.regex)
-      if (match) {
-        return `${pattern.label} ${String(match[1]).toUpperCase()}`
-      }
-    }
-    return normalized.length > 22 ? `${normalized.slice(0, 22)}…` : normalized
   }
 
   const extractEquipmentIndex = (name) => {
@@ -209,97 +161,37 @@ function WorkplacePage() {
   useEffect(() => {
     let active = true
     async function loadEquipment() {
-      if (!workplace?.id) return
-      const mappedRes = await supabase
-        .from('equipment_control_points')
-        .select('id, is_primary, equipment:equipment_id(id, name, status, equipment_system, type_id)')
-        .eq('workplace_id', workplace.id)
-        .eq('is_primary', true)
-        .order('id', { ascending: true })
-
-      // Preferred source: explicit equipment->workplace mapping table.
-      if (!mappedRes.error && Array.isArray(mappedRes.data)) {
-        const mappedEquipment = (mappedRes.data || [])
-          .map((row) => row?.equipment)
-          .filter(Boolean)
-          .map((item) => {
-            const subsystem = findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
-            const index = extractEquipmentIndex(item?.name)
-            const dispatchLabel = subsystem?.name ? `${subsystem.name}${index ? ` ${index}` : ''}` : ''
-            return { ...item, dispatchLabel, subsystemName: subsystem?.name || null }
-          })
-          .filter((item) => String(item.subsystemName || '').trim())
-        mappedEquipment.sort((a, b) => String(a.dispatchLabel || '').localeCompare(String(b.dispatchLabel || ''), 'ru'))
-        if (active) setEquipmentList(mappedEquipment)
-        return
-      }
-
-      // Fallback: legacy heuristic by system/department.
+      if (!workplace?.code) return
       const { data, error: eqError } = await supabase
         .from('equipment')
-        .select('id, name, status, equipment_system, type_id, equipment_types:equipment_types(name)')
+        .select('id, name, status, equipment_system, type_id, control_point')
+        .eq('control_point', workplace.code)
         .order('name', { ascending: true })
         .limit(2000)
       if (!active || eqError) return
-      const code = normalizeKey(workplace?.code)
-      const name = normalizeKey(workplace?.name)
-      const id = normalizeKey(workplaceId)
-      const targets = getWorkplaceSystemTargets(workplace)
-      const scopedSubsystems = (equipmentSubsystems || []).filter((row) => {
-        const system = String(row?.system || '')
-        if (targets?.exactSystems?.length) return targets.exactSystems.includes(system)
-        if (targets?.prefixes?.length) return targets.prefixes.some((prefix) => system.startsWith(prefix))
-        return true
-      })
-      const matches = (data || []).filter((item) => {
-        const byCode = normalizeKey(item?.workplace_code)
-        const byId = normalizeKey(item?.workplace_id)
-        const bySystem = normalizeKey(item?.equipment_system)
-        const rawSystem = String(item?.equipment_system || '')
-        const full = normalizeKey(
-          [
-            item?.workplace,
-            item?.control_point,
-            item?.area,
-            item?.zone,
-            item?.section,
-            item?.equipment_system,
-            item?.description,
-            item?.note,
-          ]
-            .filter(Boolean)
-            .join(' '),
-        )
-        if (targets?.exactSystems?.length) {
-          const exactMatch = targets.exactSystems.some((system) => normalizeKey(system) === bySystem)
-          if (!exactMatch) return false
-          return true
-        }
-        if (targets?.prefixes?.length) {
-          const prefixMatch = targets.prefixes.some((prefix) => rawSystem.startsWith(prefix))
-          if (prefixMatch) return true
-        }
-        if (code && (byCode === code || full.includes(code))) return true
-        if (id && byId === id) return true
-        if (name && full.includes(name)) return true
-        return false
-      })
-      const mapped = matches
+      const mappedEquipment = (data || [])
         .map((item) => {
-        const subsystem = findSubsystemByEquipmentName(item?.name, scopedSubsystems)
-        const index = extractEquipmentIndex(item?.name)
-        const dispatchLabel = subsystem?.name ? `${subsystem.name}${index ? ` ${index}` : ''}` : ''
-        return { ...item, dispatchLabel, subsystemName: subsystem?.name || null }
+          const subsystem = findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
+          const index = extractEquipmentIndex(item?.name)
+          const dispatchLabel = subsystem?.name ? `${subsystem.name}${index ? ` ${index}` : ''}` : ''
+          return { ...item, dispatchLabel, subsystemName: subsystem?.name || null }
         })
         .filter((item) => String(item.subsystemName || '').trim())
-      mapped.sort((a, b) => String(a.dispatchLabel || '').localeCompare(String(b.dispatchLabel || ''), 'ru'))
-      setEquipmentList(mapped)
+      mappedEquipment.sort((a, b) => String(a.dispatchLabel || '').localeCompare(String(b.dispatchLabel || ''), 'ru'))
+      if (active) setEquipmentList(mappedEquipment)
     }
     void loadEquipment()
     return () => {
       active = false
     }
-  }, [supabase, workplace, workplaceId, equipmentSubsystems])
+  }, [supabase, workplace?.code, equipmentSubsystems])
+
+  useEffect(() => {
+    if (!workplace?.code) {
+      setEquipmentList([])
+      return
+    }
+  }, [workplace?.code])
 
   useEffect(() => {
     let active = true
