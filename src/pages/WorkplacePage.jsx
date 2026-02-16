@@ -116,18 +116,25 @@ function WorkplacePage() {
   const reserveModeLabel = (value) => {
     const text = String(value || '').trim().toLowerCase()
     if (!text) return ''
-    if (text.includes('гор')) return 'Г'
-    if (text.includes('хол')) return 'Х'
-    if (text.includes('авр')) return 'А'
+    if (text.includes('гор') || text === 'hot') return 'Г'
+    if (text.includes('хол') || text === 'cold') return 'Х'
+    if (text.includes('авр') || text === 'avr') return 'А'
     return text[0]?.toUpperCase() || ''
   }
 
   const toDbReserveMode = (value) => {
     const text = String(value || '').trim().toLowerCase()
-    if (text.includes('гор')) return 'горячий'
-    if (text.includes('хол')) return 'холодный'
-    if (text.includes('авр')) return 'АВР'
+    if (text.includes('гор')) return 'hot'
+    if (text.includes('хол')) return 'cold'
+    if (text.includes('авр')) return 'avr'
     return null
+  }
+
+  const reserveModeCandidates = (normalizedMode) => {
+    if (normalizedMode === 'hot') return ['горячий', 'Горячий', 'hot', 'HOT']
+    if (normalizedMode === 'cold') return ['холодный', 'Холодный', 'cold', 'COLD']
+    if (normalizedMode === 'avr') return ['АВР', 'авр', 'Авр', 'avr', 'AVR']
+    return []
   }
 
   const extractEquipmentIndex = (name) => {
@@ -441,23 +448,39 @@ function WorkplacePage() {
     setEquipmentSavingId(item.id)
     setError('')
     const dbStatus = toDbEquipmentStatus(nextStatus)
-    const payload = { status: dbStatus }
-    if (dbStatus === 'резерв' && isPumpEquipment(item)) {
-      payload.reserve_mode = toDbReserveMode(reserveMode)
-    } else {
-      payload.reserve_mode = null
+    let saveError = null
+    const statusRes = await supabase.from('equipment').update({ status: dbStatus }).eq('id', item.id)
+    saveError = statusRes.error
+    let resolvedReserveMode = null
+
+    if (!saveError && dbStatus === 'резерв' && isPumpEquipment(item)) {
+      const normalizedMode = toDbReserveMode(reserveMode)
+      const candidates = reserveModeCandidates(normalizedMode)
+      if (candidates.length) {
+        let reserveSaved = false
+        for (const candidate of candidates) {
+          const res = await supabase.from('equipment').update({ reserve_mode: candidate }).eq('id', item.id)
+          if (!res.error) {
+            reserveSaved = true
+            resolvedReserveMode = candidate
+            break
+          }
+          saveError = res.error
+          if (!String(res.error?.message || '').toLowerCase().includes('invalid input value for enum reserve_mode')) {
+            break
+          }
+        }
+        if (!reserveSaved && saveError && String(saveError.message || '').toLowerCase().includes('column') && String(saveError.message || '').includes('reserve_mode')) {
+          saveError = null
+        }
+      }
+    } else if (!saveError) {
+      const clearRes = await supabase.from('equipment').update({ reserve_mode: null }).eq('id', item.id)
+      if (clearRes.error && !(String(clearRes.error.message || '').toLowerCase().includes('column') && String(clearRes.error.message || '').includes('reserve_mode'))) {
+        saveError = clearRes.error
+      }
     }
-    let { error: saveError } = await supabase.from('equipment').update(payload).eq('id', item.id)
-    if (saveError && String(saveError.message || '').toLowerCase().includes('reserve_mode')) {
-      const retryPayload = { ...payload }
-      if (retryPayload.reserve_mode === 'АВР') retryPayload.reserve_mode = 'авр'
-      const retry = await supabase.from('equipment').update(retryPayload).eq('id', item.id)
-      saveError = retry.error
-    }
-    if (saveError && String(saveError.message || '').toLowerCase().includes('column') && String(saveError.message || '').includes('reserve_mode')) {
-      const fallback = await supabase.from('equipment').update({ status: dbStatus }).eq('id', item.id)
-      saveError = fallback.error
-    }
+
     setEquipmentSavingId(null)
     setEquipmentMenuId(null)
     setEquipmentMenuStep('status')
@@ -468,7 +491,7 @@ function WorkplacePage() {
     setEquipmentList((prev) =>
       prev.map((row) =>
         String(row.id) === String(item.id)
-          ? { ...row, status: dbStatus, reserve_mode: payload.reserve_mode }
+          ? { ...row, status: dbStatus, reserve_mode: resolvedReserveMode }
           : row,
       ),
     )
