@@ -10,6 +10,7 @@ import { createScheduleService } from '../services/scheduleService'
 import { createShiftHandoverService } from '../services/shiftHandoverService'
 import { createShiftWorkflowService } from '../services/shiftWorkflowService'
 import PersonnelSchedule from '../components/PersonnelSchedule'
+import EquipmentPage from './EquipmentPage'
 import { productionCalendar } from '../constants/productionCalendar'
 import { getMonthCalendarMeta } from '../lib/productionNorm'
 
@@ -2375,28 +2376,30 @@ function UnitSectionPage() {
         </div>
       )}
 
-      <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 text-sm text-slate-200 shadow-lg">
-        <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Следующие шаги</p>
-        <ul className="mt-3 space-y-2">
-          {section === 'personnel' && (
-            <>
-              <li>• Добавить возможность экспорта в файл</li>
-            </>
-          )}
-          {section === 'equipment' && (
-            <>
-              <li>• Фильтровать оборудование по подразделению</li>
-              <li>• Показать статус ППР и ответственного</li>
-            </>
-          )}
-          {section === 'docs' && (
-            <>
-              <li>• Вывести регламенты и инструкции для подразделения</li>
-              <li>• Добавить быстрый поиск и фильтр по тегам</li>
-            </>
-          )}
-        </ul>
-      </div>
+      {section === 'equipment' && (
+        <div className="space-y-4">
+          <EquipmentPage />
+        </div>
+      )}
+
+      {section !== 'equipment' && (
+        <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 text-sm text-slate-200 shadow-lg">
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Следующие шаги</p>
+          <ul className="mt-3 space-y-2">
+            {section === 'personnel' && (
+              <>
+                <li>• Добавить возможность экспорта в файл</li>
+              </>
+            )}
+            {section === 'docs' && (
+              <>
+                <li>• Вывести регламенты и инструкции для подразделения</li>
+                <li>• Добавить быстрый поиск и фильтр по тегам</li>
+              </>
+            )}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
