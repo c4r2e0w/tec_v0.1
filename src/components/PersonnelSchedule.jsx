@@ -427,7 +427,13 @@ const ScheduleCell = memo(function ScheduleCell({
     <td
       onClick={(e) => onClick(employeeId, date, e)}
       className={`group relative cursor-pointer px-0.5 py-0.5 align-top transition sm:px-1 sm:py-1 ${
-        selected ? 'bg-accent/5' : selectedDateColumn ? 'bg-amber-300/10' : todayColumn ? 'bg-emerald-300/10' : ''
+        selected
+          ? 'bg-accent/5'
+          : selectedDateColumn
+            ? 'bg-amber-300/10'
+            : todayColumn
+              ? 'border-x border-emerald-300/50 bg-emerald-300/12'
+              : ''
       }`}
     >
       <div
@@ -435,7 +441,7 @@ const ScheduleCell = memo(function ScheduleCell({
           selected
             ? 'scale-[1.02] border-accent/70 bg-accent/12 ring-2 ring-accent/45 ring-offset-2 ring-offset-slate-900 shadow-[0_0_0_1px_rgba(62,219,138,0.2),0_10px_26px_rgba(0,0,0,0.35)]'
             : selectedDateColumn && todayColumn
-              ? 'border-emerald-300/70 bg-gradient-to-b from-emerald-300/14 to-amber-300/14 ring-1 ring-amber-300/45 shadow-[0_0_0_1px_rgba(16,185,129,0.26),0_8px_20px_rgba(0,0,0,0.25)]'
+              ? 'border-emerald-300/70 bg-amber-300/12 ring-1 ring-amber-300/45 shadow-[0_0_0_1px_rgba(16,185,129,0.26),0_8px_20px_rgba(0,0,0,0.25)]'
               : selectedDateColumn
                 ? 'border-amber-300/55 bg-amber-300/12 shadow-[0_0_0_1px_rgba(251,191,36,0.24),0_8px_20px_rgba(0,0,0,0.22)]'
                 : todayColumn
@@ -577,6 +583,7 @@ function PersonnelSchedule(props) {
     }
   }, [employeesFromSchedule, monthDates, monthNorm, scheduleByDay])
   const [actionMenuRect, setActionMenuRect] = useState(null)
+  const [activeDate, setActiveDate] = useState(null)
   const selectedCellKey = selectedCell ? `${selectedCell.employeeId}|${selectedCell.date}` : null
   const selectedCellsSet = useMemo(
     () => new Set(selectedCells.map((c) => `${c.employeeId}|${c.date}`)),
@@ -591,12 +598,13 @@ function PersonnelSchedule(props) {
   }, [])
   const selectedDateSet = useMemo(() => {
     const dates = new Set()
+    if (activeDate) dates.add(activeDate)
     if (selectedCell?.date) dates.add(selectedCell.date)
     selectedCells.forEach((item) => {
       if (item?.date) dates.add(item.date)
     })
     return dates
-  }, [selectedCell, selectedCells])
+  }, [activeDate, selectedCell, selectedCells])
   const selectedEmployeeSet = useMemo(() => new Set(selectedEmployeeIds), [selectedEmployeeIds])
   const hiddenEmployeesSet = useMemo(() => new Set(hiddenEmployees), [hiddenEmployees])
   const handleCellClickStable = useCallback((empId, date, e) => handleCellClick(empId, date, e), [handleCellClick])
@@ -819,15 +827,17 @@ function PersonnelSchedule(props) {
                 return (
                   <th
                     key={d}
+                    onClick={() => setActiveDate((prev) => (prev === d ? null : d))}
+                    title={isSelectedDate ? 'Снять выделение даты' : 'Выбрать дату'}
                     className={`w-10 border-x border-transparent px-0.5 py-1 text-center text-[10px] uppercase tracking-[0.12em] sm:w-12 sm:px-1 sm:py-1.5 sm:text-[11px] ${
                       isSelectedDate && isToday
-                        ? 'border-emerald-300/60 bg-gradient-to-b from-emerald-300/16 to-amber-300/16 text-emerald-50'
+                        ? 'border-emerald-300/60 bg-amber-300/15 text-amber-100'
                         : isSelectedDate
                           ? 'border-amber-300/50 bg-amber-300/15 text-amber-100'
                           : isToday
                             ? 'border-emerald-300/55 bg-emerald-300/15 text-emerald-100'
                             : 'text-slate-300'
-                    }`}
+                    } cursor-pointer transition`}
                   >
                     <div className="flex flex-col items-center gap-0.5">
                       <span
