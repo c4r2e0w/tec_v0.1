@@ -20,6 +20,11 @@ const addDays = (dateStr, days) => {
   return toIsoLocalDate(date)
 }
 
+const normalizeKey = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+
 function WorkplacePage() {
   const { unit, workplaceId } = useParams()
   const supabase = useSupabase()
@@ -59,7 +64,16 @@ function WorkplacePage() {
       }
       const assignmentsRes = await handoverService.fetchAssignments({ sessionId })
       if (!active) return
-      const assignment = (assignmentsRes?.data || []).find((row) => String(row.workplace_code) === String(workplaceId))
+      const wpIdKey = normalizeKey(workplaceId)
+      const wpCodeKey = normalizeKey(wp?.code)
+      const assignment = (assignmentsRes?.data || []).find((row) => {
+        if (row?.is_present === false) return false
+        const assignmentKey = normalizeKey(row?.workplace_code)
+        if (!assignmentKey) return false
+        if (assignmentKey === wpIdKey) return true
+        if (wpCodeKey && assignmentKey === wpCodeKey) return true
+        return false
+      })
       if (assignment?.employees) {
         const fio = [assignment.employees.last_name, assignment.employees.first_name, assignment.employees.middle_name]
           .filter(Boolean)
