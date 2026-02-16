@@ -81,11 +81,12 @@ function WorkplacePage() {
     return 'работа'
   }
 
-  const equipmentStatusClass = (status) => {
-    const normalized = normalizeEquipmentStatus(status)
-    if (normalized === 'Резерв') return 'text-emerald-300'
-    if (normalized === 'Ремонт') return 'text-slate-400'
-    return 'text-rose-300'
+  const formatEquipmentStateLabel = (item) => {
+    const base = String(item.stationNumber || item.dispatchLabel || '').trim() || '—'
+    const status = normalizeEquipmentStatus(item.status)
+    if (status === 'Резерв') return `(${base})`
+    if (status === 'Ремонт') return `[${base}]`
+    return base
   }
 
   const extractEquipmentIndex = (name) => {
@@ -125,28 +126,29 @@ function WorkplacePage() {
     return source.length > 24 ? `${source.slice(0, 24)}…` : source
   }
 
-  const equipmentGroups = useMemo(() => {
-    const byKey = new Map()
+  const equipmentTree = useMemo(() => {
+    const systemMap = new Map()
     for (const item of equipmentList) {
       const systemName = item?.systemName || item?.equipment_system || 'Без системы'
       const subsystemName = item?.subsystemName || 'Без подсистемы'
-      const key = `${systemName}::${subsystemName}`
-      if (!byKey.has(key)) byKey.set(key, { systemName, subsystemName, units: [] })
-      byKey.get(key).units.push(item)
+      if (!systemMap.has(systemName)) systemMap.set(systemName, new Map())
+      const subsystemMap = systemMap.get(systemName)
+      if (!subsystemMap.has(subsystemName)) subsystemMap.set(subsystemName, [])
+      subsystemMap.get(subsystemName).push(item)
     }
-
-    return [...byKey.values()]
-      .map((group) => ({
-        ...group,
-        units: [...group.units].sort((a, b) =>
-          String(a.stationNumber || '').localeCompare(String(b.stationNumber || ''), 'ru', { numeric: true }),
-        ),
+    return [...systemMap.entries()]
+      .map(([systemName, subsystemMap]) => ({
+        systemName,
+        subsystems: [...subsystemMap.entries()]
+          .map(([subsystemName, units]) => ({
+            subsystemName,
+            units: [...units].sort((a, b) =>
+              String(a.stationNumber || '').localeCompare(String(b.stationNumber || ''), 'ru', { numeric: true }),
+            ),
+          }))
+          .sort((a, b) => String(a.subsystemName).localeCompare(String(b.subsystemName), 'ru')),
       }))
-      .sort((a, b) => {
-        const bySystem = a.systemName.localeCompare(b.systemName, 'ru')
-        if (bySystem !== 0) return bySystem
-        return a.subsystemName.localeCompare(b.subsystemName, 'ru')
-      })
+      .sort((a, b) => String(a.systemName).localeCompare(String(b.systemName), 'ru'))
   }, [equipmentList])
 
   useEffect(() => {
@@ -463,43 +465,48 @@ function WorkplacePage() {
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Состав оборудования</p>
                     <div className="mt-2 space-y-2">
-                      {equipmentGroups.map((group) => (
-                        <div key={`${group.systemName}-${group.subsystemName}`} className="rounded-md border border-white/10 bg-white/5 p-2">
-                          <p className="text-[10px] text-slate-400">
-                            {group.systemName} · {group.subsystemName}
-                          </p>
-                          <div className="mt-1 flex flex-wrap gap-1.5">
-                            {group.units.map((item) => (
-                              <div key={item.id} className="relative">
-                                <button
-                                  type="button"
-                                  onClick={() => setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))}
-                                  className={`rounded border border-white/20 bg-slate-900 px-2 py-1 text-[11px] font-semibold ${equipmentStatusClass(item.status)}`}
-                                  title="Изменить состояние"
-                                >
-                                  {item.stationNumber || item.dispatchLabel}
-                                </button>
-                                {equipmentMenuId === item.id && (
-                                  <div className="absolute left-0 top-8 z-20 w-28 rounded-md border border-white/15 bg-slate-900 p-1 shadow-xl">
-                                    {['Работа', 'Резерв', 'Ремонт'].map((statusOption) => (
+                      {equipmentTree.map((system) => (
+                        <div key={system.systemName} className="rounded-md border border-white/10 bg-white/5 p-2">
+                          <p className="text-[11px] font-semibold text-slate-300">{system.systemName}</p>
+                          <div className="mt-2 space-y-2">
+                            {system.subsystems.map((sub) => (
+                              <div key={`${system.systemName}-${sub.subsystemName}`}>
+                                <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{sub.subsystemName}</p>
+                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                  {sub.units.map((item) => (
+                                    <div key={item.id} className="relative">
                                       <button
-                                        key={statusOption}
                                         type="button"
-                                        onClick={() => void handleSetEquipmentStatus(item, statusOption)}
-                                        className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                        onClick={() => setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))}
+                                        className="rounded border border-white/20 bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-100"
+                                        title="Изменить состояние"
                                       >
-                                        {statusOption}
+                                        {formatEquipmentStateLabel(item)}
                                       </button>
-                                    ))}
-                                  </div>
-                                )}
-                                {equipmentSavingId === item.id && <span className="ml-1 text-[10px] text-slate-400">...</span>}
+                                      {equipmentMenuId === item.id && (
+                                        <div className="absolute left-0 top-8 z-20 w-28 rounded-md border border-white/15 bg-slate-900 p-1 shadow-xl">
+                                          {['Работа', 'Резерв', 'Ремонт'].map((statusOption) => (
+                                            <button
+                                              key={statusOption}
+                                              type="button"
+                                              onClick={() => void handleSetEquipmentStatus(item, statusOption)}
+                                              className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                            >
+                                              {statusOption}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {equipmentSavingId === item.id && <span className="ml-1 text-[10px] text-slate-400">...</span>}
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             ))}
                           </div>
                         </div>
                       ))}
-                      {!equipmentGroups.length && (
+                      {!equipmentTree.length && (
                         <p className="text-xs text-slate-500">Закрепленное оборудование пока не найдено.</p>
                       )}
                     </div>
