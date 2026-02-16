@@ -27,20 +27,29 @@ const normalizeKey = (value) =>
     .trim()
     .toLowerCase()
 
-const extractSystemHints = (value) => {
-  const text = normalizeKey(value)
-  if (!text) return []
+const getWorkplaceSystemTargets = (workplace) => {
+  const name = normalizeKey(workplace?.name)
+  const code = normalizeKey(workplace?.code)
+  const department = normalizeKey(workplace?.departament_id)
   const out = new Set()
-  const matches = text.match(/(?:та|ка)\s*-?\s*\d+/g) || []
-  for (const raw of matches) {
-    const parts = raw.match(/(та|ка)\s*-?\s*(\d+)/)
-    if (parts) out.add(`${parts[1].toUpperCase()} ${parts[2]}`)
-  }
-  if (text.includes('теплосеть')) out.add('Теплосеть')
-  if (text.includes('техническ') && text.includes('вода')) out.add('Техническая вода')
-  if (text.includes('собствен') && text.includes('нужд')) out.add('Собственные нужды')
-  if (text.includes('станцион')) out.add('Станционное оборудование')
-  return [...out]
+
+  const isChief = name.includes('нс ктц') || code === 'нс_ктц'
+  if (isChief) return { exactSystems: null, prefixes: ['ТА ', 'КА '] }
+
+  const to = department.includes('турбин') || code.includes('_по_то') || code.includes('упт')
+  const ko = department.includes('котель') || code.includes('_по_ко') || code.includes('упк')
+
+  const numberMatch = `${workplace?.name || ''} ${workplace?.code || ''}`.match(/(\d+)/)
+  const number = numberMatch ? String(numberMatch[1]) : ''
+
+  if (to && number) out.add(`ТА ${number}`)
+  if (ko && number) out.add(`КА ${number}`)
+
+  if (out.size) return { exactSystems: [...out], prefixes: [] }
+  if (to) return { exactSystems: null, prefixes: ['ТА '] }
+  if (ko) return { exactSystems: null, prefixes: ['КА '] }
+
+  return { exactSystems: null, prefixes: [] }
 }
 
 function WorkplacePage() {
@@ -132,15 +141,12 @@ function WorkplacePage() {
       const code = normalizeKey(workplace?.code)
       const name = normalizeKey(workplace?.name)
       const id = normalizeKey(workplaceId)
-      const systemHints = new Set([
-        ...extractSystemHints(workplace?.name),
-        ...extractSystemHints(workplace?.code),
-        ...extractSystemHints(workplace?.description),
-      ])
+      const targets = getWorkplaceSystemTargets(workplace)
       const matches = (data || []).filter((item) => {
         const byCode = normalizeKey(item?.workplace_code)
         const byId = normalizeKey(item?.workplace_id)
         const bySystem = normalizeKey(item?.equipment_system)
+        const rawSystem = String(item?.equipment_system || '')
         const full = normalizeKey(
           [
             item?.workplace,
@@ -155,7 +161,15 @@ function WorkplacePage() {
             .filter(Boolean)
             .join(' '),
         )
-        if (systemHints.size && bySystem && [...systemHints].some((hint) => normalizeKey(hint) === bySystem)) return true
+        if (targets?.exactSystems?.length) {
+          const exactMatch = targets.exactSystems.some((system) => normalizeKey(system) === bySystem)
+          if (!exactMatch) return false
+          return true
+        }
+        if (targets?.prefixes?.length) {
+          const prefixMatch = targets.prefixes.some((prefix) => rawSystem.startsWith(prefix))
+          if (prefixMatch) return true
+        }
         if (code && (byCode === code || full.includes(code))) return true
         if (id && byId === id) return true
         if (name && full.includes(name)) return true
