@@ -473,7 +473,7 @@ function UnitSectionPage() {
   const currentShiftDate = useMemo(() => toIsoLocalDate(new Date()), [])
   const currentShiftType = useMemo(() => {
     const hour = new Date().getHours()
-    return hour >= 20 || hour < 8 ? 'night' : 'day'
+    return hour >= 21 || hour < 9 ? 'night' : 'day'
   }, [])
   const shiftCodes = useMemo(() => ['А', 'Б', 'В', 'Г'], [])
   const shiftSlotTypeLabel = useCallback((type) => (type === 'night' ? 'Ночь' : 'День'), [])
@@ -487,8 +487,8 @@ function UnitSectionPage() {
   const baseShiftDate = useMemo(() => {
     if (currentShiftType !== 'night') return currentShiftDate
     const nowHour = new Date().getHours()
-    // Ночная смена 20:00-08:00 относится к дате начала смены.
-    if (nowHour < 8) return addDaysIso(currentShiftDate, -1)
+    // Ночная смена 21:00-09:00 относится к дате начала смены.
+    if (nowHour < 9) return addDaysIso(currentShiftDate, -1)
     return currentShiftDate
   }, [addDaysIso, currentShiftDate, currentShiftType])
   const baseShiftType = useMemo(() => currentShiftType, [currentShiftType])
@@ -1310,11 +1310,11 @@ function UnitSectionPage() {
     if (assignedList.length) {
       const shifts = activeShiftType === 'night'
         ? [
-            { date: activeShiftDate, start_time: '20:00:00', end_time: '23:00:00', planned_hours: 3, note: 'Подмена (ночь, часть 1)' },
+            { date: activeShiftDate, start_time: '21:00:00', end_time: '23:59:59', planned_hours: 3, note: 'Подмена (ночь, часть 1)' },
             { date: addDaysIso(activeShiftDate, 1), start_time: '00:00:00', end_time: '09:00:00', planned_hours: 9, note: 'Подмена (ночь, часть 2)' },
           ]
         : [
-            { date: activeShiftDate, start_time: '08:00:00', end_time: '20:00:00', planned_hours: 12, note: 'Подмена (дневная смена)' },
+            { date: activeShiftDate, start_time: '09:00:00', end_time: '21:00:00', planned_hours: 12, note: 'Подмена (дневная смена)' },
           ]
       await Promise.all(
         assignedList.flatMap((employeeId) =>
@@ -1810,6 +1810,18 @@ function UnitSectionPage() {
     })
   }
 
+  const handleUploadImportSource = useCallback(
+    async (file) => {
+      if (!file) return { data: null, error: new Error('Файл не выбран') }
+      return scheduleService.uploadImportSource({
+        unit,
+        file,
+        userId: user?.id || 'anon',
+      })
+    },
+    [scheduleService, unit, user?.id],
+  )
+
   const renderRosterColumn = useCallback((title, rows, editable = false) => {
     return (
       <div className="rounded-xl border border-border bg-background/70 p-3">
@@ -2298,6 +2310,7 @@ function UnitSectionPage() {
                 menuCell={menuCell}
                 shiftMenuPosition={shiftMenuPosition}
                 shiftOptions={shiftOptions}
+                onUploadImportSource={handleUploadImportSource}
                 pentagramTypesInSchedule={pentagramTypesInSchedule}
                 isPersonnel
                 ShiftIcon={ShiftIcon}
