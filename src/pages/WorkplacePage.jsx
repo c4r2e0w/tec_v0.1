@@ -62,6 +62,7 @@ function WorkplacePage() {
   const [workplace, setWorkplace] = useState(null)
   const [assignee, setAssignee] = useState(null)
   const [equipmentList, setEquipmentList] = useState([])
+  const [equipmentSubsystems, setEquipmentSubsystems] = useState([])
   const [equipmentMenuId, setEquipmentMenuId] = useState(null)
   const [equipmentSavingId, setEquipmentSavingId] = useState(null)
   const [activeTab, setActiveTab] = useState('daily')
@@ -108,6 +109,24 @@ function WorkplacePage() {
       }
     }
     return normalized.length > 22 ? `${normalized.slice(0, 22)}…` : normalized
+  }
+
+  const extractEquipmentIndex = (name) => {
+    const source = String(name || '').toUpperCase()
+    const matches = source.match(/\d+[А-ЯA-Z]?/g) || []
+    if (!matches.length) return ''
+    return matches[matches.length - 1]
+  }
+
+  const findSubsystemByEquipmentName = (equipmentName, subsystemRows) => {
+    const full = normalizeKey(equipmentName)
+    const sorted = [...(subsystemRows || [])].sort((a, b) => String(b?.name || '').length - String(a?.name || '').length)
+    return (
+      sorted.find((row) => {
+        const key = normalizeKey(row?.name)
+        return key && full.includes(key)
+      }) || null
+    )
   }
 
   useEffect(() => {
@@ -171,6 +190,24 @@ function WorkplacePage() {
 
   useEffect(() => {
     let active = true
+    async function loadSubsystems() {
+      const { data, error: subsystemError } = await supabase
+        .from('equipment_subsystems')
+        .select('id, system, name')
+        .order('system', { ascending: true })
+        .order('name', { ascending: true })
+        .limit(2000)
+      if (!active || subsystemError) return
+      setEquipmentSubsystems(data || [])
+    }
+    void loadSubsystems()
+    return () => {
+      active = false
+    }
+  }, [supabase])
+
+  useEffect(() => {
+    let active = true
     async function loadEquipment() {
       const { data, error: eqError } = await supabase
         .from('equipment')
@@ -182,6 +219,12 @@ function WorkplacePage() {
       const name = normalizeKey(workplace?.name)
       const id = normalizeKey(workplaceId)
       const targets = getWorkplaceSystemTargets(workplace)
+      const scopedSubsystems = (equipmentSubsystems || []).filter((row) => {
+        const system = String(row?.system || '')
+        if (targets?.exactSystems?.length) return targets.exactSystems.includes(system)
+        if (targets?.prefixes?.length) return targets.prefixes.some((prefix) => system.startsWith(prefix))
+        return true
+      })
       const matches = (data || []).filter((item) => {
         const byCode = normalizeKey(item?.workplace_code)
         const byId = normalizeKey(item?.workplace_id)
@@ -215,13 +258,20 @@ function WorkplacePage() {
         if (name && full.includes(name)) return true
         return false
       })
-      setEquipmentList(matches)
+      const mapped = matches.map((item) => {
+        const subsystem = findSubsystemByEquipmentName(item?.name, scopedSubsystems)
+        const index = extractEquipmentIndex(item?.name)
+        const dispatchLabel = subsystem?.name ? `${subsystem.name}${index ? ` ${index}` : ''}` : equipmentShortName(item?.name)
+        return { ...item, dispatchLabel, subsystemName: subsystem?.name || null }
+      })
+      mapped.sort((a, b) => String(a.dispatchLabel || '').localeCompare(String(b.dispatchLabel || ''), 'ru'))
+      setEquipmentList(mapped)
     }
     void loadEquipment()
     return () => {
       active = false
     }
-  }, [supabase, workplace, workplaceId])
+  }, [supabase, workplace, workplaceId, equipmentSubsystems])
 
   useEffect(() => {
     let active = true
@@ -411,7 +461,7 @@ function WorkplacePage() {
                             {idx + 1}
                           </button>
                           <span className={`font-semibold ${equipmentStatusClass(item.status)}`}>
-                            {equipmentShortName(item.name || item.title || item.code)}
+                            {item.dispatchLabel || equipmentShortName(item.name || item.title || item.code)}
                           </span>
                           {equipmentSavingId === item.id && <span className="ml-auto text-[10px] text-slate-400">...</span>}
                           {equipmentMenuId === item.id && (
