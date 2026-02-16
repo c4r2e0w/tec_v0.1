@@ -33,6 +33,42 @@ const compactControlPoint = (value) =>
     .replace(/_/g, '')
 
 const normalizeStationValue = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
+const SHIFT_CODES = ['А', 'Б', 'В', 'Г']
+
+const parseIsoLocalDate = (dateStr) => {
+  const [y, m, d] = String(dateStr || '')
+    .split('-')
+    .map((v) => Number(v))
+  return new Date(y, (m || 1) - 1, d || 1)
+}
+
+const getShiftCodeByDate = (dateStr, shiftType) => {
+  const diffMs = parseIsoLocalDate(dateStr).getTime() - parseIsoLocalDate(SHIFT_ANCHOR_DATE).getTime()
+  const diffDays = Math.floor(diffMs / 86400000)
+  const dayIndex = ((diffDays % SHIFT_CODES.length) + SHIFT_CODES.length) % SHIFT_CODES.length
+  const index = shiftType === 'night' ? ((dayIndex - 1 + SHIFT_CODES.length) % SHIFT_CODES.length) : dayIndex
+  return SHIFT_CODES[index] || '—'
+}
+
+const getCurrentShiftSlot = () => {
+  const now = new Date()
+  const today = toIsoLocalDate(now)
+  const type = now.getHours() >= 21 || now.getHours() < 9 ? 'night' : 'day'
+  const date = type === 'night' && now.getHours() < 9 ? addDays(today, -1) : today
+  return { date, type }
+}
+
+const shiftPeriodLabel = (type) => (type === 'night' ? '21:00–09:00' : '09:00–21:00')
+
+const getTagValue = (tags, prefix) => {
+  const list = Array.isArray(tags) ? tags : []
+  const item = list.find((tag) => String(tag || '').startsWith(prefix))
+  if (!item) return ''
+  return String(item).slice(prefix.length)
+}
+
+const hasTag = (tags, value) => (Array.isArray(tags) ? tags : []).includes(value)
 
 function WorkplacePage() {
   const { unit, workplaceId } = useParams()
@@ -53,10 +89,16 @@ function WorkplacePage() {
   const [activeTab, setActiveTab] = useState('daily')
   const [dailyEntries, setDailyEntries] = useState([])
   const [dailyInput, setDailyInput] = useState('')
+  const [statementShiftDate, setStatementShiftDate] = useState(() => getCurrentShiftSlot().date)
+  const [statementShiftType, setStatementShiftType] = useState(() => getCurrentShiftSlot().type)
   const [savingEntry, setSavingEntry] = useState(false)
   const [journalId, setJournalId] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const viewedShiftCode = useMemo(() => getShiftCodeByDate(statementShiftDate, statementShiftType), [statementShiftDate, statementShiftType])
+  const viewedShiftPeriod = useMemo(() => shiftPeriodLabel(statementShiftType), [statementShiftType])
+  const currentShift = useMemo(() => getCurrentShiftSlot(), [])
+  const isViewedCurrentShift = statementShiftDate === currentShift.date && statementShiftType === currentShift.type
 
   const subsystemsById = useMemo(
     () => new Map((equipmentSubsystems || []).map((row) => [String(row.id), row])),
@@ -109,7 +151,7 @@ function WorkplacePage() {
       .toLowerCase()
     return (
       source.includes('насос') ||
-      /\bкнт\b|\bкнб\b|кнп|пэн|нтв|цн|нпс|нрс|нпт|ндб|нбнт|сл\.н|рмн|амн|пмн|нго|пожн|дцн|\bпн\b/.test(source)
+      /\bкнт\b|\bкнб\b|кнп|пэн|нтв|цн|нпс|нрс|нпт|ндб|нбнт|сл\.н|рмн|амн|пмн|нго|пожн|дцн|\bпн\b|pump|feed|condensate/.test(source)
     )
   }
 
@@ -174,9 +216,38 @@ function WorkplacePage() {
     return source.length > 24 ? `${source.slice(0, 24)}…` : source
   }
 
+  const latestSnapshotEntry = useMemo(() => {
+    const snapshots = (dailyEntries || []).filter((entry) => hasTag(entry.tags, 'entry_kind:equipment_snapshot'))
+    if (!snapshots.length) return null
+    return [...snapshots].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+  }, [dailyEntries])
+
+  const statementEntries = useMemo(() => {
+    return (dailyEntries || []).filter((entry) => !hasTag(entry.tags, 'entry_kind:equipment_snapshot'))
+  }, [dailyEntries])
+
+  const equipmentViewList = useMemo(() => {
+    if (!latestSnapshotEntry?.body) return equipmentList
+    try {
+      const parsed = JSON.parse(latestSnapshotEntry.body)
+      if (!parsed || typeof parsed !== 'object') return equipmentList
+      return (equipmentList || []).map((item) => {
+        const snap = parsed[String(item.id)]
+        if (!snap || typeof snap !== 'object') return item
+        return {
+          ...item,
+          status: snap.status || item.status,
+          reserve_mode: snap.reserve_mode ?? item.reserve_mode,
+        }
+      })
+    } catch {
+      return equipmentList
+    }
+  }, [equipmentList, latestSnapshotEntry])
+
   const equipmentTree = useMemo(() => {
     const systemMap = new Map()
-    for (const item of equipmentList) {
+    for (const item of equipmentViewList) {
       const systemName = item?.systemName || item?.equipment_system || 'Без системы'
       const subsystemName = item?.subsystemName || 'Без подсистемы'
       if (!systemMap.has(systemName)) systemMap.set(systemName, new Map())
@@ -197,7 +268,7 @@ function WorkplacePage() {
           .sort((a, b) => String(a.subsystemName).localeCompare(String(b.subsystemName), 'ru')),
       }))
       .sort((a, b) => String(a.systemName).localeCompare(String(b.systemName), 'ru'))
-  }, [equipmentList])
+  }, [equipmentViewList])
 
   useEffect(() => {
     let active = true
@@ -213,6 +284,9 @@ function WorkplacePage() {
       }
       const wp = (wpData || []).find((item) => String(item.id) === String(workplaceId))
       setWorkplace(wp || null)
+      const slot = getCurrentShiftSlot()
+      setStatementShiftDate(slot.date)
+      setStatementShiftType(slot.type)
 
       const now = new Date()
       const today = toIsoLocalDate(now)
@@ -358,6 +432,16 @@ function WorkplacePage() {
     }
   }, [supabase, unit])
 
+  const shiftTags = useMemo(
+    () => [
+      `shift_date:${statementShiftDate}`,
+      `shift_type:${statementShiftType}`,
+      `watch:${viewedShiftCode}`,
+      `period:${viewedShiftPeriod}`,
+    ],
+    [statementShiftDate, statementShiftType, viewedShiftCode, viewedShiftPeriod],
+  )
+
   useEffect(() => {
     let active = true
     async function loadDailyEntries() {
@@ -376,19 +460,35 @@ function WorkplacePage() {
       if (!active) return
       const workplaceTag = `workplace:${String(workplaceId)}`
       const workplaceCodeTag = `workplace_code:${String(workplace?.code || '')}`
+      const shiftDateTag = `shift_date:${statementShiftDate}`
+      const shiftTypeTag = `shift_type:${statementShiftType}`
       const filtered = (data || []).filter((item) => {
         const tags = Array.isArray(item?.tags) ? item.tags : []
-        if (tags.includes(workplaceTag)) return true
-        if (workplace?.code && tags.includes(workplaceCodeTag)) return true
-        return false
+        const sameWorkplace = tags.includes(workplaceTag) || (workplace?.code && tags.includes(workplaceCodeTag))
+        if (!sameWorkplace) return false
+        const sameShift = tags.includes(shiftDateTag) && tags.includes(shiftTypeTag)
+        return sameShift
       })
-      setDailyEntries(filtered)
+      setDailyEntries(
+        [...filtered].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+      )
     }
     void loadDailyEntries()
     return () => {
       active = false
     }
-  }, [journalId, supabase, unit, workplaceId, workplace?.code])
+  }, [journalId, supabase, unit, workplaceId, workplace?.code, statementShiftDate, statementShiftType])
+
+  const buildSnapshotPayload = (list) => {
+    const payload = {}
+    for (const row of list || []) {
+      payload[String(row.id)] = {
+        status: row.status || null,
+        reserve_mode: row.reserve_mode ?? null,
+      }
+    }
+    return JSON.stringify(payload)
+  }
 
   const handleAddDailyEntry = async () => {
     if (!journalId) {
@@ -405,7 +505,12 @@ function WorkplacePage() {
       body: text,
       type: 'daily',
       unit,
-      tags: [`workplace:${String(workplaceId)}`, `workplace_code:${String(workplace?.code || '')}`],
+      tags: [
+        `workplace:${String(workplaceId)}`,
+        `workplace_code:${String(workplace?.code || '')}`,
+        ...shiftTags,
+        'entry_kind:note',
+      ],
       created_by_profile_id: user?.id || null,
       created_by_employee_id: profile?.employee?.id || null,
       author_snapshot: profile?.employee
@@ -434,17 +539,25 @@ function WorkplacePage() {
       .limit(100)
     const workplaceTag = `workplace:${String(workplaceId)}`
     const workplaceCodeTag = `workplace_code:${String(workplace?.code || '')}`
+    const shiftDateTag = `shift_date:${statementShiftDate}`
+    const shiftTypeTag = `shift_type:${statementShiftType}`
     const filtered = (data || []).filter((item) => {
       const tags = Array.isArray(item?.tags) ? item.tags : []
-      if (tags.includes(workplaceTag)) return true
-      if (workplace?.code && tags.includes(workplaceCodeTag)) return true
-      return false
+      const sameWorkplace = tags.includes(workplaceTag) || (workplace?.code && tags.includes(workplaceCodeTag))
+      if (!sameWorkplace) return false
+      return tags.includes(shiftDateTag) && tags.includes(shiftTypeTag)
     })
-    setDailyEntries(filtered)
+    setDailyEntries(
+      [...filtered].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+    )
   }
 
   const handleSetEquipmentStatus = async (item, nextStatus, reserveMode = null) => {
     if (!item?.id) return
+    if (!isViewedCurrentShift) {
+      setError('Состояние оборудования можно менять только для текущей смены.')
+      return
+    }
     setEquipmentSavingId(item.id)
     setError('')
     const dbStatus = toDbEquipmentStatus(nextStatus)
@@ -488,13 +601,72 @@ function WorkplacePage() {
       setError(saveError.message || 'Не удалось изменить состояние оборудования')
       return
     }
-    setEquipmentList((prev) =>
-      prev.map((row) =>
+    let nextEquipmentList = []
+    setEquipmentList((prev) => {
+      nextEquipmentList = prev.map((row) =>
         String(row.id) === String(item.id)
           ? { ...row, status: dbStatus, reserve_mode: resolvedReserveMode }
           : row,
-      ),
-    )
+      )
+      return nextEquipmentList
+    })
+
+    const prevStateLabel = normalizeEquipmentStatus(item.status)
+    const nextStateLabel = normalizeEquipmentStatus(dbStatus)
+    const reserveSuffix = nextStateLabel === 'Резерв' && reserveModeLabel(resolvedReserveMode)
+      ? ` · режим ${reserveModeLabel(resolvedReserveMode)}`
+      : ''
+    const eventBody = `${item.systemName || 'Система'} / ${item.subsystemName || 'Подсистема'} / ${item.stationNumber || item.dispatchLabel}: ${prevStateLabel} → ${nextStateLabel}${reserveSuffix}`
+    const commonTags = [
+      `workplace:${String(workplaceId)}`,
+      `workplace_code:${String(workplace?.code || '')}`,
+      ...shiftTags,
+    ]
+    const authorSnapshot = profile?.employee
+      ? {
+          label: [profile.employee.last_name, profile.employee.first_name, profile.employee.middle_name]
+            .filter(Boolean)
+            .join(' '),
+          position: profile.employee.positions?.name || '',
+        }
+      : null
+    if (journalId) {
+      await supabase.from('entries').insert({
+        journal_id: journalId,
+        title: 'Изменение состояния оборудования',
+        body: eventBody,
+        type: 'daily',
+        unit,
+        tags: [...commonTags, 'entry_kind:equipment_state_change'],
+        created_by_profile_id: user?.id || null,
+        created_by_employee_id: profile?.employee?.id || null,
+        author_snapshot: authorSnapshot,
+      })
+
+      await supabase.from('entries').insert({
+        journal_id: journalId,
+        title: 'Снимок состояния оборудования',
+        body: buildSnapshotPayload(nextEquipmentList.length ? nextEquipmentList : equipmentList),
+        type: 'daily',
+        unit,
+        tags: [...commonTags, 'entry_kind:equipment_snapshot'],
+        created_by_profile_id: user?.id || null,
+        created_by_employee_id: profile?.employee?.id || null,
+        author_snapshot: authorSnapshot,
+      })
+    }
+
+    setDailyEntries((prev) => [
+      ...prev,
+      {
+        id: `local-${Date.now()}`,
+        title: 'Изменение состояния оборудования',
+        body: eventBody,
+        created_at: new Date().toISOString(),
+        tags: [...commonTags, 'entry_kind:equipment_state_change'],
+        author_snapshot: authorSnapshot,
+      },
+    ])
   }
 
   return (
@@ -655,8 +827,69 @@ function WorkplacePage() {
                   </div>
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Лента суточной ведомости</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setStatementShiftDate((prev) => addDays(prev, -1))}
+                        className="rounded-full border border-white/10 px-2 py-1 text-slate-300 hover:border-emerald-400/60"
+                      >
+                        ←
+                      </button>
+                      <input
+                        type="date"
+                        value={statementShiftDate}
+                        onChange={(e) => setStatementShiftDate(e.target.value)}
+                        className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
+                      />
+                      <select
+                        value={statementShiftType}
+                        onChange={(e) => setStatementShiftType(e.target.value)}
+                        className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
+                      >
+                        <option value="day">День</option>
+                        <option value="night">Ночь</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setStatementShiftDate((prev) => addDays(prev, 1))}
+                        className="rounded-full border border-white/10 px-2 py-1 text-slate-300 hover:border-emerald-400/60"
+                      >
+                        →
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const slot = getCurrentShiftSlot()
+                          setStatementShiftDate(slot.date)
+                          setStatementShiftType(slot.type)
+                        }}
+                        className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-1 text-emerald-200"
+                      >
+                        Текущая смена
+                      </button>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-300">
+                      {new Date(statementShiftDate).toLocaleDateString('ru-RU')} · {statementShiftType === 'night' ? 'Ночь' : 'День'} · Период {viewedShiftPeriod} · Вахта {viewedShiftCode}
+                    </p>
+                    <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/60 p-2">
+                      <p className="text-[11px] text-slate-400">Запись в ведомость</p>
+                      <textarea
+                        value={dailyInput}
+                        onChange={(e) => setDailyInput(e.target.value)}
+                        rows={2}
+                        placeholder="Добавить запись по смене..."
+                        className="mt-1 w-full rounded border border-white/10 bg-slate-950 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-500"
+                      />
+                      <button
+                        onClick={() => void handleAddDailyEntry()}
+                        disabled={savingEntry}
+                        className="mt-1 rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
+                      >
+                        {savingEntry ? 'Сохраняем...' : 'Добавить'}
+                      </button>
+                    </div>
                     <div className="mt-2 space-y-2">
-                      {dailyEntries.map((item) => (
+                      {statementEntries.map((item) => (
                         <div key={item.id} className="rounded-md border border-white/10 bg-white/5 p-2">
                           <p className="text-xs text-slate-100">{item.body || '—'}</p>
                           <p className="mt-1 text-[11px] text-slate-500">
@@ -665,26 +898,9 @@ function WorkplacePage() {
                           </p>
                         </div>
                       ))}
-                      {!dailyEntries.length && <p className="text-xs text-slate-500">Записей пока нет.</p>}
+                      {!statementEntries.length && <p className="text-xs text-slate-500">Записей за эту смену пока нет.</p>}
                     </div>
                   </div>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Запись в ведомость</p>
-                  <textarea
-                    value={dailyInput}
-                    onChange={(e) => setDailyInput(e.target.value)}
-                    rows={3}
-                    placeholder="Краткая запись за смену..."
-                    className="mt-2 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500"
-                  />
-                  <button
-                    onClick={() => void handleAddDailyEntry()}
-                    disabled={savingEntry}
-                    className="mt-2 rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
-                  >
-                    {savingEntry ? 'Сохраняем...' : 'Добавить запись'}
-                  </button>
                 </div>
               </div>
             ) : (
