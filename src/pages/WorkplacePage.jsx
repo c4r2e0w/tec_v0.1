@@ -62,6 +62,8 @@ function WorkplacePage() {
   const [workplace, setWorkplace] = useState(null)
   const [assignee, setAssignee] = useState(null)
   const [equipmentList, setEquipmentList] = useState([])
+  const [equipmentMenuId, setEquipmentMenuId] = useState(null)
+  const [equipmentSavingId, setEquipmentSavingId] = useState(null)
   const [activeTab, setActiveTab] = useState('daily')
   const [dailyEntries, setDailyEntries] = useState([])
   const [dailyInput, setDailyInput] = useState('')
@@ -69,6 +71,46 @@ function WorkplacePage() {
   const [journalId, setJournalId] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+
+  const normalizeEquipmentStatus = (value) => {
+    const text = normalizeKey(value)
+    if (text.includes('резерв')) return 'Резерв'
+    if (text.includes('ремонт')) return 'Ремонт'
+    if (text.includes('работ')) return 'Работа'
+    return 'Работа'
+  }
+
+  const equipmentStatusClass = (status) => {
+    const normalized = normalizeEquipmentStatus(status)
+    if (normalized === 'Резерв') return 'text-emerald-300'
+    if (normalized === 'Ремонт') return 'text-slate-400'
+    return 'text-rose-300'
+  }
+
+  const equipmentShortName = (name) => {
+    const source = String(name || '').trim()
+    if (!source) return 'Оборудование'
+    const normalized = source.replace(/Ё/g, 'Е').replace(/ё/g, 'е')
+    const patterns = [
+      /ПНД\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /ПВД\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /КНТ\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /ПЭН\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /ОЭ\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /ТГ\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /ТА\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      /КА\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+    ]
+    for (const pattern of patterns) {
+      const match = normalized.match(pattern)
+      if (match) {
+        const code = pattern.source.match(/^[^\\]+/i)?.[0]?.replace(/\\s\*/g, '') || ''
+        const prefix = code.replace(/[()[\]|]/g, '').trim().toUpperCase()
+        return `${prefix} ${String(match[1]).toUpperCase()}`
+      }
+    }
+    return normalized.length > 28 ? `${normalized.slice(0, 28)}…` : normalized
+  }
 
   useEffect(() => {
     let active = true
@@ -288,6 +330,22 @@ function WorkplacePage() {
     setDailyEntries(filtered)
   }
 
+  const handleSetEquipmentStatus = async (item, nextStatus) => {
+    if (!item?.id) return
+    setEquipmentSavingId(item.id)
+    setError('')
+    const { error: saveError } = await supabase.from('equipment').update({ status: nextStatus }).eq('id', item.id)
+    setEquipmentSavingId(null)
+    setEquipmentMenuId(null)
+    if (saveError) {
+      setError(saveError.message || 'Не удалось изменить состояние оборудования')
+      return
+    }
+    setEquipmentList((prev) =>
+      prev.map((row) => (String(row.id) === String(item.id) ? { ...row, status: nextStatus } : row)),
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
@@ -337,19 +395,62 @@ function WorkplacePage() {
             </div>
             {activeTab === 'daily' ? (
               <div className="mt-3 space-y-3">
-                <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Оборудование рабочего места</p>
-                  <div className="mt-2 space-y-1">
-                    {equipmentList.map((item, idx) => (
-                      <div key={`${item.id || item.code || idx}`} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200">
-                        <p>{item.name || item.title || item.code || `Оборудование #${idx + 1}`}</p>
-                        <p className="text-[10px] text-slate-400">
-                          {item.equipment_system || 'Без системы'} · {item?.equipment_types?.name || 'Тип не указан'} ·{' '}
-                          {item.status || 'В работе'}
-                        </p>
-                      </div>
-                    ))}
-                    {!equipmentList.length && <p className="text-xs text-slate-500">Закрепленное оборудование пока не найдено.</p>}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Лента суточной ведомости</p>
+                    <div className="mt-2 space-y-2">
+                      {dailyEntries.map((item) => (
+                        <div key={item.id} className="rounded-md border border-white/10 bg-white/5 p-2">
+                          <p className="text-xs text-slate-100">{item.body || '—'}</p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {item.author_snapshot?.label || 'Сотрудник'} ·{' '}
+                            {item.created_at ? new Date(item.created_at).toLocaleString('ru-RU') : '—'}
+                          </p>
+                        </div>
+                      ))}
+                      {!dailyEntries.length && <p className="text-xs text-slate-500">Записей пока нет.</p>}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Состав оборудования</p>
+                    <div className="mt-2 space-y-1">
+                      {equipmentList.map((item, idx) => (
+                        <div
+                          key={`${item.id || item.code || idx}`}
+                          className="relative flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))}
+                            className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-white/20 bg-slate-900 px-1 text-[10px] text-slate-200"
+                            title="Изменить состояние"
+                          >
+                            {idx + 1}
+                          </button>
+                          <span className={`font-medium ${equipmentStatusClass(item.status)}`}>
+                            {equipmentShortName(item.name || item.title || item.code)}
+                          </span>
+                          {equipmentSavingId === item.id && <span className="ml-auto text-[10px] text-slate-400">...</span>}
+                          {equipmentMenuId === item.id && (
+                            <div className="absolute left-0 top-7 z-20 w-28 rounded-md border border-white/15 bg-slate-900 p-1 shadow-xl">
+                              {['Работа', 'Резерв', 'Ремонт'].map((statusOption) => (
+                                <button
+                                  key={statusOption}
+                                  type="button"
+                                  onClick={() => void handleSetEquipmentStatus(item, statusOption)}
+                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                >
+                                  {statusOption}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {!equipmentList.length && (
+                        <p className="text-xs text-slate-500">Закрепленное оборудование пока не найдено.</p>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
@@ -368,21 +469,6 @@ function WorkplacePage() {
                   >
                     {savingEntry ? 'Сохраняем...' : 'Добавить запись'}
                   </button>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Лента суточной ведомости</p>
-                  <div className="mt-2 space-y-2">
-                    {dailyEntries.map((item) => (
-                      <div key={item.id} className="rounded-md border border-white/10 bg-white/5 p-2">
-                        <p className="text-xs text-slate-100">{item.body || '—'}</p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          {item.author_snapshot?.label || 'Сотрудник'} ·{' '}
-                          {item.created_at ? new Date(item.created_at).toLocaleString('ru-RU') : '—'}
-                        </p>
-                      </div>
-                    ))}
-                    {!dailyEntries.length && <p className="text-xs text-slate-500">Записей пока нет.</p>}
-                  </div>
                 </div>
               </div>
             ) : (
