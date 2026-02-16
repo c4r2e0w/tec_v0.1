@@ -52,6 +52,7 @@ function WorkplacePage() {
   const [assignee, setAssignee] = useState(null)
   const [equipmentList, setEquipmentList] = useState([])
   const [equipmentSubsystems, setEquipmentSubsystems] = useState([])
+  const [equipmentSystems, setEquipmentSystems] = useState([])
   const [equipmentMenuId, setEquipmentMenuId] = useState(null)
   const [equipmentSavingId, setEquipmentSavingId] = useState(null)
   const [activeTab, setActiveTab] = useState('daily')
@@ -65,6 +66,10 @@ function WorkplacePage() {
   const subsystemsById = useMemo(
     () => new Map((equipmentSubsystems || []).map((row) => [String(row.id), row])),
     [equipmentSubsystems],
+  )
+  const systemsById = useMemo(
+    () => new Map((equipmentSystems || []).map((row) => [String(row.id), row])),
+    [equipmentSystems],
   )
 
   const normalizeEquipmentStatus = (value) => {
@@ -216,14 +221,35 @@ function WorkplacePage() {
   useEffect(() => {
     let active = true
     async function loadSubsystems() {
-      const { data, error: subsystemError } = await supabase
-        .from('equipment_subsystems')
-        .select('id, system, name')
-        .order('system', { ascending: true })
+      // Prefer normalized catalog, fallback to old table.
+      const normalized = await supabase
+        .from('equipment_subsystem_catalog')
+        .select('id, name, description')
         .order('name', { ascending: true })
-        .limit(2000)
-      if (!active || subsystemError) return
-      setEquipmentSubsystems(data || [])
+        .limit(3000)
+      if (!active) return
+      if (!normalized.error && Array.isArray(normalized.data) && normalized.data.length) {
+        setEquipmentSubsystems(
+          normalized.data.map((row) => ({
+            id: row.id,
+            name: row.name,
+            system: null,
+            description: row.description || null,
+          })),
+        )
+      } else {
+        const legacy = await supabase
+          .from('equipment_subsystems')
+          .select('id, system, name, description')
+          .order('system', { ascending: true })
+          .order('name', { ascending: true })
+          .limit(3000)
+        if (!legacy.error) setEquipmentSubsystems(legacy.data || [])
+      }
+
+      const systemsRes = await supabase.from('equipment_systems').select('id, name').order('name', { ascending: true }).limit(1000)
+      if (!active) return
+      if (!systemsRes.error) setEquipmentSystems(systemsRes.data || [])
     }
     void loadSubsystems()
     return () => {
@@ -235,12 +261,25 @@ function WorkplacePage() {
     let active = true
     async function loadEquipment() {
       if (!workplace?.code && !workplace?.name) return
-      const { data, error: eqError } = await supabase
+      let eqRows = []
+      // New schema first.
+      const modern = await supabase
         .from('equipment')
-        .select('id, name, station_number, status, equipment_system, type_id, control_point, subsystem_id')
+        .select('id, name, station_number, status, equipment_system, system_id, subsystem_catalog_id, subsystem_id, control_point')
         .order('id', { ascending: true })
-        .limit(2000)
-      if (!active || eqError) return
+        .limit(3000)
+      if (!modern.error) {
+        eqRows = modern.data || []
+      } else {
+        const legacy = await supabase
+          .from('equipment')
+          .select('id, name, status, equipment_system, subsystem_id, control_point')
+          .order('id', { ascending: true })
+          .limit(3000)
+        if (legacy.error) return
+        eqRows = legacy.data || []
+      }
+      if (!active) return
 
       const workplaceControlVariants = new Set(
         [workplace?.code, workplace?.name]
@@ -248,14 +287,15 @@ function WorkplacePage() {
           .map((value) => compactControlPoint(value)),
       )
 
-      const scopedEquipment = (data || []).filter((item) =>
+      const scopedEquipment = (eqRows || []).filter((item) =>
         workplaceControlVariants.has(compactControlPoint(item?.control_point)),
       )
 
       const mappedEquipment = scopedEquipment.map((item) => {
         const byId = item?.subsystem_id ? subsystemsById.get(String(item.subsystem_id)) : null
+        const byCatalogId = item?.subsystem_catalog_id ? subsystemsById.get(String(item.subsystem_catalog_id)) : null
         const byName = byId ? null : findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
-        const subsystem = byId || byName
+        const subsystem = byCatalogId || byId || byName
         const fallbackStation = extractEquipmentIndex(item?.name)
         const stationNumber =
           normalizeStationValue(item?.station_number) || normalizeStationValue(item?.name) || fallbackStation
@@ -266,7 +306,11 @@ function WorkplacePage() {
           stationNumber,
           dispatchLabel,
           subsystemName: subsystem?.name || null,
-          systemName: subsystem?.system || item?.equipment_system || null,
+          systemName:
+            systemsById.get(String(item?.system_id || ''))?.name ||
+            subsystem?.system ||
+            item?.equipment_system ||
+            null,
         }
       })
 
@@ -276,7 +320,7 @@ function WorkplacePage() {
     return () => {
       active = false
     }
-  }, [supabase, workplace?.code, workplace?.name, equipmentSubsystems, subsystemsById])
+  }, [supabase, workplace?.code, workplace?.name, equipmentSubsystems, subsystemsById, systemsById])
 
   useEffect(() => {
     if (!workplace?.code) {

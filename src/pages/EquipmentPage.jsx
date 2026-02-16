@@ -17,18 +17,26 @@ function EquipmentPage() {
     async function fetchEquipment() {
       setLoading(true)
       setError('')
-      const [equipmentRes, subsystemsRes] = await Promise.all([
-        supabase
+      const equipmentRes = await supabase
+        .from('equipment')
+        .select('id, station_number, name, status, equipment_system, system_id, subsystem_id, subsystem_catalog_id, type_id, equipment_types:equipment_types(name)')
+        .order('id', { ascending: true })
+        .limit(3000)
+      const equipmentFallback =
+        equipmentRes.error &&
+        (await supabase
           .from('equipment')
-          .select('id, station_number, name, status, equipment_system, subsystem_id, type_id, equipment_types:equipment_types(name)')
+          .select('id, name, status, equipment_system, subsystem_id, type_id, equipment_types:equipment_types(name)')
           .order('id', { ascending: true })
-          .limit(2000),
-        supabase.from('equipment_subsystems').select('id, name, system').limit(3000),
-      ])
+          .limit(3000))
+      const subsystemsRes = await supabase.from('equipment_subsystem_catalog').select('id, name').limit(3000)
+      const subsystemsFallback =
+        subsystemsRes.error &&
+        (await supabase.from('equipment_subsystems').select('id, name').limit(3000))
       if (!active) return
-      if (equipmentRes.error) setError(equipmentRes.error.message)
-      else setEquipment(equipmentRes.data ?? [])
-      if (!subsystemsRes.error) setSubsystems(subsystemsRes.data ?? [])
+      if (equipmentRes.error && equipmentFallback?.error) setError(equipmentRes.error.message)
+      else setEquipment((equipmentRes.data ?? equipmentFallback?.data) || [])
+      setSubsystems((subsystemsRes.data ?? subsystemsFallback?.data) || [])
       setLoading(false)
     }
     fetchEquipment()
@@ -73,7 +81,10 @@ function EquipmentPage() {
       if (systemFilter !== 'all' && (item?.equipment_system || '') !== systemFilter) return false
       if (typeFilter !== 'all' && (item?.equipment_types?.name || '') !== typeFilter) return false
       if (statusFilter !== 'all' && (item?.status || '') !== statusFilter) return false
-      const subsystemName = subsystemById.get(String(item?.subsystem_id || ''))?.name || ''
+      const subsystemName =
+        subsystemById.get(String(item?.subsystem_catalog_id || ''))?.name ||
+        subsystemById.get(String(item?.subsystem_id || ''))?.name ||
+        ''
       const stationNumber = String(item?.station_number || item?.name || '').trim()
       if (!q) return true
       const haystack = [stationNumber, subsystemName, item?.equipment_system, item?.equipment_types?.name, item?.status]
@@ -158,7 +169,9 @@ function EquipmentPage() {
               </span>
             </div>
             <p className="mt-2 text-lg font-semibold text-dark">
-              {(subsystemById.get(String(eq?.subsystem_id || ''))?.name || 'Подсистема') +
+              {(subsystemById.get(String(eq?.subsystem_catalog_id || ''))?.name ||
+                subsystemById.get(String(eq?.subsystem_id || ''))?.name ||
+                'Подсистема') +
                 ' ' +
                 String(eq?.station_number || eq?.name || eq.id || '').trim()}
             </p>
