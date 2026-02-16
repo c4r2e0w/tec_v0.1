@@ -19,6 +19,7 @@ import RoundsTodayPage from './pages/RoundsTodayPage.jsx'
 import RoundRunPage from './pages/RoundRunPage.jsx'
 import RoundsHistoryPage from './pages/RoundsHistoryPage.jsx'
 import ShiftTopicsPage from './pages/ShiftTopicsPage.jsx'
+import SocialHubPage from './pages/SocialHubPage.jsx'
 
 const queryClient = new QueryClient()
 
@@ -60,6 +61,14 @@ createRoot(document.getElementById('root')).render(
                 element={
                   <ProtectedRoute>
                     <UnionPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="social"
+                element={
+                  <ProtectedRoute>
+                    <SocialHubPage />
                   </ProtectedRoute>
                 }
               />
