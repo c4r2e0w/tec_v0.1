@@ -107,20 +107,9 @@ const isChiefPosition = (value) => {
   const normalized = normalizeRoleTextValue(value)
   return normalized.includes('начальник смены') || normalized.includes('нач смены')
 }
-const detectEmployeeSectionKey = (employee) => {
-  const division = normalizeRoleTextValue(employee?.division || '')
-  const department = normalizeRoleTextValue(employee?.department || '')
-  const position = normalizeRoleTextValue(employee?.position || '')
-  const full = `${division} ${department} ${position}`.trim()
-  const isBoiler = full.includes('котел') || position.includes(' ко') || position.includes('упк') || position.includes('по ко')
-  const isTurbine = full.includes('турбин') || position.includes(' то') || position.includes('упт') || position.includes('по то')
-  if (isBoiler && !isTurbine) return 'boiler'
-  if (isTurbine && !isBoiler) return 'turbine'
-  if (division.includes('котел')) return 'boiler'
-  if (division.includes('турбин')) return 'turbine'
-  if (position.includes('котел')) return 'boiler'
-  if (position.includes('турбин')) return 'turbine'
-  return 'other'
+const SECTION_FIELD_MAP = {
+  turbine: ['турбинное отделение', 'турбинное'],
+  boiler: ['котельное отделение', 'котельное'],
 }
 const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
 const extractRoundTopic = (materials) => {
@@ -667,7 +656,12 @@ function UnitSectionPage() {
       list = list.filter((e) => isAdministrativeType(e.positionType))
     }
     if (filterSection) {
-      list = list.filter((e) => detectEmployeeSectionKey(e) === filterSection)
+      const allowed = new Set((SECTION_FIELD_MAP[filterSection] || [filterSection]).map((s) => normalizeRoleTextValue(s)))
+      list = list.filter((e) => {
+        const division = normalizeRoleTextValue(e.division || '')
+        const department = normalizeRoleTextValue(e.department || '')
+        return allowed.has(division) || allowed.has(department)
+      })
     }
     const pinnedSet = new Set(pinnedEmployees)
     const hiddenSet = new Set(hiddenEmployees)
