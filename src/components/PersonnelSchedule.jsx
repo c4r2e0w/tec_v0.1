@@ -427,7 +427,7 @@ const ScheduleCell = memo(function ScheduleCell({
     <td
       onClick={(e) => onClick(employeeId, date, e)}
       className={`group relative cursor-pointer px-0.5 py-0.5 align-top transition sm:px-1 sm:py-1 ${
-        selected ? 'bg-accent/5' : selectedDateColumn ? 'bg-sky-400/10' : todayColumn ? 'bg-amber-300/10' : ''
+        selected ? 'bg-accent/5' : selectedDateColumn ? 'bg-amber-300/10' : todayColumn ? 'bg-emerald-300/10' : ''
       }`}
     >
       <div
@@ -435,11 +435,11 @@ const ScheduleCell = memo(function ScheduleCell({
           selected
             ? 'scale-[1.02] border-accent/70 bg-accent/12 ring-2 ring-accent/45 ring-offset-2 ring-offset-slate-900 shadow-[0_0_0_1px_rgba(62,219,138,0.2),0_10px_26px_rgba(0,0,0,0.35)]'
             : selectedDateColumn && todayColumn
-              ? 'border-cyan-300/50 bg-gradient-to-b from-amber-300/10 to-sky-400/12 shadow-[0_0_0_1px_rgba(56,189,248,0.2),0_8px_20px_rgba(0,0,0,0.25)]'
+              ? 'border-emerald-300/70 bg-gradient-to-b from-emerald-300/14 to-amber-300/14 ring-1 ring-amber-300/45 shadow-[0_0_0_1px_rgba(16,185,129,0.26),0_8px_20px_rgba(0,0,0,0.25)]'
               : selectedDateColumn
-                ? 'border-sky-300/45 bg-sky-400/12 shadow-[0_0_0_1px_rgba(56,189,248,0.2),0_8px_20px_rgba(0,0,0,0.22)]'
+                ? 'border-amber-300/55 bg-amber-300/12 shadow-[0_0_0_1px_rgba(251,191,36,0.24),0_8px_20px_rgba(0,0,0,0.22)]'
                 : todayColumn
-                  ? 'border-amber-300/45 bg-amber-300/10 shadow-[0_0_0_1px_rgba(251,191,36,0.2),0_8px_20px_rgba(0,0,0,0.22)]'
+                  ? 'border-emerald-300/60 bg-emerald-300/12 ring-1 ring-emerald-300/35 shadow-[0_0_0_1px_rgba(16,185,129,0.24),0_8px_20px_rgba(0,0,0,0.22)]'
             : 'border-white/10 bg-white/5 group-hover:-translate-y-[1px] group-hover:border-accent/45 group-hover:bg-accent/8 group-hover:shadow-[0_0_0_1px_rgba(62,219,138,0.15),0_8px_20px_rgba(0,0,0,0.32)]'
         }`}
         title={tooltip}
@@ -819,27 +819,27 @@ function PersonnelSchedule(props) {
                 return (
                   <th
                     key={d}
-                    className={`w-10 px-0.5 py-1 text-center text-[10px] uppercase tracking-[0.12em] sm:w-12 sm:px-1 sm:py-1.5 sm:text-[11px] ${
+                    className={`w-10 border-x border-transparent px-0.5 py-1 text-center text-[10px] uppercase tracking-[0.12em] sm:w-12 sm:px-1 sm:py-1.5 sm:text-[11px] ${
                       isSelectedDate && isToday
-                        ? 'bg-gradient-to-b from-amber-300/15 to-sky-400/20 text-cyan-100'
+                        ? 'border-emerald-300/60 bg-gradient-to-b from-emerald-300/16 to-amber-300/16 text-emerald-50'
                         : isSelectedDate
-                          ? 'bg-sky-400/15 text-sky-100'
+                          ? 'border-amber-300/50 bg-amber-300/15 text-amber-100'
                           : isToday
-                            ? 'bg-amber-300/15 text-amber-100'
+                            ? 'border-emerald-300/55 bg-emerald-300/15 text-emerald-100'
                             : 'text-slate-300'
                     }`}
                   >
                     <div className="flex flex-col items-center gap-0.5">
                       <span
                         className={`text-xs font-semibold sm:text-sm ${
-                          isSelectedDate ? 'text-sky-100' : isToday ? 'text-amber-100' : 'text-white'
+                          isSelectedDate ? 'text-amber-100' : isToday ? 'text-emerald-100' : 'text-white'
                         }`}
                       >
                         {dayNumber}
                       </span>
                       <span
                         className={`text-[9px] uppercase tracking-[0.08em] sm:text-[10px] ${
-                          isSelectedDate ? 'text-sky-200/90' : isToday ? 'text-amber-200/90' : 'text-slate-400'
+                          isSelectedDate ? 'text-amber-200/90' : isToday ? 'text-emerald-200/90' : 'text-slate-400'
                         }`}
                       >
                         {weekday}
