@@ -308,12 +308,13 @@ function WorkplacePage() {
       )
 
       const mappedEquipment = scopedEquipment.map((item) => {
+        const byTypeId = item?.subsystem_type_id ? subsystemsById.get(String(item.subsystem_type_id)) : null
         const byId = item?.subsystem_id ? subsystemsById.get(String(item.subsystem_id)) : null
         const legacyById = item?.subsystem_id ? legacySubsystemsById.get(String(item.subsystem_id)) : null
         const byCatalogId = item?.subsystem_catalog_id ? subsystemsById.get(String(item.subsystem_catalog_id)) : null
         const nameSource = item?.name || item?.station_number || ''
         const byName = byId || legacyById ? null : findSubsystemByEquipmentName(nameSource, equipmentSubsystems || [])
-        const subsystem = byCatalogId || byId || legacyById || byName
+        const subsystem = byTypeId || byCatalogId || byId || legacyById || byName
         const fallbackStation = extractEquipmentIndex(nameSource)
         const stationNumber =
           normalizeStationValue(item?.station_number) || normalizeStationValue(item?.name) || fallbackStation

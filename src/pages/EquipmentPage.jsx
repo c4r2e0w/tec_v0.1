@@ -78,6 +78,7 @@ function EquipmentPage() {
       if (typeFilter !== 'all' && (item?.equipment_types?.name || '') !== typeFilter) return false
       if (statusFilter !== 'all' && (item?.status || '') !== statusFilter) return false
       const subsystemName =
+        subsystemById.get(String(item?.subsystem_type_id || ''))?.name ||
         subsystemById.get(String(item?.subsystem_catalog_id || ''))?.name ||
         subsystemById.get(String(item?.subsystem_id || ''))?.name ||
         ''
@@ -166,6 +167,7 @@ function EquipmentPage() {
             </div>
             <p className="mt-2 text-lg font-semibold text-dark">
               {(subsystemById.get(String(eq?.subsystem_catalog_id || ''))?.name ||
+                subsystemById.get(String(eq?.subsystem_type_id || ''))?.name ||
                 subsystemById.get(String(eq?.subsystem_id || ''))?.name ||
                 'Подсистема') +
                 ' ' +
