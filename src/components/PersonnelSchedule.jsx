@@ -430,7 +430,7 @@ const ScheduleCell = memo(function ScheduleCell({
         selected
           ? 'bg-accent/5'
           : selectedDateColumn
-            ? 'bg-amber-300/10'
+            ? 'border-x border-amber-300/50 bg-amber-300/10'
             : todayColumn
               ? 'border-x border-emerald-300/50 bg-emerald-300/12'
               : ''
