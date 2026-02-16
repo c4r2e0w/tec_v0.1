@@ -270,6 +270,8 @@ const ScheduleCell = memo(function ScheduleCell({
   date,
   cellEntries,
   selected,
+  todayColumn,
+  selectedDateColumn,
   formatCellValue,
   resolveIconType,
   iconCatalog,
@@ -425,13 +427,19 @@ const ScheduleCell = memo(function ScheduleCell({
     <td
       onClick={(e) => onClick(employeeId, date, e)}
       className={`group relative cursor-pointer px-0.5 py-0.5 align-top transition sm:px-1 sm:py-1 ${
-        selected ? 'bg-accent/5' : ''
+        selected ? 'bg-accent/5' : selectedDateColumn ? 'bg-sky-400/10' : todayColumn ? 'bg-amber-300/10' : ''
       }`}
     >
       <div
         className={`relative flex min-h-[38px] items-end justify-center rounded-xl border px-2 pt-3 pb-1 text-[10px] font-semibold text-slate-100 transition-all duration-200 sm:min-h-[44px] sm:px-3 sm:pt-4 sm:text-[11px] ${
           selected
             ? 'scale-[1.02] border-accent/70 bg-accent/12 ring-2 ring-accent/45 ring-offset-2 ring-offset-slate-900 shadow-[0_0_0_1px_rgba(62,219,138,0.2),0_10px_26px_rgba(0,0,0,0.35)]'
+            : selectedDateColumn && todayColumn
+              ? 'border-cyan-300/50 bg-gradient-to-b from-amber-300/10 to-sky-400/12 shadow-[0_0_0_1px_rgba(56,189,248,0.2),0_8px_20px_rgba(0,0,0,0.25)]'
+              : selectedDateColumn
+                ? 'border-sky-300/45 bg-sky-400/12 shadow-[0_0_0_1px_rgba(56,189,248,0.2),0_8px_20px_rgba(0,0,0,0.22)]'
+                : todayColumn
+                  ? 'border-amber-300/45 bg-amber-300/10 shadow-[0_0_0_1px_rgba(251,191,36,0.2),0_8px_20px_rgba(0,0,0,0.22)]'
             : 'border-white/10 bg-white/5 group-hover:-translate-y-[1px] group-hover:border-accent/45 group-hover:bg-accent/8 group-hover:shadow-[0_0_0_1px_rgba(62,219,138,0.15),0_8px_20px_rgba(0,0,0,0.32)]'
         }`}
         title={tooltip}
@@ -574,6 +582,21 @@ function PersonnelSchedule(props) {
     () => new Set(selectedCells.map((c) => `${c.employeeId}|${c.date}`)),
     [selectedCells],
   )
+  const todayIso = useMemo(() => {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    const day = String(now.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }, [])
+  const selectedDateSet = useMemo(() => {
+    const dates = new Set()
+    if (selectedCell?.date) dates.add(selectedCell.date)
+    selectedCells.forEach((item) => {
+      if (item?.date) dates.add(item.date)
+    })
+    return dates
+  }, [selectedCell, selectedCells])
   const selectedEmployeeSet = useMemo(() => new Set(selectedEmployeeIds), [selectedEmployeeIds])
   const hiddenEmployeesSet = useMemo(() => new Set(hiddenEmployees), [hiddenEmployees])
   const handleCellClickStable = useCallback((empId, date, e) => handleCellClick(empId, date, e), [handleCellClick])
@@ -791,14 +814,36 @@ function PersonnelSchedule(props) {
                 const dateObj = new Date(d)
                 const dayNumber = dateObj.getDate()
                 const weekday = dateObj.toLocaleDateString('ru-RU', { weekday: 'short' })
+                const isToday = d === todayIso
+                const isSelectedDate = selectedDateSet.has(d)
                 return (
                   <th
                     key={d}
-                    className="w-10 px-0.5 py-1 text-center text-[10px] uppercase tracking-[0.12em] text-slate-300 sm:w-12 sm:px-1 sm:py-1.5 sm:text-[11px]"
+                    className={`w-10 px-0.5 py-1 text-center text-[10px] uppercase tracking-[0.12em] sm:w-12 sm:px-1 sm:py-1.5 sm:text-[11px] ${
+                      isSelectedDate && isToday
+                        ? 'bg-gradient-to-b from-amber-300/15 to-sky-400/20 text-cyan-100'
+                        : isSelectedDate
+                          ? 'bg-sky-400/15 text-sky-100'
+                          : isToday
+                            ? 'bg-amber-300/15 text-amber-100'
+                            : 'text-slate-300'
+                    }`}
                   >
                     <div className="flex flex-col items-center gap-0.5">
-                      <span className="text-xs font-semibold text-white sm:text-sm">{dayNumber}</span>
-                      <span className="text-[9px] uppercase tracking-[0.08em] text-slate-400 sm:text-[10px]">{weekday}</span>
+                      <span
+                        className={`text-xs font-semibold sm:text-sm ${
+                          isSelectedDate ? 'text-sky-100' : isToday ? 'text-amber-100' : 'text-white'
+                        }`}
+                      >
+                        {dayNumber}
+                      </span>
+                      <span
+                        className={`text-[9px] uppercase tracking-[0.08em] sm:text-[10px] ${
+                          isSelectedDate ? 'text-sky-200/90' : isToday ? 'text-amber-200/90' : 'text-slate-400'
+                        }`}
+                      >
+                        {weekday}
+                      </span>
                     </div>
                   </th>
                 )
@@ -867,6 +912,8 @@ function PersonnelSchedule(props) {
                             const key = `${emp.id}|${d}`
                             const cellEntries = scheduleByDay.get(`${emp.id}-${d}`) || []
                             const isSelected = selectedCellKey === key || selectedCellsSet.has(key)
+                            const isToday = d === todayIso
+                            const isSelectedDate = selectedDateSet.has(d)
                             return (
                               <ScheduleCell
                                 key={key}
@@ -874,6 +921,8 @@ function PersonnelSchedule(props) {
                                 date={d}
                                 cellEntries={cellEntries}
                                 selected={isSelected}
+                                todayColumn={isToday}
+                                selectedDateColumn={isSelectedDate}
                                 formatCellValue={formatCellValue}
                                 resolveIconType={resolveIconType}
                                 iconCatalog={iconCatalog}
