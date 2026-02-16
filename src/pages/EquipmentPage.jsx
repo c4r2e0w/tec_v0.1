@@ -72,6 +72,16 @@ function EquipmentPage() {
     () => new Map((systems || []).map((row) => [String(row.id), row])),
     [systems],
   )
+  const systemNameOptions = useMemo(() => {
+    const set = new Set()
+    for (const row of systems || []) {
+      if (row?.name) set.add(String(row.name))
+    }
+    for (const row of equipment || []) {
+      if (row?.equipment_system) set.add(String(row.equipment_system))
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'ru'))
+  }, [systems, equipment])
 
   const subsystemById = useMemo(() => {
     const map = new Map()
@@ -356,12 +366,18 @@ function EquipmentPage() {
             ))}
           </select>
           {!systems.length && (
-            <input
+            <select
               value={newRow.system_name}
               onChange={(e) => setNewRow((prev) => ({ ...prev, system_name: e.target.value }))}
-              placeholder="Система (текст)"
               className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
-            />
+            >
+              <option value="">Система (из equipment_system)</option>
+              {systemNameOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
           )}
 
           <select
