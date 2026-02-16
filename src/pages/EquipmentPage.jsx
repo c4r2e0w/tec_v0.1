@@ -138,7 +138,20 @@ function EquipmentPage() {
         setLoading(false)
         return
       }
-      const dictErrors = [stRes.error, sysRes.error, subTypeRes.error, wpRes.error].filter(Boolean)
+
+      // Some environments do not have equipment_systems.system_type_id yet.
+      // Fallback to minimal selector so system dropdown can still work.
+      let effectiveSysError = sysRes.error
+      let effectiveSystems = sysRes.data || []
+      if (effectiveSysError) {
+        const sysFallback = await supabase.from('equipment_systems').select('id,name').order('id', { ascending: true }).limit(1000)
+        if (!sysFallback.error) {
+          effectiveSysError = null
+          effectiveSystems = sysFallback.data || []
+        }
+      }
+
+      const dictErrors = [stRes.error, effectiveSysError, subTypeRes.error, wpRes.error].filter(Boolean)
       if (dictErrors.length) {
         setError(dictErrors.map((e) => e.message).join(' · '))
       }
@@ -163,7 +176,7 @@ function EquipmentPage() {
 
       setEquipment(scopedEquipment)
       if (!stRes.error) setSystemTypes(stRes.data || [])
-      if (!sysRes.error) setSystems(sysRes.data || [])
+      if (!effectiveSysError) setSystems(effectiveSystems)
       if (!subTypeRes.error) setSubsystemTypes(subTypeRes.data || [])
       if (!legacySubRes.error) setLegacySubsystems(legacySubRes.data || [])
       if (!wpRes.error) setWorkplaces(scopedWorkplaces)
