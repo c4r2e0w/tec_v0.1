@@ -258,12 +258,14 @@ function WorkplacePage() {
         if (name && full.includes(name)) return true
         return false
       })
-      const mapped = matches.map((item) => {
+      const mapped = matches
+        .map((item) => {
         const subsystem = findSubsystemByEquipmentName(item?.name, scopedSubsystems)
         const index = extractEquipmentIndex(item?.name)
-        const dispatchLabel = subsystem?.name ? `${subsystem.name}${index ? ` ${index}` : ''}` : equipmentShortName(item?.name)
+        const dispatchLabel = subsystem?.name ? `${subsystem.name}${index ? ` ${index}` : ''}` : ''
         return { ...item, dispatchLabel, subsystemName: subsystem?.name || null }
-      })
+        })
+        .filter((item) => String(item.subsystemName || '').trim())
       mapped.sort((a, b) => String(a.dispatchLabel || '').localeCompare(String(b.dispatchLabel || ''), 'ru'))
       setEquipmentList(mapped)
     }
@@ -461,7 +463,7 @@ function WorkplacePage() {
                             {idx + 1}
                           </button>
                           <span className={`font-semibold ${equipmentStatusClass(item.status)}`}>
-                            {item.dispatchLabel || equipmentShortName(item.name || item.title || item.code)}
+                            {item.dispatchLabel}
                           </span>
                           {equipmentSavingId === item.id && <span className="ml-auto text-[10px] text-slate-400">...</span>}
                           {equipmentMenuId === item.id && (
