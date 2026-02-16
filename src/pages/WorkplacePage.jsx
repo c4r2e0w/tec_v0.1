@@ -92,24 +92,22 @@ function WorkplacePage() {
     if (!source) return 'Оборудование'
     const normalized = source.replace(/Ё/g, 'Е').replace(/ё/g, 'е')
     const patterns = [
-      /ПНД\s*№?\s*(\d+[А-ЯA-Z]?)/i,
-      /ПВД\s*№?\s*(\d+[А-ЯA-Z]?)/i,
-      /КНТ\s*№?\s*(\d+[А-ЯA-Z]?)/i,
-      /ПЭН\s*№?\s*(\d+[А-ЯA-Z]?)/i,
-      /ОЭ\s*№?\s*(\d+[А-ЯA-Z]?)/i,
-      /ТГ\s*№?\s*(\d+[А-ЯA-Z]?)/i,
-      /ТА\s*№?\s*(\d+[А-ЯA-Z]?)/i,
-      /КА\s*№?\s*(\d+[А-ЯA-Z]?)/i,
+      { regex: /ПНД\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ПНД' },
+      { regex: /ПВД\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ПВД' },
+      { regex: /КНТ\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'КНТ' },
+      { regex: /ПЭН\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ПЭН' },
+      { regex: /ОЭ\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ОЭ' },
+      { regex: /ТГ\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ТГ' },
+      { regex: /ТА\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'ТА' },
+      { regex: /КА\s*№?\s*(\d+[А-ЯA-Z]?)/i, label: 'КА' },
     ]
     for (const pattern of patterns) {
-      const match = normalized.match(pattern)
+      const match = normalized.match(pattern.regex)
       if (match) {
-        const code = pattern.source.match(/^[^\\]+/i)?.[0]?.replace(/\\s\*/g, '') || ''
-        const prefix = code.replace(/[()[\]|]/g, '').trim().toUpperCase()
-        return `${prefix} ${String(match[1]).toUpperCase()}`
+        return `${pattern.label} ${String(match[1]).toUpperCase()}`
       }
     }
-    return normalized.length > 28 ? `${normalized.slice(0, 28)}…` : normalized
+    return normalized.length > 22 ? `${normalized.slice(0, 22)}…` : normalized
   }
 
   useEffect(() => {
@@ -397,27 +395,12 @@ function WorkplacePage() {
               <div className="mt-3 space-y-3">
                 <div className="grid gap-3 lg:grid-cols-2">
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Лента суточной ведомости</p>
-                    <div className="mt-2 space-y-2">
-                      {dailyEntries.map((item) => (
-                        <div key={item.id} className="rounded-md border border-white/10 bg-white/5 p-2">
-                          <p className="text-xs text-slate-100">{item.body || '—'}</p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            {item.author_snapshot?.label || 'Сотрудник'} ·{' '}
-                            {item.created_at ? new Date(item.created_at).toLocaleString('ru-RU') : '—'}
-                          </p>
-                        </div>
-                      ))}
-                      {!dailyEntries.length && <p className="text-xs text-slate-500">Записей пока нет.</p>}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Состав оборудования</p>
                     <div className="mt-2 space-y-1">
                       {equipmentList.map((item, idx) => (
                         <div
                           key={`${item.id || item.code || idx}`}
-                          className="relative flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200"
+                          className="relative flex items-center gap-2 border-b border-white/10 py-1 text-xs text-slate-200 last:border-b-0"
                         >
                           <button
                             type="button"
@@ -427,7 +410,7 @@ function WorkplacePage() {
                           >
                             {idx + 1}
                           </button>
-                          <span className={`font-medium ${equipmentStatusClass(item.status)}`}>
+                          <span className={`font-semibold ${equipmentStatusClass(item.status)}`}>
                             {equipmentShortName(item.name || item.title || item.code)}
                           </span>
                           {equipmentSavingId === item.id && <span className="ml-auto text-[10px] text-slate-400">...</span>}
@@ -450,6 +433,21 @@ function WorkplacePage() {
                       {!equipmentList.length && (
                         <p className="text-xs text-slate-500">Закрепленное оборудование пока не найдено.</p>
                       )}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Лента суточной ведомости</p>
+                    <div className="mt-2 space-y-2">
+                      {dailyEntries.map((item) => (
+                        <div key={item.id} className="rounded-md border border-white/10 bg-white/5 p-2">
+                          <p className="text-xs text-slate-100">{item.body || '—'}</p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {item.author_snapshot?.label || 'Сотрудник'} ·{' '}
+                            {item.created_at ? new Date(item.created_at).toLocaleString('ru-RU') : '—'}
+                          </p>
+                        </div>
+                      ))}
+                      {!dailyEntries.length && <p className="text-xs text-slate-500">Записей пока нет.</p>}
                     </div>
                   </div>
                 </div>
