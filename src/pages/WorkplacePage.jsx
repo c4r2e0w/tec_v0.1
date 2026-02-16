@@ -27,6 +27,11 @@ const normalizeKey = (value) =>
     .trim()
     .toLowerCase()
 
+const compactControlPoint = (value) =>
+  normalizeKey(value)
+    .replace(/\s+/g, '')
+    .replace(/_/g, '')
+
 function WorkplacePage() {
   const { unit, workplaceId } = useParams()
   const supabase = useSupabase()
@@ -161,15 +166,22 @@ function WorkplacePage() {
   useEffect(() => {
     let active = true
     async function loadEquipment() {
-      if (!workplace?.code) return
+      if (!workplace?.code && !workplace?.name) return
       const { data, error: eqError } = await supabase
         .from('equipment')
         .select('id, name, status, equipment_system, type_id, control_point')
-        .eq('control_point', workplace.code)
         .order('name', { ascending: true })
         .limit(2000)
       if (!active || eqError) return
-      const mappedEquipment = (data || [])
+      const workplaceControlVariants = new Set(
+        [workplace?.code, workplace?.name]
+          .filter(Boolean)
+          .map((value) => compactControlPoint(value)),
+      )
+      const scopedEquipment = (data || []).filter((item) =>
+        workplaceControlVariants.has(compactControlPoint(item?.control_point)),
+      )
+      const mappedEquipment = scopedEquipment
         .map((item) => {
           const subsystem = findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
           const index = extractEquipmentIndex(item?.name)
@@ -184,7 +196,7 @@ function WorkplacePage() {
     return () => {
       active = false
     }
-  }, [supabase, workplace?.code, equipmentSubsystems])
+  }, [supabase, workplace?.code, workplace?.name, equipmentSubsystems])
 
   useEffect(() => {
     if (!workplace?.code) {
