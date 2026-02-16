@@ -283,17 +283,13 @@ function WorkplacePage() {
       if (!workplace?.code && !workplace?.name) return
       let eqRows = []
       // New schema first.
-      const modern = await supabase
-        .from('equipment')
-        .select('id, name, station_number, status, equipment_system, system_id, subsystem_catalog_id, subsystem_id, control_point')
-        .order('id', { ascending: true })
-        .limit(3000)
+      const modern = await supabase.from('equipment').select('*').order('id', { ascending: true }).limit(3000)
       if (!modern.error) {
         eqRows = modern.data || []
       } else {
         const legacy = await supabase
           .from('equipment')
-          .select('id, name, status, equipment_system, subsystem_id, control_point')
+          .select('*')
           .order('id', { ascending: true })
           .limit(3000)
         if (legacy.error) return
@@ -315,12 +311,13 @@ function WorkplacePage() {
         const byId = item?.subsystem_id ? subsystemsById.get(String(item.subsystem_id)) : null
         const legacyById = item?.subsystem_id ? legacySubsystemsById.get(String(item.subsystem_id)) : null
         const byCatalogId = item?.subsystem_catalog_id ? subsystemsById.get(String(item.subsystem_catalog_id)) : null
-        const byName = byId || legacyById ? null : findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
+        const nameSource = item?.name || item?.station_number || ''
+        const byName = byId || legacyById ? null : findSubsystemByEquipmentName(nameSource, equipmentSubsystems || [])
         const subsystem = byCatalogId || byId || legacyById || byName
-        const fallbackStation = extractEquipmentIndex(item?.name)
+        const fallbackStation = extractEquipmentIndex(nameSource)
         const stationNumber =
           normalizeStationValue(item?.station_number) || normalizeStationValue(item?.name) || fallbackStation
-        const dispatchLabel = deriveDispatchLabel(item?.name, stationNumber)
+        const dispatchLabel = deriveDispatchLabel(nameSource, stationNumber)
 
         return {
           ...item,

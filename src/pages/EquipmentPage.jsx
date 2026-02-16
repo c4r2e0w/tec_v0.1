@@ -17,16 +17,12 @@ function EquipmentPage() {
     async function fetchEquipment() {
       setLoading(true)
       setError('')
-      const equipmentRes = await supabase
-        .from('equipment')
-        .select('id, station_number, name, status, equipment_system, system_id, subsystem_id, subsystem_catalog_id, type_id, equipment_types:equipment_types(name)')
-        .order('id', { ascending: true })
-        .limit(3000)
+      const equipmentRes = await supabase.from('equipment').select('*').order('id', { ascending: true }).limit(3000)
       const equipmentFallback =
         equipmentRes.error &&
         (await supabase
           .from('equipment')
-          .select('id, name, status, equipment_system, subsystem_id, type_id, equipment_types:equipment_types(name)')
+          .select('*')
           .order('id', { ascending: true })
           .limit(3000))
       const subsystemsRes = await supabase.from('equipment_subsystem_catalog').select('id, name').limit(3000)
@@ -175,9 +171,7 @@ function EquipmentPage() {
                 ' ' +
                 String(eq?.station_number || eq?.name || eq.id || '').trim()}
             </p>
-            <p className="text-xs text-grayText">
-              {eq?.equipment_types?.name || 'Тип не указан'}
-            </p>
+            <p className="text-xs text-grayText">{eq?.equipment_types?.name || eq?.type_id || 'Тип не указан'}</p>
           </div>
         ))}
         {!loading && !error && filteredEquipment.length === 0 && (
