@@ -1,148 +1,346 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSupabase } from '../context/SupabaseProvider'
 
+const normalize = (value) => String(value || '').trim().toLowerCase()
+
+const defaultStatuses = ['работа', 'резерв', 'ремонт']
+
 function EquipmentPage() {
   const supabase = useSupabase()
+
   const [equipment, setEquipment] = useState([])
-  const [subsystems, setSubsystems] = useState([])
-  const [query, setQuery] = useState('')
-  const [systemFilter, setSystemFilter] = useState('all')
-  const [typeFilter, setTypeFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [systemTypes, setSystemTypes] = useState([])
+  const [systems, setSystems] = useState([])
+  const [subsystemTypes, setSubsystemTypes] = useState([])
+  const [legacySubsystems, setLegacySubsystems] = useState([])
+  const [workplaces, setWorkplaces] = useState([])
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [savingId, setSavingId] = useState(null)
+  const [adding, setAdding] = useState(false)
+
+  const [expandedTypes, setExpandedTypes] = useState(() => new Set(['all']))
+  const [expandedSystems, setExpandedSystems] = useState(() => new Set())
+  const [expandedSubsystems, setExpandedSubsystems] = useState(() => new Set())
+
+  const [drafts, setDrafts] = useState({})
+  const [newRow, setNewRow] = useState({
+    system_id: '',
+    subsystem_type_id: '',
+    station_number: '',
+    control_point: '',
+    status: 'работа',
+  })
+
+  const equipmentColumns = useMemo(() => {
+    const keys = new Set()
+    for (const row of equipment) {
+      Object.keys(row || {}).forEach((k) => keys.add(k))
+    }
+    return keys
+  }, [equipment])
+
+  const hasColumn = (name) => equipmentColumns.has(name)
+
+  const systemTypeById = useMemo(
+    () => new Map((systemTypes || []).map((row) => [String(row.id), row.name])),
+    [systemTypes],
+  )
+
+  const systemById = useMemo(
+    () => new Map((systems || []).map((row) => [String(row.id), row])),
+    [systems],
+  )
+
+  const subsystemById = useMemo(() => {
+    const map = new Map()
+    for (const row of subsystemTypes || []) {
+      map.set(String(row.id), {
+        name: row.code || row.name || `ID ${row.id}`,
+        fullName: row.full_name || row.description || '',
+      })
+    }
+    for (const row of legacySubsystems || []) {
+      if (!map.has(String(row.id))) {
+        map.set(String(row.id), {
+          name: row.name || `ID ${row.id}`,
+          fullName: row.description || '',
+        })
+      }
+    }
+    return map
+  }, [subsystemTypes, legacySubsystems])
+
+  const controlPointOptions = useMemo(() => {
+    const values = new Set()
+    for (const row of workplaces || []) {
+      if (row?.name) values.add(row.name)
+      if (row?.code) values.add(row.code)
+    }
+    for (const row of equipment || []) {
+      if (row?.control_point) values.add(row.control_point)
+    }
+    return [...values].sort((a, b) => a.localeCompare(b, 'ru'))
+  }, [workplaces, equipment])
+
+  const statuses = useMemo(() => {
+    const values = new Set(defaultStatuses)
+    for (const row of equipment || []) {
+      if (row?.status) values.add(String(row.status).toLowerCase())
+    }
+    return [...values]
+  }, [equipment])
 
   useEffect(() => {
     let active = true
-    async function fetchEquipment() {
+
+    async function load() {
       setLoading(true)
       setError('')
-      const equipmentRes = await supabase.from('equipment').select('*').order('id', { ascending: true }).limit(3000)
-      const equipmentFallback =
-        equipmentRes.error &&
-        (await supabase
-          .from('equipment')
-          .select('*')
-          .order('id', { ascending: true })
-          .limit(3000))
-      const subsystemsRes = await supabase.from('equipment_subsystem_catalog').select('id, name').limit(3000)
-      const subsystemsFallback =
-        subsystemsRes.error &&
-        (await supabase.from('equipment_subsystems').select('id, name').limit(3000))
+
+      const [eqRes, stRes, sysRes, subTypeRes, legacySubRes, wpRes] = await Promise.all([
+        supabase.from('equipment').select('*').order('id', { ascending: true }).limit(5000),
+        supabase.from('system_types').select('id,name').order('id', { ascending: true }).limit(1000),
+        supabase.from('equipment_systems').select('id,name,system_type_id').order('id', { ascending: true }).limit(1000),
+        supabase.from('subsystem_types').select('id,code,full_name').order('code', { ascending: true }).limit(3000),
+        supabase.from('equipment_subsystems').select('id,name,description').order('id', { ascending: true }).limit(3000),
+        supabase.from('workplace').select('id,code,name').order('id', { ascending: true }).limit(500),
+      ])
+
       if (!active) return
-      if (equipmentRes.error && equipmentFallback?.error) setError(equipmentRes.error.message)
-      else setEquipment((equipmentRes.data ?? equipmentFallback?.data) || [])
-      setSubsystems((subsystemsRes.data ?? subsystemsFallback?.data) || [])
+
+      if (eqRes.error) {
+        setError(eqRes.error.message || 'Не удалось загрузить equipment')
+        setLoading(false)
+        return
+      }
+
+      setEquipment(eqRes.data || [])
+      if (!stRes.error) setSystemTypes(stRes.data || [])
+      if (!sysRes.error) setSystems(sysRes.data || [])
+      if (!subTypeRes.error) setSubsystemTypes(subTypeRes.data || [])
+      if (!legacySubRes.error) setLegacySubsystems(legacySubRes.data || [])
+      if (!wpRes.error) setWorkplaces(wpRes.data || [])
+
       setLoading(false)
     }
-    fetchEquipment()
+
+    void load()
     return () => {
       active = false
     }
   }, [supabase])
 
-  const subsystemById = useMemo(
-    () => new Map((subsystems || []).map((item) => [String(item.id), item])),
-    [subsystems],
-  )
-
-  const systems = useMemo(() => {
-    const values = new Set()
-    for (const item of equipment) {
-      if (item?.equipment_system) values.add(item.equipment_system)
-    }
-    return [...values].sort((a, b) => a.localeCompare(b, 'ru'))
-  }, [equipment])
-
-  const types = useMemo(() => {
-    const values = new Set()
-    for (const item of equipment) {
-      const typeName = item?.equipment_types?.name
-      if (typeName) values.add(typeName)
-    }
-    return [...values].sort((a, b) => a.localeCompare(b, 'ru'))
-  }, [equipment])
-
-  const statuses = useMemo(() => {
-    const values = new Set()
-    for (const item of equipment) {
-      if (item?.status) values.add(item.status)
-    }
-    return [...values].sort((a, b) => a.localeCompare(b, 'ru'))
-  }, [equipment])
-
-  const filteredEquipment = useMemo(() => {
-    const q = String(query || '').trim().toLowerCase()
-    return equipment.filter((item) => {
-      if (systemFilter !== 'all' && (item?.equipment_system || '') !== systemFilter) return false
-      if (typeFilter !== 'all' && (item?.equipment_types?.name || '') !== typeFilter) return false
-      if (statusFilter !== 'all' && (item?.status || '') !== statusFilter) return false
-      const subsystemName =
-        subsystemById.get(String(item?.subsystem_type_id || ''))?.name ||
-        subsystemById.get(String(item?.subsystem_catalog_id || ''))?.name ||
-        subsystemById.get(String(item?.subsystem_id || ''))?.name ||
-        ''
-      const stationNumber = String(item?.station_number || item?.name || '').trim()
-      if (!q) return true
-      const haystack = [stationNumber, subsystemName, item?.equipment_system, item?.equipment_types?.name, item?.status]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-      return haystack.includes(q)
+  const rows = useMemo(() => {
+    return (equipment || []).map((row) => {
+      const system = systemById.get(String(row.system_id || ''))
+      const subsystem = subsystemById.get(String(row.subsystem_type_id || row.subsystem_id || ''))
+      const systemName = system?.name || row.equipment_system || 'Без системы'
+      const typeName = systemTypeById.get(String(system?.system_type_id || '')) || 'Без типа'
+      const subsystemName = subsystem?.name || 'Без подсистемы'
+      const stationNumber = String(row.station_number || row.name || '').trim()
+      return {
+        ...row,
+        systemName,
+        typeName,
+        subsystemName,
+        stationNumber,
+      }
     })
-  }, [equipment, query, statusFilter, subsystemById, systemFilter, typeFilter])
+  }, [equipment, systemById, subsystemById, systemTypeById])
+
+  const hierarchy = useMemo(() => {
+    const typeMap = new Map()
+    for (const row of rows) {
+      if (!typeMap.has(row.typeName)) typeMap.set(row.typeName, new Map())
+      const systemMap = typeMap.get(row.typeName)
+      if (!systemMap.has(row.systemName)) systemMap.set(row.systemName, new Map())
+      const subsystemMap = systemMap.get(row.systemName)
+      if (!subsystemMap.has(row.subsystemName)) subsystemMap.set(row.subsystemName, [])
+      subsystemMap.get(row.subsystemName).push(row)
+    }
+    return [...typeMap.entries()].map(([typeName, systemMap]) => ({
+      typeName,
+      systems: [...systemMap.entries()].map(([systemName, subsystemMap]) => ({
+        systemName,
+        subsystems: [...subsystemMap.entries()].map(([subsystemName, list]) => ({
+          subsystemName,
+          list: [...list].sort((a, b) => String(a.stationNumber).localeCompare(String(b.stationNumber), 'ru', { numeric: true })),
+        })),
+      })),
+    }))
+  }, [rows])
+
+  const toggleSetValue = (setter, key) => {
+    setter((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const getDraft = (row) => {
+    const current = drafts[row.id]
+    if (current) return current
+    return {
+      system_id: row.system_id || '',
+      subsystem_type_id: row.subsystem_type_id || row.subsystem_id || '',
+      station_number: row.stationNumber || '',
+      control_point: row.control_point || '',
+      status: row.status || 'работа',
+    }
+  }
+
+  const setDraftField = (id, field, value) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] || {}),
+        [field]: value,
+      },
+    }))
+  }
+
+  const saveRow = async (row) => {
+    const draft = getDraft(row)
+    const payload = {
+      status: draft.status,
+      control_point: draft.control_point || null,
+      station_number: draft.station_number || null,
+    }
+
+    if (hasColumn('system_id')) {
+      payload.system_id = draft.system_id ? Number(draft.system_id) : null
+      payload.equipment_system = systemById.get(String(draft.system_id || ''))?.name || null
+    } else {
+      payload.equipment_system = row.equipment_system || null
+    }
+
+    if (hasColumn('subsystem_type_id')) {
+      payload.subsystem_type_id = draft.subsystem_type_id ? Number(draft.subsystem_type_id) : null
+    } else if (hasColumn('subsystem_id')) {
+      payload.subsystem_id = draft.subsystem_type_id ? Number(draft.subsystem_type_id) : null
+    }
+
+    setSavingId(row.id)
+    setError('')
+    const { error: saveError } = await supabase.from('equipment').update(payload).eq('id', row.id)
+    setSavingId(null)
+    if (saveError) {
+      setError(saveError.message || 'Не удалось сохранить строку')
+      return
+    }
+
+    setEquipment((prev) => prev.map((item) => (String(item.id) === String(row.id) ? { ...item, ...payload } : item)))
+    setDrafts((prev) => {
+      const next = { ...prev }
+      delete next[row.id]
+      return next
+    })
+  }
+
+  const addRow = async () => {
+    const payload = {
+      status: newRow.status || 'работа',
+      control_point: newRow.control_point || null,
+      station_number: newRow.station_number || null,
+    }
+
+    if (hasColumn('system_id')) {
+      payload.system_id = newRow.system_id ? Number(newRow.system_id) : null
+      payload.equipment_system = systemById.get(String(newRow.system_id || ''))?.name || null
+    } else {
+      payload.equipment_system = null
+    }
+
+    if (hasColumn('subsystem_type_id')) {
+      payload.subsystem_type_id = newRow.subsystem_type_id ? Number(newRow.subsystem_type_id) : null
+    } else if (hasColumn('subsystem_id')) {
+      payload.subsystem_id = newRow.subsystem_type_id ? Number(newRow.subsystem_type_id) : null
+    }
+
+    setAdding(true)
+    setError('')
+    const { data, error: addError } = await supabase.from('equipment').insert(payload).select('*').single()
+    setAdding(false)
+
+    if (addError) {
+      setError(addError.message || 'Не удалось добавить строку')
+      return
+    }
+
+    setEquipment((prev) => [...prev, data])
+    setNewRow({
+      system_id: '',
+      subsystem_type_id: '',
+      station_number: '',
+      control_point: '',
+      status: 'работа',
+    })
+  }
 
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-white p-6 shadow-lg">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-grayText">Оборудование</p>
-            <h1 className="text-xl font-semibold text-dark">Реестр оборудования</h1>
-          </div>
-        </div>
+        <p className="text-xs uppercase tracking-[0.2em] text-grayText">Оборудование</p>
+        <h1 className="text-xl font-semibold text-dark">База оборудования КТЦ</h1>
         <p className="mt-2 text-sm text-grayText">
-          {loading
-            ? 'Загрузка данных из Supabase…'
-            : `Записей в реестре: ${equipment.length}. После фильтрации: ${filteredEquipment.length}.`}
+          {loading ? 'Загрузка...' : `Строк в equipment: ${equipment.length}`}
         </p>
-        <div className="mt-3 grid gap-2 md:grid-cols-4">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Поиск по названию"
-            className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-dark placeholder:text-grayText"
-          />
+        {error && <p className="mt-2 text-sm text-rose-500">Ошибка: {error}</p>}
+      </div>
+
+      <div className="rounded-2xl border border-border bg-white p-4 shadow-lg">
+        <p className="text-xs uppercase tracking-[0.18em] text-grayText">Добавить единицу</p>
+        <div className="mt-2 grid gap-2 md:grid-cols-5">
           <select
-            value={systemFilter}
-            onChange={(event) => setSystemFilter(event.target.value)}
-            className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-dark"
+            value={newRow.system_id}
+            onChange={(e) => setNewRow((prev) => ({ ...prev, system_id: e.target.value }))}
+            className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
           >
-            <option value="all">Все системы</option>
+            <option value="">Система</option>
             {systems.map((system) => (
-              <option key={system} value={system}>
-                {system}
+              <option key={system.id} value={system.id}>
+                {system.name}
               </option>
             ))}
           </select>
+
           <select
-            value={typeFilter}
-            onChange={(event) => setTypeFilter(event.target.value)}
-            className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-dark"
+            value={newRow.subsystem_type_id}
+            onChange={(e) => setNewRow((prev) => ({ ...prev, subsystem_type_id: e.target.value }))}
+            className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
           >
-            <option value="all">Все типы</option>
-            {types.map((type) => (
-              <option key={type} value={type}>
-                {type}
+            <option value="">Подсистема</option>
+            {[...subsystemById.entries()].map(([id, info]) => (
+              <option key={id} value={id}>
+                {info.name}
               </option>
             ))}
           </select>
+
+          <input
+            value={newRow.station_number}
+            onChange={(e) => setNewRow((prev) => ({ ...prev, station_number: e.target.value }))}
+            placeholder="Станц. номер"
+            className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+          />
+
+          <input
+            value={newRow.control_point}
+            onChange={(e) => setNewRow((prev) => ({ ...prev, control_point: e.target.value }))}
+            placeholder="Щит / пост"
+            list="control-point-options"
+            className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+          />
+
           <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-dark"
+            value={newRow.status}
+            onChange={(e) => setNewRow((prev) => ({ ...prev, status: e.target.value }))}
+            className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
           >
-            <option value="all">Все статусы</option>
             {statuses.map((status) => (
               <option key={status} value={status}>
                 {status}
@@ -150,35 +348,143 @@ function EquipmentPage() {
             ))}
           </select>
         </div>
-        {error && <p className="text-sm text-orange-300">Ошибка: {error}</p>}
+        <datalist id="control-point-options">
+          {controlPointOptions.map((point) => (
+            <option key={point} value={point} />
+          ))}
+        </datalist>
+        <button
+          onClick={() => void addRow()}
+          disabled={adding}
+          className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition hover:bg-primary-hover disabled:opacity-60"
+        >
+          {adding ? 'Добавляем...' : 'Добавить'}
+        </button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
-        {filteredEquipment.map((eq) => (
-          <div
-            key={eq.id || `${eq.station_number || eq.name}-${eq.equipment_system}`}
-            className="rounded-xl border border-border bg-background p-4 text-sm text-dark transition hover:border-accent/50"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-grayText">
-              <span>{eq.equipment_system || 'Без системы'}</span>
-              <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-100">
-                {eq.status || 'В работе'}
-              </span>
+      <div className="space-y-3">
+        {hierarchy.map((typeGroup) => {
+          const typeKey = `type:${typeGroup.typeName}`
+          const typeOpen = expandedTypes.has('all') || expandedTypes.has(typeKey)
+          return (
+            <div key={typeKey} className="rounded-2xl border border-border bg-white shadow-lg">
+              <button
+                onClick={() => toggleSetValue(setExpandedTypes, typeKey)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left"
+              >
+                <span className="text-sm font-semibold text-dark">{typeGroup.typeName}</span>
+                <span className="text-xs text-grayText">{typeOpen ? 'Скрыть' : 'Показать'}</span>
+              </button>
+
+              {typeOpen && (
+                <div className="space-y-2 border-t border-border px-3 py-3">
+                  {typeGroup.systems.map((systemGroup) => {
+                    const systemKey = `system:${typeGroup.typeName}:${systemGroup.systemName}`
+                    const systemOpen = expandedSystems.has(systemKey)
+                    return (
+                      <div key={systemKey} className="rounded-xl border border-border bg-background/60">
+                        <button
+                          onClick={() => toggleSetValue(setExpandedSystems, systemKey)}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left"
+                        >
+                          <span className="text-sm font-semibold text-dark">{systemGroup.systemName}</span>
+                          <span className="text-xs text-grayText">{systemOpen ? 'Скрыть' : 'Показать'}</span>
+                        </button>
+
+                        {systemOpen && (
+                          <div className="space-y-2 border-t border-border px-2 py-2">
+                            {systemGroup.subsystems.map((subGroup) => {
+                              const subKey = `sub:${systemKey}:${subGroup.subsystemName}`
+                              const subOpen = expandedSubsystems.has(subKey)
+                              return (
+                                <div key={subKey} className="rounded-lg border border-border bg-white">
+                                  <button
+                                    onClick={() => toggleSetValue(setExpandedSubsystems, subKey)}
+                                    className="flex w-full items-center justify-between px-3 py-2 text-left"
+                                  >
+                                    <span className="text-sm font-medium text-dark">{subGroup.subsystemName}</span>
+                                    <span className="text-xs text-grayText">{subOpen ? 'Скрыть' : 'Показать'}</span>
+                                  </button>
+
+                                  {subOpen && (
+                                    <div className="overflow-x-auto border-t border-border">
+                                      <table className="min-w-full text-xs">
+                                        <thead className="bg-background text-grayText">
+                                          <tr>
+                                            <th className="px-2 py-2 text-left">ID</th>
+                                            <th className="px-2 py-2 text-left">Станц. номер</th>
+                                            <th className="px-2 py-2 text-left">Щит</th>
+                                            <th className="px-2 py-2 text-left">Статус</th>
+                                            <th className="px-2 py-2 text-left">Действие</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {subGroup.list.map((row) => {
+                                            const draft = getDraft(row)
+                                            return (
+                                              <tr key={row.id} className="border-t border-border">
+                                                <td className="px-2 py-2 text-grayText">{row.id}</td>
+                                                <td className="px-2 py-2">
+                                                  <input
+                                                    value={draft.station_number}
+                                                    onChange={(e) => setDraftField(row.id, 'station_number', e.target.value)}
+                                                    className="w-24 rounded border border-border bg-white px-2 py-1"
+                                                  />
+                                                </td>
+                                                <td className="px-2 py-2">
+                                                  <input
+                                                    value={draft.control_point}
+                                                    onChange={(e) => setDraftField(row.id, 'control_point', e.target.value)}
+                                                    list="control-point-options"
+                                                    className="w-36 rounded border border-border bg-white px-2 py-1"
+                                                  />
+                                                </td>
+                                                <td className="px-2 py-2">
+                                                  <select
+                                                    value={draft.status}
+                                                    onChange={(e) => setDraftField(row.id, 'status', e.target.value)}
+                                                    className="rounded border border-border bg-white px-2 py-1"
+                                                  >
+                                                    {statuses.map((status) => (
+                                                      <option key={status} value={status}>
+                                                        {status}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </td>
+                                                <td className="px-2 py-2">
+                                                  <button
+                                                    onClick={() => void saveRow(row)}
+                                                    disabled={savingId === row.id}
+                                                    className="rounded-full border border-border px-3 py-1 text-[11px] text-dark transition hover:border-accent/70 disabled:opacity-60"
+                                                  >
+                                                    {savingId === row.id ? '...' : 'Сохранить'}
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            )
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
-            <p className="mt-2 text-lg font-semibold text-dark">
-              {(subsystemById.get(String(eq?.subsystem_catalog_id || ''))?.name ||
-                subsystemById.get(String(eq?.subsystem_type_id || ''))?.name ||
-                subsystemById.get(String(eq?.subsystem_id || ''))?.name ||
-                'Подсистема') +
-                ' ' +
-                String(eq?.station_number || eq?.name || eq.id || '').trim()}
-            </p>
-            <p className="text-xs text-grayText">{eq?.equipment_types?.name || eq?.type_id || 'Тип не указан'}</p>
-          </div>
-        ))}
-        {!loading && !error && filteredEquipment.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border bg-background p-4 text-sm text-grayText">
-            По текущим фильтрам записей нет.
+          )
+        })}
+
+        {!loading && hierarchy.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-border bg-white p-4 text-sm text-grayText">
+            В equipment нет данных.
           </div>
         )}
       </div>
