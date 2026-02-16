@@ -38,6 +38,8 @@ const normalizeToken = (value) =>
     .replace(/ё/g, 'е')
     .replace(/[^a-zа-я0-9]+/gi, '')
 
+const normalizeStationValue = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+
 function WorkplacePage() {
   const { unit, workplaceId } = useParams()
   const supabase = useSupabase()
@@ -45,6 +47,7 @@ function WorkplacePage() {
   const profile = useProfile()
   const scheduleService = useMemo(() => createScheduleService(supabase), [supabase])
   const handoverService = useMemo(() => createShiftHandoverService(supabase), [supabase])
+
   const [workplace, setWorkplace] = useState(null)
   const [assignee, setAssignee] = useState(null)
   const [equipmentList, setEquipmentList] = useState([])
@@ -58,6 +61,11 @@ function WorkplacePage() {
   const [journalId, setJournalId] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+
+  const subsystemsById = useMemo(
+    () => new Map((equipmentSubsystems || []).map((row) => [String(row.id), row])),
+    [equipmentSubsystems],
+  )
 
   const normalizeEquipmentStatus = (value) => {
     const text = normalizeKey(value)
@@ -81,9 +89,13 @@ function WorkplacePage() {
     return matches[matches.length - 1]
   }
 
-  const deriveDispatchLabel = (equipmentName) => {
+  const deriveDispatchLabel = (equipmentName, stationNumber) => {
+    const station = normalizeStationValue(stationNumber)
+    if (station) return station
+
     const source = String(equipmentName || '').replace(/\s+/g, ' ').trim()
     if (!source) return ''
+
     const patterns = [
       /ПНД\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
       /ПВД\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
@@ -95,6 +107,7 @@ function WorkplacePage() {
       /ТА\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
       /КА\s*[-–]?\s*№?\s*(\d+[А-ЯA-Z]?)/i,
     ]
+
     for (const regex of patterns) {
       const match = source.match(regex)
       if (match) {
@@ -102,6 +115,7 @@ function WorkplacePage() {
         return `${label} ${String(match[1]).toUpperCase()}`
       }
     }
+
     return source.length > 24 ? `${source.slice(0, 24)}…` : source
   }
 
@@ -115,6 +129,30 @@ function WorkplacePage() {
       }) || null
     )
   }
+
+  const equipmentGroups = useMemo(() => {
+    const byKey = new Map()
+    for (const item of equipmentList) {
+      const systemName = item?.systemName || item?.equipment_system || 'Без системы'
+      const subsystemName = item?.subsystemName || 'Без подсистемы'
+      const key = `${systemName}::${subsystemName}`
+      if (!byKey.has(key)) byKey.set(key, { systemName, subsystemName, units: [] })
+      byKey.get(key).units.push(item)
+    }
+
+    return [...byKey.values()]
+      .map((group) => ({
+        ...group,
+        units: [...group.units].sort((a, b) =>
+          String(a.stationNumber || '').localeCompare(String(b.stationNumber || ''), 'ru', { numeric: true }),
+        ),
+      }))
+      .sort((a, b) => {
+        const bySystem = a.systemName.localeCompare(b.systemName, 'ru')
+        if (bySystem !== 0) return bySystem
+        return a.subsystemName.localeCompare(b.subsystemName, 'ru')
+      })
+  }, [equipmentList])
 
   useEffect(() => {
     let active = true
@@ -199,42 +237,50 @@ function WorkplacePage() {
       if (!workplace?.code && !workplace?.name) return
       const { data, error: eqError } = await supabase
         .from('equipment')
-        .select('id, name, status, equipment_system, type_id, control_point')
-        .order('name', { ascending: true })
+        .select('id, name, station_number, status, equipment_system, type_id, control_point, subsystem_id')
+        .order('id', { ascending: true })
         .limit(2000)
       if (!active || eqError) return
+
       const workplaceControlVariants = new Set(
         [workplace?.code, workplace?.name]
           .filter(Boolean)
           .map((value) => compactControlPoint(value)),
       )
+
       const scopedEquipment = (data || []).filter((item) =>
         workplaceControlVariants.has(compactControlPoint(item?.control_point)),
       )
-      const mappedEquipment = scopedEquipment
-        .map((item) => {
-          const subsystem = findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
-          const index = extractEquipmentIndex(item?.name)
-          const appendIndex = Boolean(index && subsystem?.name && !/\d/.test(String(subsystem.name)))
-          const dispatchLabel = subsystem?.name
-            ? `${subsystem.name}${appendIndex ? ` ${index}` : ''}`
-            : deriveDispatchLabel(item?.name)
-          return { ...item, dispatchLabel, subsystemName: subsystem?.name || null }
-        })
-        .filter((item) => String(item.dispatchLabel || '').trim())
-      mappedEquipment.sort((a, b) => String(a.dispatchLabel || '').localeCompare(String(b.dispatchLabel || ''), 'ru'))
+
+      const mappedEquipment = scopedEquipment.map((item) => {
+        const byId = item?.subsystem_id ? subsystemsById.get(String(item.subsystem_id)) : null
+        const byName = byId ? null : findSubsystemByEquipmentName(item?.name, equipmentSubsystems || [])
+        const subsystem = byId || byName
+        const fallbackStation = extractEquipmentIndex(item?.name)
+        const stationNumber =
+          normalizeStationValue(item?.station_number) || normalizeStationValue(item?.name) || fallbackStation
+        const dispatchLabel = deriveDispatchLabel(item?.name, stationNumber)
+
+        return {
+          ...item,
+          stationNumber,
+          dispatchLabel,
+          subsystemName: subsystem?.name || null,
+          systemName: subsystem?.system || item?.equipment_system || null,
+        }
+      })
+
       if (active) setEquipmentList(mappedEquipment)
     }
     void loadEquipment()
     return () => {
       active = false
     }
-  }, [supabase, workplace?.code, workplace?.name, equipmentSubsystems])
+  }, [supabase, workplace?.code, workplace?.name, equipmentSubsystems, subsystemsById])
 
   useEffect(() => {
     if (!workplace?.code) {
       setEquipmentList([])
-      return
     }
   }, [workplace?.code])
 
@@ -411,41 +457,44 @@ function WorkplacePage() {
                 <div className="grid gap-3 lg:grid-cols-2">
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Состав оборудования</p>
-                    <div className="mt-2 space-y-1">
-                      {equipmentList.map((item, idx) => (
-                        <div
-                          key={`${item.id || item.code || idx}`}
-                          className="relative flex items-center gap-2 border-b border-white/10 py-1 text-xs text-slate-200 last:border-b-0"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))}
-                            className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-white/20 bg-slate-900 px-1 text-[10px] text-slate-200"
-                            title="Изменить состояние"
-                          >
-                            {idx + 1}
-                          </button>
-                          <span className={`font-semibold ${equipmentStatusClass(item.status)}`}>
-                            {item.dispatchLabel}
-                          </span>
-                          {equipmentSavingId === item.id && <span className="ml-auto text-[10px] text-slate-400">...</span>}
-                          {equipmentMenuId === item.id && (
-                            <div className="absolute left-0 top-7 z-20 w-28 rounded-md border border-white/15 bg-slate-900 p-1 shadow-xl">
-                              {['Работа', 'Резерв', 'Ремонт'].map((statusOption) => (
+                    <div className="mt-2 space-y-2">
+                      {equipmentGroups.map((group) => (
+                        <div key={`${group.systemName}-${group.subsystemName}`} className="rounded-md border border-white/10 bg-white/5 p-2">
+                          <p className="text-[10px] text-slate-400">
+                            {group.systemName} · {group.subsystemName}
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {group.units.map((item) => (
+                              <div key={item.id} className="relative">
                                 <button
-                                  key={statusOption}
                                   type="button"
-                                  onClick={() => void handleSetEquipmentStatus(item, statusOption)}
-                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                  onClick={() => setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))}
+                                  className={`rounded border border-white/20 bg-slate-900 px-2 py-1 text-[11px] font-semibold ${equipmentStatusClass(item.status)}`}
+                                  title="Изменить состояние"
                                 >
-                                  {statusOption}
+                                  {item.stationNumber || item.dispatchLabel}
                                 </button>
-                              ))}
-                            </div>
-                          )}
+                                {equipmentMenuId === item.id && (
+                                  <div className="absolute left-0 top-8 z-20 w-28 rounded-md border border-white/15 bg-slate-900 p-1 shadow-xl">
+                                    {['Работа', 'Резерв', 'Ремонт'].map((statusOption) => (
+                                      <button
+                                        key={statusOption}
+                                        type="button"
+                                        onClick={() => void handleSetEquipmentStatus(item, statusOption)}
+                                        className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                      >
+                                        {statusOption}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                {equipmentSavingId === item.id && <span className="ml-1 text-[10px] text-slate-400">...</span>}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ))}
-                      {!equipmentList.length && (
+                      {!equipmentGroups.length && (
                         <p className="text-xs text-slate-500">Закрепленное оборудование пока не найдено.</p>
                       )}
                     </div>

@@ -4,6 +4,7 @@ import { useSupabase } from '../context/SupabaseProvider'
 function EquipmentPage() {
   const supabase = useSupabase()
   const [equipment, setEquipment] = useState([])
+  const [subsystems, setSubsystems] = useState([])
   const [query, setQuery] = useState('')
   const [systemFilter, setSystemFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
@@ -16,14 +17,18 @@ function EquipmentPage() {
     async function fetchEquipment() {
       setLoading(true)
       setError('')
-      const { data, error: err } = await supabase
-        .from('equipment')
-        .select('id, name, status, equipment_system, type_id, equipment_types:equipment_types(name)')
-        .order('name', { ascending: true })
-        .limit(2000)
+      const [equipmentRes, subsystemsRes] = await Promise.all([
+        supabase
+          .from('equipment')
+          .select('id, station_number, name, status, equipment_system, subsystem_id, type_id, equipment_types:equipment_types(name)')
+          .order('id', { ascending: true })
+          .limit(2000),
+        supabase.from('equipment_subsystems').select('id, name, system').limit(3000),
+      ])
       if (!active) return
-      if (err) setError(err.message)
-      else setEquipment(data ?? [])
+      if (equipmentRes.error) setError(equipmentRes.error.message)
+      else setEquipment(equipmentRes.data ?? [])
+      if (!subsystemsRes.error) setSubsystems(subsystemsRes.data ?? [])
       setLoading(false)
     }
     fetchEquipment()
@@ -31,6 +36,11 @@ function EquipmentPage() {
       active = false
     }
   }, [supabase])
+
+  const subsystemById = useMemo(
+    () => new Map((subsystems || []).map((item) => [String(item.id), item])),
+    [subsystems],
+  )
 
   const systems = useMemo(() => {
     const values = new Set()
@@ -63,14 +73,16 @@ function EquipmentPage() {
       if (systemFilter !== 'all' && (item?.equipment_system || '') !== systemFilter) return false
       if (typeFilter !== 'all' && (item?.equipment_types?.name || '') !== typeFilter) return false
       if (statusFilter !== 'all' && (item?.status || '') !== statusFilter) return false
+      const subsystemName = subsystemById.get(String(item?.subsystem_id || ''))?.name || ''
+      const stationNumber = String(item?.station_number || item?.name || '').trim()
       if (!q) return true
-      const haystack = [item?.name, item?.equipment_system, item?.equipment_types?.name, item?.status]
+      const haystack = [stationNumber, subsystemName, item?.equipment_system, item?.equipment_types?.name, item?.status]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
       return haystack.includes(q)
     })
-  }, [equipment, query, statusFilter, systemFilter, typeFilter])
+  }, [equipment, query, statusFilter, subsystemById, systemFilter, typeFilter])
 
   return (
     <div className="space-y-4">
@@ -136,7 +148,7 @@ function EquipmentPage() {
       <div className="grid gap-3 md:grid-cols-3">
         {filteredEquipment.map((eq) => (
           <div
-            key={eq.id || `${eq.name}-${eq.equipment_system}`}
+            key={eq.id || `${eq.station_number || eq.name}-${eq.equipment_system}`}
             className="rounded-xl border border-border bg-background p-4 text-sm text-dark transition hover:border-accent/50"
           >
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-grayText">
@@ -145,8 +157,14 @@ function EquipmentPage() {
                 {eq.status || 'В работе'}
               </span>
             </div>
-            <p className="mt-2 text-lg font-semibold text-dark">{eq.name || eq.id || 'Без имени'}</p>
-            <p className="text-xs text-grayText">{eq?.equipment_types?.name || 'Тип не указан'}</p>
+            <p className="mt-2 text-lg font-semibold text-dark">
+              {(subsystemById.get(String(eq?.subsystem_id || ''))?.name || 'Подсистема') +
+                ' ' +
+                String(eq?.station_number || eq?.name || eq.id || '').trim()}
+            </p>
+            <p className="text-xs text-grayText">
+              {eq?.equipment_types?.name || 'Тип не указан'}
+            </p>
           </div>
         ))}
         {!loading && !error && filteredEquipment.length === 0 && (
