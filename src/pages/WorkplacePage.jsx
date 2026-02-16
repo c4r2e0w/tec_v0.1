@@ -60,6 +60,18 @@ const getCurrentShiftSlot = () => {
 }
 
 const shiftPeriodLabel = (type) => (type === 'night' ? '21:00–09:00' : '09:00–21:00')
+const shiftSlotIndex = (dateStr, shiftType) => {
+  const day = Math.floor(parseIsoLocalDate(dateStr).getTime() / 86400000)
+  return day * 2 + (shiftType === 'night' ? 1 : 0)
+}
+const shiftFromIndex = (index) => {
+  const day = Math.floor(index / 2)
+  const type = index % 2 === 0 ? 'day' : 'night'
+  return {
+    date: addDays('1970-01-01', day),
+    type,
+  }
+}
 
 const getTagValue = (tags, prefix) => {
   const list = Array.isArray(tags) ? tags : []
@@ -99,6 +111,14 @@ function WorkplacePage() {
   const viewedShiftPeriod = useMemo(() => shiftPeriodLabel(statementShiftType), [statementShiftType])
   const currentShift = useMemo(() => getCurrentShiftSlot(), [])
   const isViewedCurrentShift = statementShiftDate === currentShift.date && statementShiftType === currentShift.type
+  const canMoveForwardShift = useMemo(
+    () => shiftSlotIndex(statementShiftDate, statementShiftType) < shiftSlotIndex(currentShift.date, currentShift.type),
+    [statementShiftDate, statementShiftType, currentShift.date, currentShift.type],
+  )
+  const canSelectNightOnDate = useMemo(() => {
+    if (statementShiftDate !== currentShift.date) return true
+    return currentShift.type === 'night'
+  }, [statementShiftDate, currentShift.date, currentShift.type])
 
   const subsystemsById = useMemo(
     () => new Map((equipmentSubsystems || []).map((row) => [String(row.id), row])),
@@ -288,23 +308,36 @@ function WorkplacePage() {
       const slot = getCurrentShiftSlot()
       setStatementShiftDate(slot.date)
       setStatementShiftType(slot.type)
+      setLoading(false)
+    }
+    void load()
+    return () => {
+      active = false
+    }
+  }, [scheduleService, unit, workplaceId])
 
-      const now = new Date()
-      const today = toIsoLocalDate(now)
-      const shiftType = now.getHours() >= 21 || now.getHours() < 9 ? 'night' : 'day'
-      const shiftDate = shiftType === 'night' && now.getHours() < 9 ? addDays(today, -1) : today
-      const sessionRes = await handoverService.fetchSession({ unit, shiftDate, shiftType })
+  useEffect(() => {
+    let active = true
+    async function loadViewedAssignee() {
+      if (!workplace) {
+        setAssignee(null)
+        return
+      }
+      const sessionRes = await handoverService.fetchSession({
+        unit,
+        shiftDate: statementShiftDate,
+        shiftType: statementShiftType,
+      })
       if (!active) return
       const sessionId = sessionRes?.data?.id
       if (!sessionId) {
         setAssignee(null)
-        setLoading(false)
         return
       }
       const assignmentsRes = await handoverService.fetchAssignments({ sessionId })
       if (!active) return
       const wpIdKey = normalizeKey(workplaceId)
-      const wpCodeKey = normalizeKey(wp?.code)
+      const wpCodeKey = normalizeKey(workplace?.code)
       const assignment = (assignmentsRes?.data || []).find((row) => {
         if (row?.is_present === false) return false
         const assignmentKey = normalizeKey(row?.workplace_code)
@@ -325,13 +358,21 @@ function WorkplacePage() {
       } else {
         setAssignee(null)
       }
-      setLoading(false)
     }
-    void load()
+    void loadViewedAssignee()
     return () => {
       active = false
     }
-  }, [handoverService, scheduleService, unit, workplaceId])
+  }, [handoverService, unit, statementShiftDate, statementShiftType, workplace, workplaceId])
+
+  useEffect(() => {
+    const viewed = shiftSlotIndex(statementShiftDate, statementShiftType)
+    const current = shiftSlotIndex(currentShift.date, currentShift.type)
+    if (viewed > current) {
+      setStatementShiftDate(currentShift.date)
+      setStatementShiftType(currentShift.type)
+    }
+  }, [statementShiftDate, statementShiftType, currentShift.date, currentShift.type])
 
   useEffect(() => {
     let active = true
@@ -684,6 +725,79 @@ function WorkplacePage() {
                 <p className="text-sm text-slate-300">Сотрудник не назначен</p>
               )}
             </div>
+            {activeTab === 'daily' && (
+              <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-2.5">
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = shiftFromIndex(shiftSlotIndex(statementShiftDate, statementShiftType) - 1)
+                      setStatementShiftDate(next.date)
+                      setStatementShiftType(next.type)
+                    }}
+                    className="rounded-full border border-white/10 px-2 py-1 text-slate-300 hover:border-emerald-400/60"
+                  >
+                    ←
+                  </button>
+                  <input
+                    type="date"
+                    value={statementShiftDate}
+                    max={currentShift.date}
+                    onChange={(e) => {
+                      const nextDate = e.target.value
+                      setStatementShiftDate(nextDate)
+                      const viewed = shiftSlotIndex(nextDate, statementShiftType)
+                      const current = shiftSlotIndex(currentShift.date, currentShift.type)
+                      if (viewed > current) setStatementShiftType(currentShift.type)
+                    }}
+                    className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
+                  />
+                  <select
+                    value={statementShiftType}
+                    onChange={(e) => {
+                      const nextType = e.target.value
+                      const viewed = shiftSlotIndex(statementShiftDate, nextType)
+                      const current = shiftSlotIndex(currentShift.date, currentShift.type)
+                      if (viewed > current) return
+                      setStatementShiftType(nextType)
+                    }}
+                    className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
+                  >
+                    <option value="day">День</option>
+                    <option value="night" disabled={!canSelectNightOnDate}>
+                      Ночь
+                    </option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!canMoveForwardShift) return
+                      const next = shiftFromIndex(shiftSlotIndex(statementShiftDate, statementShiftType) + 1)
+                      setStatementShiftDate(next.date)
+                      setStatementShiftType(next.type)
+                    }}
+                    disabled={!canMoveForwardShift}
+                    className="rounded-full border border-white/10 px-2 py-1 text-slate-300 hover:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const slot = getCurrentShiftSlot()
+                      setStatementShiftDate(slot.date)
+                      setStatementShiftType(slot.type)
+                    }}
+                    className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-1 text-emerald-200"
+                  >
+                    Текущая смена
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-slate-300">
+                  {new Date(statementShiftDate).toLocaleDateString('ru-RU')} · {statementShiftType === 'night' ? 'Ночь' : 'День'} · Период {viewedShiftPeriod} · Вахта {viewedShiftCode}
+                </p>
+              </div>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => setActiveTab('daily')}
@@ -816,58 +930,6 @@ function WorkplacePage() {
                     </div>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                    <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-300">Лента суточной ведомости</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                        <button
-                          type="button"
-                          onClick={() => setStatementShiftDate((prev) => addDays(prev, -1))}
-                          className="rounded-full border border-white/10 px-2 py-1 text-slate-300 hover:border-emerald-400/60"
-                        >
-                          ←
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const picked = window.prompt('Введите дату в формате ГГГГ-ММ-ДД', statementShiftDate)
-                            if (!picked) return
-                            if (/^\d{4}-\d{2}-\d{2}$/.test(picked)) setStatementShiftDate(picked)
-                          }}
-                          className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
-                        >
-                          {new Date(statementShiftDate).toLocaleDateString('ru-RU')}
-                        </button>
-                        <select
-                          value={statementShiftType}
-                          onChange={(e) => setStatementShiftType(e.target.value)}
-                          className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
-                        >
-                          <option value="day">День</option>
-                          <option value="night">Ночь</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => setStatementShiftDate((prev) => addDays(prev, 1))}
-                          className="rounded-full border border-white/10 px-2 py-1 text-slate-300 hover:border-emerald-400/60"
-                        >
-                          →
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const slot = getCurrentShiftSlot()
-                            setStatementShiftDate(slot.date)
-                            setStatementShiftType(slot.type)
-                          }}
-                          className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-1 text-emerald-200"
-                        >
-                          Текущая смена
-                        </button>
-                      </div>
-                      <p className="mt-2 text-xs text-slate-300">
-                        {new Date(statementShiftDate).toLocaleDateString('ru-RU')} · {statementShiftType === 'night' ? 'Ночь' : 'День'} · Период {viewedShiftPeriod} · Вахта {viewedShiftCode}
-                      </p>
-                    </div>
                     <div className="mt-2 space-y-1.5">
                       {statementEntries.map((item) => (
                         <p key={item.id} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-100">
