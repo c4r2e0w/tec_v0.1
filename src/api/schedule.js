@@ -105,32 +105,3 @@ export async function fetchWorkplaces({ supabase, unit }) {
   if (unit) query = query.or(`unit.eq.${unit},unit.is.null`)
   return query
 }
-
-export async function uploadScheduleImportSource({ supabase, unit, file, userId }) {
-  if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
-  if (!file) return { data: null, error: new Error('Файл не выбран') }
-  const safeUnit = String(unit || 'unknown')
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, '_')
-  const safeName = String(file.name || 'import')
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]/g, '_')
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const uid = String(userId || 'anon').replace(/[^a-z0-9_-]/gi, '_')
-  const path = `${safeUnit}/${stamp}-${uid}-${safeName}`
-  const upload = await supabase.storage.from('schedule-imports').upload(path, file, {
-    upsert: false,
-    contentType: file.type || 'application/octet-stream',
-  })
-  if (upload.error) {
-    const rawMessage = String(upload.error?.message || '')
-    if (rawMessage.toLowerCase().includes('bucket not found')) {
-      return {
-        data: null,
-        error: new Error('Bucket `schedule-imports` не найден. Создайте его в Supabase Storage или продолжайте без сохранения файла в Storage.'),
-      }
-    }
-    return { data: null, error: upload.error }
-  }
-  return { data: { path, bucket: 'schedule-imports', size: file.size, mime: file.type || '' }, error: null }
-}

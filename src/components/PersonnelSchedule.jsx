@@ -550,7 +550,6 @@ function PersonnelSchedule(props) {
     menuCell,
     shiftMenuPosition,
     shiftOptions,
-    onUploadImportSource,
     onBackToCard,
   } = props
 
@@ -563,8 +562,6 @@ function PersonnelSchedule(props) {
   const [importError, setImportError] = useState('')
   const [importMessage, setImportMessage] = useState('')
   const [importing, setImporting] = useState(false)
-  const [uploadingSource, setUploadingSource] = useState(false)
-  const [sourceUploadInfo, setSourceUploadInfo] = useState(null)
   const statusBadge = useMemo(() => {
     const isLoading = loadingStaff || loadingSchedule
     if (staffError || scheduleError) {
@@ -713,37 +710,6 @@ function PersonnelSchedule(props) {
       setImportMessage('')
     }
   }, [employeeNameIndex, importText])
-
-  const handleUploadSourceFile = useCallback(
-    async (event) => {
-      const file = event.target?.files?.[0]
-      if (!file) return
-      if (!onUploadImportSource) {
-        setImportError('Загрузка файла не настроена.')
-        return
-      }
-      setUploadingSource(true)
-      setImportError('')
-      setImportMessage('')
-      const res = await onUploadImportSource(file)
-      setUploadingSource(false)
-      if (res?.error) {
-        const msg = String(res.error.message || '')
-        if (msg.toLowerCase().includes('bucket') && msg.toLowerCase().includes('not found')) {
-          setSourceUploadInfo(null)
-          setImportError('')
-          setImportMessage('Storage пока не настроен (bucket не найден), но черновик можно заполнить вручную.')
-        } else {
-          setImportError(res.error.message || 'Не удалось загрузить файл в Storage.')
-        }
-        return
-      }
-      setSourceUploadInfo(res?.data || null)
-      setImportMessage('Файл загружен в Storage. Теперь вставьте распознанный текст и подтвердите импорт.')
-      event.target.value = ''
-    },
-    [onUploadImportSource],
-  )
 
   const applyImportDraft = useCallback(async () => {
     const date = String(importDate || todayIso).trim()
@@ -992,17 +958,7 @@ function PersonnelSchedule(props) {
       </div>
       <div className="mt-3 rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-xs text-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Импорт графика (фото / PDF)</p>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-100 transition hover:border-sky-400/60">
-            <input
-              type="file"
-              accept=".pdf,image/*,.xlsx,.xls,.csv,.txt"
-              onChange={handleUploadSourceFile}
-              disabled={uploadingSource}
-              className="hidden"
-            />
-            {uploadingSource ? 'Загрузка...' : 'Загрузить источник'}
-          </label>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Импорт графика (ручной)</p>
         </div>
         <div className="mt-2 grid gap-2 md:grid-cols-3">
           <label className="flex flex-col gap-1">
@@ -1047,13 +1003,8 @@ function PersonnelSchedule(props) {
           placeholder="Вставьте распознанный текст построчно: Фамилия Имя Отчество 12"
           className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white placeholder:text-slate-500"
         />
-        {sourceUploadInfo?.path && (
-          <p className="mt-2 text-[11px] text-slate-400">
-            Источник в Storage: <span className="font-mono text-slate-300">{sourceUploadInfo.path}</span>
-          </p>
-        )}
         <p className="mt-1 text-[11px] text-slate-500">
-          Распознавание отключено. Вставьте текст графика вручную и сформируйте черновик.
+          Вставьте текст графика вручную и сформируйте черновик.
         </p>
         {!!importRows.length && (
           <div className="mt-3 rounded-xl border border-white/10 bg-slate-900/60 p-2">

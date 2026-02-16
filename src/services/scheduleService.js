@@ -8,7 +8,6 @@ import {
   fetchScheduleRange,
   fetchShiftTemplates,
   fetchWorkplaces,
-  uploadScheduleImportSource,
 } from '../api/schedule'
 
 /**
@@ -25,6 +24,5 @@ export function createScheduleService(supabase) {
     createEntry: (payload) => createScheduleEntry({ supabase, payload }),
     deleteEntry: ({ employeeId, date }) => deleteScheduleEntry({ supabase, employeeId, date }),
     createOverride: (payload) => createOverride({ supabase, payload }),
-    uploadImportSource: ({ unit, file, userId }) => uploadScheduleImportSource({ supabase, unit, file, userId }),
   }
 }

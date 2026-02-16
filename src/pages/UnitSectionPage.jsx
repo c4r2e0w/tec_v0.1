@@ -108,10 +108,18 @@ const isChiefPosition = (value) => {
   return normalized.includes('начальник смены') || normalized.includes('нач смены')
 }
 const detectEmployeeSectionKey = (employee) => {
-  const raw = `${employee?.division || ''} ${employee?.department || ''} ${employee?.position || ''}`
-  const normalized = normalizeRoleTextValue(raw)
-  if (normalized.includes('турбин')) return 'turbine'
-  if (normalized.includes('котел')) return 'boiler'
+  const division = normalizeRoleTextValue(employee?.division || '')
+  const department = normalizeRoleTextValue(employee?.department || '')
+  const position = normalizeRoleTextValue(employee?.position || '')
+  const full = `${division} ${department} ${position}`.trim()
+  const isBoiler = full.includes('котел') || position.includes(' ко') || position.includes('упк') || position.includes('по ко')
+  const isTurbine = full.includes('турбин') || position.includes(' то') || position.includes('упт') || position.includes('по то')
+  if (isBoiler && !isTurbine) return 'boiler'
+  if (isTurbine && !isBoiler) return 'turbine'
+  if (division.includes('котел')) return 'boiler'
+  if (division.includes('турбин')) return 'turbine'
+  if (position.includes('котел')) return 'boiler'
+  if (position.includes('турбин')) return 'turbine'
   return 'other'
 }
 const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
@@ -1826,18 +1834,6 @@ function UnitSectionPage() {
     })
   }
 
-  const handleUploadImportSource = useCallback(
-    async (file) => {
-      if (!file) return { data: null, error: new Error('Файл не выбран') }
-      return scheduleService.uploadImportSource({
-        unit,
-        file,
-        userId: user?.id || 'anon',
-      })
-    },
-    [scheduleService, unit, user?.id],
-  )
-
   const renderRosterColumn = useCallback((title, rows, editable = false) => {
     return (
       <div className="rounded-xl border border-border bg-background/70 p-3">
@@ -2326,7 +2322,6 @@ function UnitSectionPage() {
                 menuCell={menuCell}
                 shiftMenuPosition={shiftMenuPosition}
                 shiftOptions={shiftOptions}
-                onUploadImportSource={handleUploadImportSource}
                 pentagramTypesInSchedule={pentagramTypesInSchedule}
                 isPersonnel
                 ShiftIcon={ShiftIcon}
