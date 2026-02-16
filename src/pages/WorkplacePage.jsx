@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 import { createScheduleService } from '../services/scheduleService'
 import { createShiftHandoverService } from '../services/shiftHandoverService'
+import { useAuth } from '../hooks/useAuth'
+import { useProfile } from '../hooks/useProfile'
 
 const toIsoLocalDate = (date) => {
   const y = date.getFullYear()
@@ -28,10 +30,18 @@ const normalizeKey = (value) =>
 function WorkplacePage() {
   const { unit, workplaceId } = useParams()
   const supabase = useSupabase()
+  const { user } = useAuth()
+  const profile = useProfile()
   const scheduleService = useMemo(() => createScheduleService(supabase), [supabase])
   const handoverService = useMemo(() => createShiftHandoverService(supabase), [supabase])
   const [workplace, setWorkplace] = useState(null)
   const [assignee, setAssignee] = useState(null)
+  const [equipmentList, setEquipmentList] = useState([])
+  const [activeTab, setActiveTab] = useState('daily')
+  const [dailyEntries, setDailyEntries] = useState([])
+  const [dailyInput, setDailyInput] = useState('')
+  const [savingEntry, setSavingEntry] = useState(false)
+  const [journalId, setJournalId] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -78,7 +88,11 @@ function WorkplacePage() {
         const fio = [assignment.employees.last_name, assignment.employees.first_name, assignment.employees.middle_name]
           .filter(Boolean)
           .join(' ')
-        setAssignee({ id: assignment.employee_id, fio: fio || `ID ${assignment.employee_id}` })
+        setAssignee({
+          id: assignment.employee_id,
+          fio: fio || `ID ${assignment.employee_id}`,
+          position: assignment.position_name || assignment.employees?.positions?.name || '',
+        })
       } else {
         setAssignee(null)
       }
@@ -90,6 +104,148 @@ function WorkplacePage() {
     }
   }, [handoverService, scheduleService, unit, workplaceId])
 
+  useEffect(() => {
+    let active = true
+    async function loadEquipment() {
+      const { data, error: eqError } = await supabase.from('equipment').select('*').limit(400)
+      if (!active || eqError) return
+      const code = normalizeKey(workplace?.code)
+      const name = normalizeKey(workplace?.name)
+      const id = normalizeKey(workplaceId)
+      const matches = (data || []).filter((item) => {
+        const byCode = normalizeKey(item?.workplace_code)
+        const byId = normalizeKey(item?.workplace_id)
+        const full = normalizeKey(
+          [
+            item?.workplace,
+            item?.control_point,
+            item?.area,
+            item?.zone,
+            item?.section,
+            item?.description,
+            item?.note,
+          ]
+            .filter(Boolean)
+            .join(' '),
+        )
+        if (code && (byCode === code || full.includes(code))) return true
+        if (id && byId === id) return true
+        if (name && full.includes(name)) return true
+        return false
+      })
+      setEquipmentList(matches)
+    }
+    void loadEquipment()
+    return () => {
+      active = false
+    }
+  }, [supabase, workplace, workplaceId])
+
+  useEffect(() => {
+    let active = true
+    async function resolveJournal() {
+      const tryCodes = [`${unit}-docs`, 'ktc-docs', `${unit}-personnel`]
+      for (const code of tryCodes) {
+        const res = await supabase.from('journals').select('id, code').eq('code', code).maybeSingle()
+        if (!active) return
+        if (res.data?.id) {
+          setJournalId(res.data.id)
+          return
+        }
+      }
+      setJournalId(null)
+    }
+    void resolveJournal()
+    return () => {
+      active = false
+    }
+  }, [supabase, unit])
+
+  useEffect(() => {
+    let active = true
+    async function loadDailyEntries() {
+      if (!journalId) {
+        setDailyEntries([])
+        return
+      }
+      const { data } = await supabase
+        .from('entries')
+        .select('id, title, body, created_at, tags, author_snapshot')
+        .eq('journal_id', journalId)
+        .eq('unit', unit)
+        .eq('type', 'daily')
+        .order('created_at', { ascending: false })
+        .limit(100)
+      if (!active) return
+      const workplaceTag = `workplace:${String(workplaceId)}`
+      const workplaceCodeTag = `workplace_code:${String(workplace?.code || '')}`
+      const filtered = (data || []).filter((item) => {
+        const tags = Array.isArray(item?.tags) ? item.tags : []
+        if (tags.includes(workplaceTag)) return true
+        if (workplace?.code && tags.includes(workplaceCodeTag)) return true
+        return false
+      })
+      setDailyEntries(filtered)
+    }
+    void loadDailyEntries()
+    return () => {
+      active = false
+    }
+  }, [journalId, supabase, unit, workplaceId, workplace?.code])
+
+  const handleAddDailyEntry = async () => {
+    if (!journalId) {
+      setError('Не найден журнал для суточной ведомости.')
+      return
+    }
+    const text = String(dailyInput || '').trim()
+    if (!text) return
+    setSavingEntry(true)
+    setError('')
+    const payload = {
+      journal_id: journalId,
+      title: `Пост ${workplace?.name || workplace?.code || workplaceId}`,
+      body: text,
+      type: 'daily',
+      unit,
+      tags: [`workplace:${String(workplaceId)}`, `workplace_code:${String(workplace?.code || '')}`],
+      created_by_profile_id: user?.id || null,
+      created_by_employee_id: profile?.employee?.id || null,
+      author_snapshot: profile?.employee
+        ? {
+            label: [profile.employee.last_name, profile.employee.first_name, profile.employee.middle_name]
+              .filter(Boolean)
+              .join(' '),
+            position: profile.employee.positions?.name || '',
+          }
+        : null,
+    }
+    const { error: saveError } = await supabase.from('entries').insert(payload)
+    setSavingEntry(false)
+    if (saveError) {
+      setError(saveError.message || 'Не удалось сохранить запись')
+      return
+    }
+    setDailyInput('')
+    const { data } = await supabase
+      .from('entries')
+      .select('id, title, body, created_at, tags, author_snapshot')
+      .eq('journal_id', journalId)
+      .eq('unit', unit)
+      .eq('type', 'daily')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    const workplaceTag = `workplace:${String(workplaceId)}`
+    const workplaceCodeTag = `workplace_code:${String(workplace?.code || '')}`
+    const filtered = (data || []).filter((item) => {
+      const tags = Array.isArray(item?.tags) ? item.tags : []
+      if (tags.includes(workplaceTag)) return true
+      if (workplace?.code && tags.includes(workplaceCodeTag)) return true
+      return false
+    })
+    setDailyEntries(filtered)
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
@@ -100,25 +256,115 @@ function WorkplacePage() {
             <h2 className="mt-2 text-xl font-semibold text-white">
               {workplace?.name || workplace?.code || `Пост ${workplaceId}`}
             </h2>
-            <p className="mt-1 text-xs text-slate-400">
-              Код: {workplace?.code || '—'} · Подразделение: {workplace?.unit || unit}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Позиция: {workplace?.position_name || workplace?.position_id || workplace?.description || '—'}
-            </p>
             <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/70 p-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Текущий сотрудник</p>
               {assignee ? (
-                <Link
-                  to={`/people/${assignee.id}`}
-                  className="mt-2 inline-flex rounded-full border border-emerald-400/45 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-100 transition hover:border-emerald-300"
-                >
-                  {assignee.fio}
-                </Link>
+                <>
+                  <Link
+                    to={`/people/${assignee.id}`}
+                    className="inline-flex text-sm font-semibold text-emerald-100 underline decoration-emerald-300/50 underline-offset-2"
+                  >
+                    {assignee.fio}
+                  </Link>
+                  <p className="mt-1 text-xs text-slate-400">{assignee.position || 'Должность не указана'}</p>
+                </>
               ) : (
-                <p className="mt-2 text-sm text-slate-300">Не назначен</p>
+                <p className="text-sm text-slate-300">Сотрудник не назначен</p>
               )}
             </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => setActiveTab('daily')}
+                className={`rounded-full border px-3 py-1 text-xs transition ${
+                  activeTab === 'daily'
+                    ? 'border-emerald-400/60 bg-emerald-500/15 text-emerald-100'
+                    : 'border-white/10 bg-white/5 text-slate-200'
+                }`}
+              >
+                Суточная ведомость
+              </button>
+              <button
+                onClick={() => setActiveTab('docs')}
+                className={`rounded-full border px-3 py-1 text-xs transition ${
+                  activeTab === 'docs'
+                    ? 'border-emerald-400/60 bg-emerald-500/15 text-emerald-100'
+                    : 'border-white/10 bg-white/5 text-slate-200'
+                }`}
+              >
+                Документация
+              </button>
+            </div>
+            {activeTab === 'daily' ? (
+              <div className="mt-3 space-y-3">
+                <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Оборудование рабочего места</p>
+                  <div className="mt-2 space-y-1">
+                    {equipmentList.map((item, idx) => (
+                      <div key={`${item.id || item.code || idx}`} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200">
+                        {item.name || item.title || item.code || `Оборудование #${idx + 1}`}
+                      </div>
+                    ))}
+                    {!equipmentList.length && <p className="text-xs text-slate-500">Закрепленное оборудование пока не найдено.</p>}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Запись в ведомость</p>
+                  <textarea
+                    value={dailyInput}
+                    onChange={(e) => setDailyInput(e.target.value)}
+                    rows={3}
+                    placeholder="Краткая запись за смену..."
+                    className="mt-2 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500"
+                  />
+                  <button
+                    onClick={() => void handleAddDailyEntry()}
+                    disabled={savingEntry}
+                    className="mt-2 rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
+                  >
+                    {savingEntry ? 'Сохраняем...' : 'Добавить запись'}
+                  </button>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Лента суточной ведомости</p>
+                  <div className="mt-2 space-y-2">
+                    {dailyEntries.map((item) => (
+                      <div key={item.id} className="rounded-md border border-white/10 bg-white/5 p-2">
+                        <p className="text-xs text-slate-100">{item.body || '—'}</p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {item.author_snapshot?.label || 'Сотрудник'} ·{' '}
+                          {item.created_at ? new Date(item.created_at).toLocaleString('ru-RU') : '—'}
+                        </p>
+                      </div>
+                    ))}
+                    {!dailyEntries.length && <p className="text-xs text-slate-500">Записей пока нет.</p>}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/70 p-3">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Документация рабочего места</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <Link
+                    to={`/${unit}/docs`}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-200 transition hover:border-sky-400/60"
+                  >
+                    Журналы
+                  </Link>
+                  <Link
+                    to={`/${unit}/docs`}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-200 transition hover:border-sky-400/60"
+                  >
+                    Инструкции
+                  </Link>
+                  <Link
+                    to={`/${unit}/docs`}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-200 transition hover:border-sky-400/60"
+                  >
+                    Схемы
+                  </Link>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">Далее сюда добавим разделы документов и рабочие журналы по посту.</p>
+              </div>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               <Link
                 to={`/${unit}/personnel`}
