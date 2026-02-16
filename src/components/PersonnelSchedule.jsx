@@ -757,23 +757,19 @@ function PersonnelSchedule(props) {
     setOcrLoading(true)
     setOcrProgressText('Отправляем файл в OCR...')
     setImportError('')
-    const form = new FormData()
-    form.append('file', sourceFileForOcr)
-    form.append('language', 'rus')
-    form.append('isOverlayRequired', 'false')
-    form.append('isTable', 'true')
-    form.append('OCREngine', '2')
-    const apiKey = import.meta.env.VITE_OCR_SPACE_API_KEY || 'helloworld'
     try {
-      const resp = await fetch('https://api.ocr.space/parse/image', {
+      const fileBuffer = await sourceFileForOcr.arrayBuffer()
+      const resp = await fetch('/api/ocr', {
         method: 'POST',
         headers: {
-          apikey: apiKey,
+          'content-type': sourceFileForOcr.type || 'application/octet-stream',
+          'x-filename': encodeURIComponent(sourceFileForOcr.name || 'upload.bin'),
         },
-        body: form,
+        body: fileBuffer,
       })
       if (!resp.ok) {
-        throw new Error(`OCR HTTP ${resp.status}`)
+        const errPayload = await resp.json().catch(() => ({}))
+        throw new Error(errPayload?.error || `OCR HTTP ${resp.status}`)
       }
       setOcrProgressText('Разбираем результат OCR...')
       const payload = await resp.json()
@@ -1120,9 +1116,7 @@ function PersonnelSchedule(props) {
           </p>
         )}
         {ocrProgressText && <p className="mt-1 text-[11px] text-slate-400">{ocrProgressText}</p>}
-        <p className="mt-1 text-[11px] text-slate-500">
-          OCR использует `VITE_OCR_SPACE_API_KEY` (если ключ не задан, применяется demo-ключ с ограничениями).
-        </p>
+        <p className="mt-1 text-[11px] text-slate-500">OCR выполняется через сервер (`/api/ocr`) с ключом `OCR_SPACE_API_KEY`.</p>
         {!!importRows.length && (
           <div className="mt-3 rounded-xl border border-white/10 bg-slate-900/60 p-2">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
