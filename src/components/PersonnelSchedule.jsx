@@ -565,6 +565,9 @@ function PersonnelSchedule(props) {
   const [importing, setImporting] = useState(false)
   const [uploadingSource, setUploadingSource] = useState(false)
   const [sourceUploadInfo, setSourceUploadInfo] = useState(null)
+  const [sourceFileForOcr, setSourceFileForOcr] = useState(null)
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [ocrProgressText, setOcrProgressText] = useState('')
   const statusBadge = useMemo(() => {
     const isLoading = loadingStaff || loadingSchedule
     if (staffError || scheduleError) {
@@ -718,6 +721,7 @@ function PersonnelSchedule(props) {
     async (event) => {
       const file = event.target?.files?.[0]
       if (!file) return
+      setSourceFileForOcr(file)
       if (!onUploadImportSource) {
         setImportError('Загрузка файла не настроена.')
         return
@@ -737,6 +741,55 @@ function PersonnelSchedule(props) {
     },
     [onUploadImportSource],
   )
+
+  const handleRunOcr = useCallback(async () => {
+    if (!sourceFileForOcr) {
+      setImportError('Сначала выберите файл для распознавания.')
+      return
+    }
+    setOcrLoading(true)
+    setOcrProgressText('Отправляем файл в OCR...')
+    setImportError('')
+    const form = new FormData()
+    form.append('file', sourceFileForOcr)
+    form.append('language', 'rus')
+    form.append('isOverlayRequired', 'false')
+    form.append('isTable', 'true')
+    form.append('OCREngine', '2')
+    const apiKey = import.meta.env.VITE_OCR_SPACE_API_KEY || 'helloworld'
+    try {
+      const resp = await fetch('https://api.ocr.space/parse/image', {
+        method: 'POST',
+        headers: {
+          apikey: apiKey,
+        },
+        body: form,
+      })
+      if (!resp.ok) {
+        throw new Error(`OCR HTTP ${resp.status}`)
+      }
+      setOcrProgressText('Разбираем результат OCR...')
+      const payload = await resp.json()
+      const parsed = Array.isArray(payload?.ParsedResults)
+        ? payload.ParsedResults.map((item) => item?.ParsedText || '').join('\n')
+        : ''
+      if (!parsed.trim()) {
+        const message = payload?.ErrorMessage || payload?.ErrorDetails || 'OCR не вернул текст.'
+        throw new Error(Array.isArray(message) ? message.join('; ') : String(message))
+      }
+      setImportText((prev) => {
+        const merged = prev?.trim() ? `${prev.trim()}\n${parsed.trim()}` : parsed.trim()
+        return merged
+      })
+      setImportMessage('OCR завершен. Проверьте текст и нажмите "Сформировать черновик".')
+      setOcrProgressText('Готово')
+    } catch (error) {
+      setImportError(`Ошибка OCR: ${error?.message || 'не удалось распознать файл'}`)
+      setOcrProgressText('')
+    } finally {
+      setOcrLoading(false)
+    }
+  }, [sourceFileForOcr])
 
   const applyImportDraft = useCallback(async () => {
     const date = String(importDate || todayIso).trim()
@@ -986,16 +1039,25 @@ function PersonnelSchedule(props) {
       <div className="mt-3 rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-xs text-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Импорт графика (фото / PDF)</p>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-100 transition hover:border-sky-400/60">
-            <input
-              type="file"
-              accept=".pdf,image/*,.xlsx,.xls,.csv,.txt"
-              onChange={handleUploadSourceFile}
-              disabled={uploadingSource}
-              className="hidden"
-            />
-            {uploadingSource ? 'Загрузка...' : 'Загрузить источник'}
-          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-100 transition hover:border-sky-400/60">
+              <input
+                type="file"
+                accept=".pdf,image/*,.xlsx,.xls,.csv,.txt"
+                onChange={handleUploadSourceFile}
+                disabled={uploadingSource}
+                className="hidden"
+              />
+              {uploadingSource ? 'Загрузка...' : 'Загрузить источник'}
+            </label>
+            <button
+              onClick={() => void handleRunOcr()}
+              disabled={ocrLoading || !sourceFileForOcr}
+              className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-100 transition hover:border-emerald-400/60 disabled:opacity-60"
+            >
+              {ocrLoading ? 'Распознаем...' : 'Распознать OCR'}
+            </button>
+          </div>
         </div>
         <div className="mt-2 grid gap-2 md:grid-cols-3">
           <label className="flex flex-col gap-1">
@@ -1045,6 +1107,15 @@ function PersonnelSchedule(props) {
             Источник в Storage: <span className="font-mono text-slate-300">{sourceUploadInfo.path}</span>
           </p>
         )}
+        {sourceFileForOcr?.name && (
+          <p className="mt-1 text-[11px] text-slate-400">
+            Файл для OCR: <span className="font-mono text-slate-300">{sourceFileForOcr.name}</span>
+          </p>
+        )}
+        {ocrProgressText && <p className="mt-1 text-[11px] text-slate-400">{ocrProgressText}</p>}
+        <p className="mt-1 text-[11px] text-slate-500">
+          OCR использует `VITE_OCR_SPACE_API_KEY` (если ключ не задан, применяется demo-ключ с ограничениями).
+        </p>
         {!!importRows.length && (
           <div className="mt-3 rounded-xl border border-white/10 bg-slate-900/60 p-2">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
