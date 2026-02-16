@@ -32,12 +32,6 @@ const compactControlPoint = (value) =>
     .replace(/\s+/g, '')
     .replace(/_/g, '')
 
-const normalizeToken = (value) =>
-  String(value || '')
-    .toLowerCase()
-    .replace(/ё/g, 'е')
-    .replace(/[^a-zа-я0-9]+/gi, '')
-
 const normalizeStationValue = (value) => String(value || '').replace(/\s+/g, ' ').trim()
 
 function WorkplacePage() {
@@ -52,7 +46,6 @@ function WorkplacePage() {
   const [assignee, setAssignee] = useState(null)
   const [equipmentList, setEquipmentList] = useState([])
   const [equipmentSubsystems, setEquipmentSubsystems] = useState([])
-  const [legacySubsystems, setLegacySubsystems] = useState([])
   const [equipmentSystems, setEquipmentSystems] = useState([])
   const [equipmentMenuId, setEquipmentMenuId] = useState(null)
   const [equipmentSavingId, setEquipmentSavingId] = useState(null)
@@ -71,10 +64,6 @@ function WorkplacePage() {
   const systemsById = useMemo(
     () => new Map((equipmentSystems || []).map((row) => [String(row.id), row])),
     [equipmentSystems],
-  )
-  const legacySubsystemsById = useMemo(
-    () => new Map((legacySubsystems || []).map((row) => [String(row.id), row])),
-    [legacySubsystems],
   )
 
   const normalizeEquipmentStatus = (value) => {
@@ -134,17 +123,6 @@ function WorkplacePage() {
     }
 
     return source.length > 24 ? `${source.slice(0, 24)}…` : source
-  }
-
-  const findSubsystemByEquipmentName = (equipmentName, subsystemRows) => {
-    const full = normalizeToken(equipmentName)
-    const sorted = [...(subsystemRows || [])].sort((a, b) => String(b?.name || '').length - String(a?.name || '').length)
-    return (
-      sorted.find((row) => {
-        const key = normalizeToken(row?.name)
-        return key && full.includes(key)
-      }) || null
-    )
   }
 
   const equipmentGroups = useMemo(() => {
@@ -233,43 +211,25 @@ function WorkplacePage() {
   useEffect(() => {
     let active = true
     async function loadSubsystems() {
-      // Prefer normalized catalog, fallback to old table.
-      const normalized = await supabase
-        .from('equipment_subsystem_catalog')
-        .select('id, name, description')
-        .order('name', { ascending: true })
+      const subsystemRes = await supabase
+        .from('subsystem_types')
+        .select('id, code, full_name')
+        .order('code', { ascending: true })
         .limit(3000)
       if (!active) return
-      if (!normalized.error && Array.isArray(normalized.data) && normalized.data.length) {
+      if (!subsystemRes.error) {
         setEquipmentSubsystems(
-          normalized.data.map((row) => ({
+          (subsystemRes.data || []).map((row) => ({
             id: row.id,
-            name: row.name,
-            system: null,
-            description: row.description || null,
+            name: row.code || `ID ${row.id}`,
+            description: row.full_name || null,
           })),
         )
-      } else {
-        const legacy = await supabase
-          .from('equipment_subsystems')
-          .select('id, system, name, description')
-          .order('system', { ascending: true })
-          .order('name', { ascending: true })
-          .limit(3000)
-        if (!legacy.error) setEquipmentSubsystems(legacy.data || [])
       }
 
       const systemsRes = await supabase.from('equipment_systems').select('id, name').order('name', { ascending: true }).limit(1000)
       if (!active) return
       if (!systemsRes.error) setEquipmentSystems(systemsRes.data || [])
-
-      const legacyRes = await supabase
-        .from('equipment_subsystems')
-        .select('id, system, name, description')
-        .order('id', { ascending: true })
-        .limit(3000)
-      if (!active) return
-      if (!legacyRes.error) setLegacySubsystems(legacyRes.data || [])
     }
     void loadSubsystems()
     return () => {
@@ -281,20 +241,9 @@ function WorkplacePage() {
     let active = true
     async function loadEquipment() {
       if (!workplace?.code && !workplace?.name) return
-      let eqRows = []
-      // New schema first.
       const modern = await supabase.from('equipment').select('*').order('id', { ascending: true }).limit(3000)
-      if (!modern.error) {
-        eqRows = modern.data || []
-      } else {
-        const legacy = await supabase
-          .from('equipment')
-          .select('*')
-          .order('id', { ascending: true })
-          .limit(3000)
-        if (legacy.error) return
-        eqRows = legacy.data || []
-      }
+      if (modern.error) return
+      const eqRows = modern.data || []
       if (!active) return
 
       const workplaceControlVariants = new Set(
@@ -309,12 +258,8 @@ function WorkplacePage() {
 
       const mappedEquipment = scopedEquipment.map((item) => {
         const byTypeId = item?.subsystem_type_id ? subsystemsById.get(String(item.subsystem_type_id)) : null
-        const byId = item?.subsystem_id ? subsystemsById.get(String(item.subsystem_id)) : null
-        const legacyById = item?.subsystem_id ? legacySubsystemsById.get(String(item.subsystem_id)) : null
-        const byCatalogId = item?.subsystem_catalog_id ? subsystemsById.get(String(item.subsystem_catalog_id)) : null
         const nameSource = item?.name || item?.station_number || ''
-        const byName = byId || legacyById ? null : findSubsystemByEquipmentName(nameSource, equipmentSubsystems || [])
-        const subsystem = byTypeId || byCatalogId || byId || legacyById || byName
+        const subsystem = byTypeId || null
         const fallbackStation = extractEquipmentIndex(nameSource)
         const stationNumber =
           normalizeStationValue(item?.station_number) || normalizeStationValue(item?.name) || fallbackStation
@@ -324,12 +269,8 @@ function WorkplacePage() {
           ...item,
           stationNumber,
           dispatchLabel,
-            subsystemName: subsystem?.name || null,
-            systemName:
-              systemsById.get(String(item?.system_id || ''))?.name ||
-              subsystem?.system ||
-              item?.equipment_system ||
-              null,
+          subsystemName: subsystem?.name || null,
+          systemName: systemsById.get(String(item?.system_id || ''))?.name || item?.equipment_system || null,
         }
       })
 
@@ -339,7 +280,7 @@ function WorkplacePage() {
     return () => {
       active = false
     }
-  }, [supabase, workplace?.code, workplace?.name, equipmentSubsystems, subsystemsById, legacySubsystemsById, systemsById])
+  }, [supabase, workplace?.code, workplace?.name, subsystemsById, systemsById])
 
   useEffect(() => {
     if (!workplace?.code) {

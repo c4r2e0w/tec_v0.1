@@ -31,7 +31,6 @@ function EquipmentPage() {
   const [systemTypes, setSystemTypes] = useState([])
   const [systems, setSystems] = useState([])
   const [subsystemTypes, setSubsystemTypes] = useState([])
-  const [legacySubsystems, setLegacySubsystems] = useState([])
   const [workplaces, setWorkplaces] = useState([])
 
   const [loading, setLoading] = useState(true)
@@ -52,16 +51,6 @@ function EquipmentPage() {
     status: 'работа',
   })
 
-  const equipmentColumns = useMemo(() => {
-    const keys = new Set()
-    for (const row of equipment) {
-      Object.keys(row || {}).forEach((k) => keys.add(k))
-    }
-    return keys
-  }, [equipment])
-
-  const hasColumn = (name) => equipmentColumns.has(name)
-
   const systemTypeById = useMemo(
     () => new Map((systemTypes || []).map((row) => [String(row.id), row.name])),
     [systemTypes],
@@ -75,20 +64,12 @@ function EquipmentPage() {
     const map = new Map()
     for (const row of subsystemTypes || []) {
       map.set(String(row.id), {
-        name: row.code || row.name || `ID ${row.id}`,
-        fullName: row.full_name || row.description || '',
+        name: row.code || `ID ${row.id}`,
+        fullName: row.full_name || '',
       })
     }
-    for (const row of legacySubsystems || []) {
-      if (!map.has(String(row.id))) {
-        map.set(String(row.id), {
-          name: row.name || `ID ${row.id}`,
-          fullName: row.description || '',
-        })
-      }
-    }
     return map
-  }, [subsystemTypes, legacySubsystems])
+  }, [subsystemTypes])
 
   const controlPointOptions = useMemo(() => {
     const values = new Map(CONTROL_POINTS.map((row) => [row.value, row.label]))
@@ -118,12 +99,11 @@ function EquipmentPage() {
       setLoading(true)
       setError('')
 
-      const [eqRes, stRes, sysRes, subTypeRes, legacySubRes, wpRes] = await Promise.all([
+      const [eqRes, stRes, sysRes, subTypeRes, wpRes] = await Promise.all([
         supabase.from('equipment').select('*').order('id', { ascending: true }).limit(5000),
         supabase.from('system_types').select('id,name').order('id', { ascending: true }).limit(1000),
         supabase.from('equipment_systems').select('id,name,system_type_id').order('id', { ascending: true }).limit(1000),
         supabase.from('subsystem_types').select('id,code,full_name').order('code', { ascending: true }).limit(3000),
-        supabase.from('equipment_subsystems').select('id,name,description').order('id', { ascending: true }).limit(3000),
         supabase
           .from('workplace')
           .select('id,code,name,unit')
@@ -139,19 +119,7 @@ function EquipmentPage() {
         return
       }
 
-      // Some environments do not have equipment_systems.system_type_id yet.
-      // Fallback to minimal selector so system dropdown can still work.
-      let effectiveSysError = sysRes.error
-      let effectiveSystems = sysRes.data || []
-      if (effectiveSysError) {
-        const sysFallback = await supabase.from('equipment_systems').select('id,name').order('id', { ascending: true }).limit(1000)
-        if (!sysFallback.error) {
-          effectiveSysError = null
-          effectiveSystems = sysFallback.data || []
-        }
-      }
-
-      const dictErrors = [stRes.error, effectiveSysError, subTypeRes.error, wpRes.error].filter(Boolean)
+      const dictErrors = [stRes.error, sysRes.error, subTypeRes.error, wpRes.error].filter(Boolean)
       if (dictErrors.length) {
         setError(dictErrors.map((e) => e.message).join(' · '))
       }
@@ -176,9 +144,8 @@ function EquipmentPage() {
 
       setEquipment(scopedEquipment)
       if (!stRes.error) setSystemTypes(stRes.data || [])
-      if (!effectiveSysError) setSystems(effectiveSystems)
+      if (!sysRes.error) setSystems(sysRes.data || [])
       if (!subTypeRes.error) setSubsystemTypes(subTypeRes.data || [])
-      if (!legacySubRes.error) setLegacySubsystems(legacySubRes.data || [])
       if (!wpRes.error) setWorkplaces(scopedWorkplaces)
 
       setLoading(false)
@@ -193,8 +160,8 @@ function EquipmentPage() {
   const rows = useMemo(() => {
     return (equipment || []).map((row) => {
       const system = systemById.get(String(row.system_id || ''))
-      const subsystem = subsystemById.get(String(row.subsystem_type_id || row.subsystem_id || ''))
-      const systemName = system?.name || row.equipment_system || 'Без системы'
+      const subsystem = subsystemById.get(String(row.subsystem_type_id || ''))
+      const systemName = system?.name || 'Без системы'
       const typeName = systemTypeById.get(String(system?.system_type_id || '')) || 'Без типа'
       const subsystemName = subsystem?.name || 'Без подсистемы'
       const stationNumber = String(row.station_number || row.name || '').trim()
@@ -244,7 +211,7 @@ function EquipmentPage() {
     if (current) return current
     return {
       system_id: row.system_id || '',
-      subsystem_type_id: row.subsystem_type_id || row.subsystem_id || '',
+      subsystem_type_id: row.subsystem_type_id || '',
       station_number: row.stationNumber || '',
       control_point: row.control_point || '',
       status: row.status || 'работа',
@@ -264,22 +231,12 @@ function EquipmentPage() {
   const saveRow = async (row) => {
     const draft = getDraft(row)
     const payload = {
+      system_id: draft.system_id ? Number(draft.system_id) : null,
+      subsystem_type_id: draft.subsystem_type_id ? Number(draft.subsystem_type_id) : null,
+      equipment_system: systemById.get(String(draft.system_id || ''))?.name || null,
       status: draft.status,
       control_point: draft.control_point || null,
       station_number: draft.station_number || null,
-    }
-
-    if (hasColumn('system_id')) {
-      payload.system_id = draft.system_id ? Number(draft.system_id) : null
-      payload.equipment_system = systemById.get(String(draft.system_id || ''))?.name || row.equipment_system || null
-    } else {
-      payload.equipment_system = row.equipment_system || null
-    }
-
-    if (hasColumn('subsystem_type_id')) {
-      payload.subsystem_type_id = draft.subsystem_type_id ? Number(draft.subsystem_type_id) : null
-    } else if (hasColumn('subsystem_id')) {
-      payload.subsystem_id = draft.subsystem_type_id ? Number(draft.subsystem_type_id) : null
     }
 
     setSavingId(row.id)
@@ -301,26 +258,17 @@ function EquipmentPage() {
 
   const addRow = async () => {
     const payload = {
+      system_id: newRow.system_id ? Number(newRow.system_id) : null,
+      subsystem_type_id: newRow.subsystem_type_id ? Number(newRow.subsystem_type_id) : null,
+      equipment_system: systemById.get(String(newRow.system_id || ''))?.name || null,
       status: newRow.status || 'работа',
       control_point: newRow.control_point || null,
       station_number: newRow.station_number || null,
     }
 
-    if (hasColumn('system_id')) {
-      if (!newRow.system_id) {
-        setError('Выберите систему из справочника equipment_systems.')
-        return
-      }
-      payload.system_id = newRow.system_id ? Number(newRow.system_id) : null
-      payload.equipment_system = systemById.get(String(newRow.system_id || ''))?.name || null
-    } else {
-      payload.equipment_system = null
-    }
-
-    if (hasColumn('subsystem_type_id')) {
-      payload.subsystem_type_id = newRow.subsystem_type_id ? Number(newRow.subsystem_type_id) : null
-    } else if (hasColumn('subsystem_id')) {
-      payload.subsystem_id = newRow.subsystem_type_id ? Number(newRow.subsystem_type_id) : null
+    if (!newRow.system_id) {
+      setError('Выберите систему из справочника equipment_systems.')
+      return
     }
 
     setAdding(true)
