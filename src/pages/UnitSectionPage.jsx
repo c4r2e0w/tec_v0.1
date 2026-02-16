@@ -1842,7 +1842,16 @@ function UnitSectionPage() {
             const selectedInPrimary = selectedEmployee ? candidates.some((emp) => String(emp.id) === String(selectedEmployee.id)) : false
             return (
               <div key={row.workplaceId}>
-                <p className="text-[11px] text-grayText">{row.workplaceName}</p>
+                {String(row.workplaceId || '').startsWith('emp-') ? (
+                  <p className="text-[11px] text-grayText">{row.workplaceName}</p>
+                ) : (
+                  <Link
+                    to={`/workplaces/${unit}/${row.workplaceId}`}
+                    className="text-[11px] text-primary underline decoration-primary/40 underline-offset-2"
+                  >
+                    {row.workplaceName}
+                  </Link>
+                )}
                 {editable ? (
                   <div className="mt-1">
                     <select
@@ -1887,9 +1896,27 @@ function UnitSectionPage() {
                           </option>
                         ))}
                     </select>
+                    {selectedEmployee?.id && (
+                      <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
+                        <Link
+                          to={`/people/${selectedEmployee.id}`}
+                          className="text-primary underline decoration-primary/50 underline-offset-2"
+                        >
+                          Профиль сотрудника
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <p className="text-xs text-dark">{row.employee?.label || '—'}</p>
+                  <p className="text-xs text-dark">
+                    {row.employee?.id ? (
+                      <Link to={`/people/${row.employee.id}`} className="text-primary underline decoration-primary/50 underline-offset-2">
+                        {row.employee?.label || '—'}
+                      </Link>
+                    ) : (
+                      row.employee?.label || '—'
+                    )}
+                  </p>
                 )}
               </div>
             )
@@ -1903,6 +1930,7 @@ function UnitSectionPage() {
     activeShiftType,
     assignmentKey,
     expandedWorkplaceSelects,
+    unit,
   ])
 
   if (!unitData || !sectionLabel) {
@@ -2210,6 +2238,14 @@ function UnitSectionPage() {
                       </option>
                     ))}
                   </select>
+                  {resolvedChief?.id && (
+                    <Link
+                      to={`/people/${resolvedChief.id}`}
+                      className="text-primary underline decoration-primary/50 underline-offset-2"
+                    >
+                      Страница начальника
+                    </Link>
+                  )}
                 </div>
               </div>
             </div>

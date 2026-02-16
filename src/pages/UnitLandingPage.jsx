@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 import { createScheduleService } from '../services/scheduleService'
 import { createShiftHandoverService } from '../services/shiftHandoverService'
@@ -117,6 +117,7 @@ function UnitLandingPage() {
     shiftType: 'day',
     shiftDate: '',
     chief: '',
+    chiefId: null,
     boilerRows: [],
     turbineRows: [],
   })
@@ -134,8 +135,8 @@ function UnitLandingPage() {
     const load = async () => {
       const now = new Date()
       const currentDate = toIsoLocalDate(now)
-      const currentType = now.getHours() >= 20 || now.getHours() < 8 ? 'night' : 'day'
-      const shiftDate = currentType === 'night' && now.getHours() < 8 ? addDaysLocalIso(currentDate, -1) : currentDate
+      const currentType = now.getHours() >= 21 || now.getHours() < 9 ? 'night' : 'day'
+      const shiftDate = currentType === 'night' && now.getHours() < 9 ? addDaysLocalIso(currentDate, -1) : currentDate
       const nextDate = addDaysLocalIso(shiftDate, 1)
       setShiftSummary((prev) => ({ ...prev, loading: true, error: '' }))
       const [{ data: rows, error }, workplacesRes] = await Promise.all([
@@ -227,7 +228,7 @@ function UnitLandingPage() {
         if (!assignmentsRes.error) assignments = assignmentsRes.data || []
       }
 
-      const assignmentNameByWorkplace = new Map()
+      const assignmentByWorkplace = new Map()
       const occupiedEmployees = new Set()
       const occupiedNames = new Set()
       ;(assignments || [])
@@ -247,16 +248,17 @@ function UnitLandingPage() {
           if (isReserveWorkplace(wp)) return
           if (isChiefWorkplace(wp)) return
           const wpId = String(wp.id)
-          if (assignmentNameByWorkplace.has(wpId)) return
+          if (assignmentByWorkplace.has(wpId)) return
           if (fullNameKey && occupiedNames.has(fullNameKey)) return
-          assignmentNameByWorkplace.set(wpId, fullName)
+          assignmentByWorkplace.set(wpId, { employeeName: fullName, employeeId: a.employee_id || null })
           occupiedEmployees.add(empId)
           if (fullNameKey) occupiedNames.add(fullNameKey)
         })
 
       const rowsByWorkplace = baseRows.map((row) => ({
         ...row,
-        employeeName: assignmentNameByWorkplace.get(row.workplaceId) || '',
+        employeeName: assignmentByWorkplace.get(row.workplaceId)?.employeeName || '',
+        employeeId: assignmentByWorkplace.get(row.workplaceId)?.employeeId || null,
       }))
 
       const chiefFromAssignments =
@@ -268,6 +270,7 @@ function UnitLandingPage() {
       const chief = chiefFromAssignments
         ? [chiefFromAssignments.last_name, chiefFromAssignments.first_name, chiefFromAssignments.middle_name].filter(Boolean).join(' ')
         : chiefFromSessionId?.name || ''
+      const chiefId = chiefFromAssignments?.id || sessionRes?.data?.chief_employee_id || chiefFromSessionId?.id || null
 
       const boilerRows = rowsByWorkplace.filter((row) => row.divisionKey === 'boiler')
       const turbineRows = rowsByWorkplace.filter((row) => row.divisionKey === 'turbine')
@@ -280,6 +283,7 @@ function UnitLandingPage() {
         shiftType: currentType,
         shiftDate,
         chief,
+        chiefId,
         boilerRows,
         turbineRows,
       })
@@ -336,7 +340,16 @@ function UnitLandingPage() {
               <p className="mt-2 text-dark">
                 Сейчас на смене: вахта {shiftSummary.shiftCode} · {shiftSummary.shiftType === 'night' ? 'Ночь' : 'День'}
               </p>
-              <p className="text-xs text-grayText">{shiftSummary.shiftDate || '—'} · Начальник: {shiftSummary.chief || 'не назначен'}</p>
+              <p className="text-xs text-grayText">
+                {shiftSummary.shiftDate || '—'} · Начальник:{' '}
+                {shiftSummary.chiefId ? (
+                  <Link to={`/people/${shiftSummary.chiefId}`} className="text-primary underline decoration-primary/50 underline-offset-2">
+                    {shiftSummary.chief || 'не назначен'}
+                  </Link>
+                ) : (
+                  shiftSummary.chief || 'не назначен'
+                )}
+              </p>
               <div className="mt-2 grid gap-2">
                 {shiftSummary.notice && <p className="text-[11px] text-grayText">{shiftSummary.notice}</p>}
                 <div className="rounded-lg border border-border bg-background p-2">
@@ -347,8 +360,18 @@ function UnitLandingPage() {
                     <div className="space-y-1 text-xs text-dark">
                       {(shiftSummary.boilerRows || []).map((row) => (
                         <div key={row.workplaceId} className="flex items-start justify-between gap-2 rounded-md border border-border/70 bg-white/40 px-2 py-1">
-                          <span className="text-grayText">{row.workplaceName}</span>
-                          <span className="text-right">{row.employeeName || '—'}</span>
+                          <Link to={`/workplaces/${unit}/${row.workplaceId}`} className="text-grayText underline decoration-grayText/40 underline-offset-2">
+                            {row.workplaceName}
+                          </Link>
+                          <span className="text-right">
+                            {row.employeeId ? (
+                              <Link to={`/people/${row.employeeId}`} className="text-primary underline decoration-primary/50 underline-offset-2">
+                                {row.employeeName || '—'}
+                              </Link>
+                            ) : (
+                              row.employeeName || '—'
+                            )}
+                          </span>
                         </div>
                       ))}
                       {!shiftSummary.boilerRows?.length && <p>—</p>}
@@ -363,8 +386,18 @@ function UnitLandingPage() {
                     <div className="space-y-1 text-xs text-dark">
                       {(shiftSummary.turbineRows || []).map((row) => (
                         <div key={row.workplaceId} className="flex items-start justify-between gap-2 rounded-md border border-border/70 bg-white/40 px-2 py-1">
-                          <span className="text-grayText">{row.workplaceName}</span>
-                          <span className="text-right">{row.employeeName || '—'}</span>
+                          <Link to={`/workplaces/${unit}/${row.workplaceId}`} className="text-grayText underline decoration-grayText/40 underline-offset-2">
+                            {row.workplaceName}
+                          </Link>
+                          <span className="text-right">
+                            {row.employeeId ? (
+                              <Link to={`/people/${row.employeeId}`} className="text-primary underline decoration-primary/50 underline-offset-2">
+                                {row.employeeName || '—'}
+                              </Link>
+                            ) : (
+                              row.employeeName || '—'
+                            )}
+                          </span>
                         </div>
                       ))}
                       {!shiftSummary.turbineRows?.length && <p>—</p>}
