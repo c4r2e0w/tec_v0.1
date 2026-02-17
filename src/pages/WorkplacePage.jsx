@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 import { createScheduleService } from '../services/scheduleService'
@@ -107,11 +107,14 @@ function WorkplacePage() {
   const [statementShiftDate, setStatementShiftDate] = useState(() => getCurrentShiftSlot().date)
   const [statementShiftType, setStatementShiftType] = useState(() => getCurrentShiftSlot().type)
   const [shiftIconMotion, setShiftIconMotion] = useState('')
-  const [shiftIconAnimKey, setShiftIconAnimKey] = useState(0)
+  const [shiftIconPhase, setShiftIconPhase] = useState('idle')
+  const [iconDisplayShiftType, setIconDisplayShiftType] = useState(() => getCurrentShiftSlot().type)
   const [savingEntry, setSavingEntry] = useState(false)
   const [journalId, setJournalId] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const shiftIconOutTimerRef = useRef(null)
+  const shiftIconInTimerRef = useRef(null)
   const viewedShiftCode = useMemo(() => getShiftCodeByDate(statementShiftDate, statementShiftType), [statementShiftDate, statementShiftType])
   const viewedShiftPeriod = useMemo(() => shiftPeriodLabel(statementShiftType), [statementShiftType])
   const currentShift = useMemo(() => getCurrentShiftSlot(), [])
@@ -126,10 +129,23 @@ function WorkplacePage() {
   }, [statementShiftDate, currentShift.date, currentShift.type])
 
   useEffect(() => {
-    if (!shiftIconMotion) return
-    const timer = setTimeout(() => setShiftIconMotion(''), 340)
-    return () => clearTimeout(timer)
-  }, [shiftIconMotion])
+    if (iconDisplayShiftType === statementShiftType) return
+    if (shiftIconOutTimerRef.current) clearTimeout(shiftIconOutTimerRef.current)
+    if (shiftIconInTimerRef.current) clearTimeout(shiftIconInTimerRef.current)
+    setShiftIconPhase('out')
+    shiftIconOutTimerRef.current = setTimeout(() => {
+      setIconDisplayShiftType(statementShiftType)
+      setShiftIconPhase('in')
+      shiftIconInTimerRef.current = setTimeout(() => {
+        setShiftIconPhase('idle')
+        setShiftIconMotion('')
+      }, 170)
+    }, 170)
+    return () => {
+      if (shiftIconOutTimerRef.current) clearTimeout(shiftIconOutTimerRef.current)
+      if (shiftIconInTimerRef.current) clearTimeout(shiftIconInTimerRef.current)
+    }
+  }, [statementShiftType, iconDisplayShiftType, shiftIconMotion])
 
   const subsystemsById = useMemo(
     () => new Map((equipmentSubsystems || []).map((row) => [String(row.id), row])),
@@ -727,7 +743,6 @@ function WorkplacePage() {
                     onClick={() => {
                       const next = moveShiftSlot(statementShiftDate, statementShiftType, -1)
                       setShiftIconMotion('left')
-                      setShiftIconAnimKey((v) => v + 1)
                       setStatementShiftDate(next.date)
                       setStatementShiftType(next.type)
                     }}
@@ -754,22 +769,26 @@ function WorkplacePage() {
                       const nextType = statementShiftType === 'day' ? 'night' : 'day'
                       if (!canSelectNightOnDate && nextType === 'night') return
                       if (compareShiftSlots(statementShiftDate, nextType, currentShift.date, currentShift.type) > 0) return
+                      setShiftIconMotion(nextType === 'night' ? 'right' : 'left')
                       setStatementShiftType(nextType)
                     }}
                     title={statementShiftType === 'day' ? 'Переключить на ночь' : 'Переключить на день'}
                     className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
                   >
                     <span
-                      key={shiftIconAnimKey}
                       className={`inline-flex min-w-5 items-center justify-center text-sm leading-none ${
-                        shiftIconMotion === 'left'
-                          ? 'shift-icon-arc-left'
-                          : shiftIconMotion === 'right'
-                            ? 'shift-icon-arc-right'
+                        shiftIconPhase === 'out'
+                          ? shiftIconMotion === 'left'
+                            ? 'shift-icon-out-left'
+                            : 'shift-icon-out-right'
+                          : shiftIconPhase === 'in'
+                            ? shiftIconMotion === 'left'
+                              ? 'shift-icon-in-left'
+                              : 'shift-icon-in-right'
                             : ''
                       }`}
                     >
-                      {statementShiftType === 'day' ? '☀︎' : '☾'}
+                      {iconDisplayShiftType === 'day' ? '☀︎' : '☾'}
                     </span>
                   </button>
                   <button
@@ -778,7 +797,6 @@ function WorkplacePage() {
                       if (!canMoveForwardShift) return
                       const next = moveShiftSlot(statementShiftDate, statementShiftType, 1)
                       setShiftIconMotion('right')
-                      setShiftIconAnimKey((v) => v + 1)
                       setStatementShiftDate(next.date)
                       setStatementShiftType(next.type)
                     }}
