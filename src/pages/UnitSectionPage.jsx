@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 import { useProfile } from '../hooks/useProfile'
 import { useJournal } from '../hooks/useJournal'
@@ -244,9 +244,19 @@ function ShiftIcon({
 
 function UnitSectionPage() {
   const { unit, section } = useParams()
+  const location = useLocation()
   const unitData = unitsMap[unit]
   const sectionLabel = sectionsMap[section]
   const isKtc = unit === 'ktc'
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search])
+  const panelMode = searchParams.get('panel') || ''
+  const isOnShiftPanelOnly = section === 'personnel' && panelMode === 'on-shift'
+  const requestedShiftDate = searchParams.get('shift_date') || ''
+  const requestedShiftTypeRaw = searchParams.get('shift_type') || ''
+  const requestedShiftType = requestedShiftTypeRaw === 'night' ? 'night' : 'day'
+  const hasRequestedShift =
+    /^\d{4}-\d{2}-\d{2}$/.test(requestedShiftDate) &&
+    (requestedShiftTypeRaw === 'day' || requestedShiftTypeRaw === 'night')
   const supabase = useSupabase()
   const scheduleService = useMemo(() => createScheduleService(supabase), [supabase])
   const handoverService = useMemo(() => createShiftHandoverService(supabase), [supabase])
@@ -544,11 +554,6 @@ function UnitSectionPage() {
     [addDaysIso, baseShiftDate, baseShiftType],
   )
   const [viewedShiftOffset, setViewedShiftOffset] = useState(0)
-  useEffect(() => {
-    if (section !== 'personnel') return
-    const timer = setTimeout(() => setViewedShiftOffset(0), 0)
-    return () => clearTimeout(timer)
-  }, [section, unit])
   const activeShiftSlot = useMemo(() => resolveShiftSlot(viewedShiftOffset), [resolveShiftSlot, viewedShiftOffset])
   const activeShiftDate = activeShiftSlot.date
   const activeShiftType = activeShiftSlot.type
@@ -560,6 +565,17 @@ function UnitSectionPage() {
     (dateStr, type) => slotOrdinal(dateStr, type) - slotOrdinal(baseShiftDate, baseShiftType),
     [baseShiftDate, baseShiftType, slotOrdinal],
   )
+  useEffect(() => {
+    if (section !== 'personnel') return
+    const timer = setTimeout(() => {
+      if (hasRequestedShift) {
+        setViewedShiftOffset(slotOffsetFor(requestedShiftDate, requestedShiftType))
+        return
+      }
+      setViewedShiftOffset(0)
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [section, unit, hasRequestedShift, requestedShiftDate, requestedShiftType, slotOffsetFor])
   const nextShiftSlot = useMemo(() => resolveShiftSlot(viewedShiftOffset + 1), [resolveShiftSlot, viewedShiftOffset])
 
   const scopeForEntryType = useCallback((entryType) => {
@@ -2295,82 +2311,83 @@ function UnitSectionPage() {
             </div>
           </div>
 
-          {!showSchedule ? (
-            <button
-              type="button"
-              onClick={() => setShowSchedule(true)}
-              className="group relative w-full overflow-hidden rounded-3xl border border-accent/45 bg-gradient-to-br from-slate-900 via-[#0f1e18] to-slate-950 p-6 text-left shadow-[0_12px_40px_-14px_rgba(31,107,67,0.5)] transition hover:-translate-y-0.5 hover:border-accent/70 hover:shadow-[0_20px_52px_-14px_rgba(31,107,67,0.62)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/55"
-            >
-                <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_20%,rgba(62,219,138,0.2),transparent_45%),radial-gradient(circle_at_80%_0%,rgba(31,107,67,0.28),transparent_42%)]" />
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="mt-1 text-2xl font-semibold text-white">ГРАФИК</h3>
-                    <p className="mt-1 text-sm text-gray-200/90">Открыть календарь смен персонала.</p>
+          {!isOnShiftPanelOnly &&
+            (!showSchedule ? (
+              <button
+                type="button"
+                onClick={() => setShowSchedule(true)}
+                className="group relative w-full overflow-hidden rounded-3xl border border-accent/45 bg-gradient-to-br from-slate-900 via-[#0f1e18] to-slate-950 p-6 text-left shadow-[0_12px_40px_-14px_rgba(31,107,67,0.5)] transition hover:-translate-y-0.5 hover:border-accent/70 hover:shadow-[0_20px_52px_-14px_rgba(31,107,67,0.62)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/55"
+              >
+                  <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_20%_20%,rgba(62,219,138,0.2),transparent_45%),radial-gradient(circle_at_80%_0%,rgba(31,107,67,0.28),transparent_42%)]" />
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="mt-1 text-2xl font-semibold text-white">ГРАФИК</h3>
+                      <p className="mt-1 text-sm text-gray-200/90">Открыть календарь смен персонала.</p>
+                    </div>
+                    <span className="rounded-full border border-warning/60 bg-warning-light px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-amber-100">
+                      Тестирование
+                    </span>
                   </div>
-                  <span className="rounded-full border border-warning/60 bg-warning-light px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-amber-100">
-                    Тестирование
-                  </span>
-                </div>
-            </button>
-          ) : (
-            <>
-              <PersonnelSchedule
-                monthDates={monthDates}
-                monthLabel={monthLabel}
-                employeesFromSchedule={employeesFromSchedule}
-                filterCategory={filterCategory}
-                filterSection={filterSection}
-                filterQuery={filterQuery}
-                filterQueryInput={filterQueryInput}
-                unitCode={unit}
-                positionFilter={positionFilter}
-                positionOptions={positionOptions}
-                positionsOpen={positionsOpen}
-                setFilterCategory={setFilterCategory}
-                setFilterSection={setFilterSection}
-                setFilterQuery={setFilterQuery}
-                setFilterQueryInput={setFilterQueryInput}
-                setPositionFilter={setPositionFilter}
-                setPositionsOpen={setPositionsOpen}
-                resetFilters={resetFilters}
-                pinnedEmployees={pinnedEmployees}
-                hiddenEmployees={hiddenEmployees}
-                setPinnedEmployees={setPinnedEmployees}
-                setHiddenEmployees={setHiddenEmployees}
-                collapsedPositions={collapsedPositions}
-                setCollapsedPositions={setCollapsedPositions}
-                scheduleError={scheduleError}
-                loadingSchedule={loadingSchedule}
-                loadingStaff={loadingStaff}
-                staffError={staffError}
-                monthStart={monthStart}
-                setMonthStart={setMonthStart}
-                groupedByPosition={groupedByPosition}
-                selectedEmployeeIds={selectedEmployeeIds}
-                setSelectedEmployeeIds={setSelectedEmployeeIds}
-                scheduleByDay={scheduleByDay}
-                formatCellValue={formatCellValue}
-                resolveIconType={resolveIconType}
-                iconCatalog={iconCatalog}
-                monthNorm={monthNorm}
-                selectedCell={selectedCell}
-                selectedCells={selectedCells}
-                setSelectedCells={setSelectedCells}
-                handleCellClick={handleCellClick}
-                handleApplyShift={handleApplyShift}
-                applyShiftToSelected={applyShiftToSelected}
-                setSelectionAnchor={setSelectionAnchor}
-                setMenuCell={setMenuCell}
-                menuCell={menuCell}
-                shiftMenuPosition={shiftMenuPosition}
-                shiftOptions={shiftOptions}
-                pentagramTypesInSchedule={pentagramTypesInSchedule}
-                isPersonnel
-                ShiftIcon={ShiftIcon}
-                onBackToCard={() => setShowSchedule(false)}
-              />
-            </>
-          )}
+              </button>
+            ) : (
+              <>
+                <PersonnelSchedule
+                  monthDates={monthDates}
+                  monthLabel={monthLabel}
+                  employeesFromSchedule={employeesFromSchedule}
+                  filterCategory={filterCategory}
+                  filterSection={filterSection}
+                  filterQuery={filterQuery}
+                  filterQueryInput={filterQueryInput}
+                  unitCode={unit}
+                  positionFilter={positionFilter}
+                  positionOptions={positionOptions}
+                  positionsOpen={positionsOpen}
+                  setFilterCategory={setFilterCategory}
+                  setFilterSection={setFilterSection}
+                  setFilterQuery={setFilterQuery}
+                  setFilterQueryInput={setFilterQueryInput}
+                  setPositionFilter={setPositionFilter}
+                  setPositionsOpen={setPositionsOpen}
+                  resetFilters={resetFilters}
+                  pinnedEmployees={pinnedEmployees}
+                  hiddenEmployees={hiddenEmployees}
+                  setPinnedEmployees={setPinnedEmployees}
+                  setHiddenEmployees={setHiddenEmployees}
+                  collapsedPositions={collapsedPositions}
+                  setCollapsedPositions={setCollapsedPositions}
+                  scheduleError={scheduleError}
+                  loadingSchedule={loadingSchedule}
+                  loadingStaff={loadingStaff}
+                  staffError={staffError}
+                  monthStart={monthStart}
+                  setMonthStart={setMonthStart}
+                  groupedByPosition={groupedByPosition}
+                  selectedEmployeeIds={selectedEmployeeIds}
+                  setSelectedEmployeeIds={setSelectedEmployeeIds}
+                  scheduleByDay={scheduleByDay}
+                  formatCellValue={formatCellValue}
+                  resolveIconType={resolveIconType}
+                  iconCatalog={iconCatalog}
+                  monthNorm={monthNorm}
+                  selectedCell={selectedCell}
+                  selectedCells={selectedCells}
+                  setSelectedCells={setSelectedCells}
+                  handleCellClick={handleCellClick}
+                  handleApplyShift={handleApplyShift}
+                  applyShiftToSelected={applyShiftToSelected}
+                  setSelectionAnchor={setSelectionAnchor}
+                  setMenuCell={setMenuCell}
+                  menuCell={menuCell}
+                  shiftMenuPosition={shiftMenuPosition}
+                  shiftOptions={shiftOptions}
+                  pentagramTypesInSchedule={pentagramTypesInSchedule}
+                  isPersonnel
+                  ShiftIcon={ShiftIcon}
+                  onBackToCard={() => setShowSchedule(false)}
+                />
+              </>
+            ))}
         </div>
       )}
 
@@ -2380,7 +2397,7 @@ function UnitSectionPage() {
         </div>
       )}
 
-      {section !== 'equipment' && (
+      {section !== 'equipment' && !isOnShiftPanelOnly && (
         <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 text-sm text-slate-200 shadow-lg">
           <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Следующие шаги</p>
           <ul className="mt-3 space-y-2">

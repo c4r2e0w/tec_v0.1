@@ -208,6 +208,16 @@ function WorkplacePage() {
     () => moveShiftSlot(statementShiftDate, statementShiftType, 1),
     [statementShiftDate, statementShiftType],
   )
+  const chiefPersonnelPanelUrl = useMemo(() => {
+    if (!isChiefWorkplaceView) return ''
+    const params = new URLSearchParams({
+      embed: '1',
+      panel: 'on-shift',
+      shift_date: statementShiftDate,
+      shift_type: statementShiftType,
+    })
+    return `/${unit}/personnel?${params.toString()}`
+  }, [isChiefWorkplaceView, statementShiftDate, statementShiftType, unit])
   const chiefNextAcceptanceCount = useMemo(
     () => (chiefWorkplaces || []).filter((wp) => {
       const division = workplaceDivisionKey(wp)
@@ -1349,100 +1359,13 @@ function WorkplacePage() {
             {activeTab === 'daily' ? (
               <div className="mt-3 space-y-3">
                 {isChiefWorkplaceView && (
-                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">На смене</p>
-                    <div className="mt-2 space-y-1 text-xs text-slate-300">
-                      <p>
-                        Тема пятиминутки: <span className="text-slate-100">{chiefBriefingTopic || '—'}</span>
-                      </p>
-                      <p>
-                        Тема обхода: <span className="text-slate-100">{chiefRoundTopic || '—'}</span>
-                      </p>
-                      <p className="pt-1">
-                        Начальник смены: <span className="text-slate-100">{assignee?.fio || 'не назначен'}</span>
-                      </p>
-                    </div>
-                    {loadingChiefTeam && <p className="mt-2 text-xs text-slate-400">Загрузка…</p>}
-                    {!loadingChiefTeam && (
-                      <>
-                        <div className="mt-3 grid gap-3 md:grid-cols-2">
-                          {[
-                            { key: 'boiler', label: 'Котельное' },
-                            { key: 'turbine', label: 'Турбинное' },
-                          ].map((block) => (
-                            <div key={block.key} className="rounded-lg border border-white/10 bg-white/5 p-2">
-                              <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">{block.label}</p>
-                              <div className="mt-2 space-y-2">
-                                {(chiefRowsByDivision[block.key] || []).map((row) => (
-                                  <div key={row.id}>
-                                    <p className="text-xs text-slate-300">{row.name}</p>
-                                    {isFormationMode ? (
-                                      <select
-                                        value={chiefDraftByWorkplace[row.id] || ''}
-                                        onChange={(e) =>
-                                          {
-                                            const nextValue = String(e.target.value || '')
-                                            if (nextValue === '__more__') {
-                                              setChiefExpandedSelects((prev) => ({ ...prev, [row.id]: true }))
-                                              return
-                                            }
-                                            setChiefDraftByWorkplace((prev) => ({ ...prev, [row.id]: nextValue }))
-                                          }
-                                        }
-                                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                                      >
-                                        <option value="">—</option>
-                                        {(chiefCandidateSetsByWorkplace[row.id]?.primary || []).map((emp) => (
-                                          <option key={emp.id} value={emp.id}>
-                                            {emp.label}
-                                          </option>
-                                        ))}
-                                        {!chiefExpandedSelects[row.id] &&
-                                          (chiefCandidateSetsByWorkplace[row.id]?.extra || []).length > 0 && (
-                                            <option value="__more__">Еще…</option>
-                                          )}
-                                        {chiefExpandedSelects[row.id] &&
-                                          (chiefCandidateSetsByWorkplace[row.id]?.extra || []).map((emp) => (
-                                            <option key={`extra-${row.id}-${emp.id}`} value={emp.id}>
-                                              {emp.label}
-                                            </option>
-                                          ))}
-                                      </select>
-                                    ) : (
-                                      <p className="mt-1 text-xs text-slate-100">{chiefAssignedByWorkplace.get(row.id) || '—'}</p>
-                                    )}
-                                  </div>
-                                ))}
-                                {!chiefRowsByDivision[block.key]?.length && <p className="text-xs text-slate-500">—</p>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        {isFormationMode ? (
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleSaveChiefTeam()}
-                              disabled={savingChiefTeam}
-                              className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
-                            >
-                              {savingChiefTeam ? 'Сохраняем...' : 'Подтвердить смену (инструктаж проведен)'}
-                            </button>
-                            {chiefTeamMessage && <span className="text-xs text-emerald-300">{chiefTeamMessage}</span>}
-                            {chiefTeamError && <span className="text-xs text-rose-300">{chiefTeamError}</span>}
-                          </div>
-                        ) : (
-                          <p className="mt-3 text-xs text-slate-400">Архивный просмотр: редактирование состава недоступно.</p>
-                        )}
-                        <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-2 text-xs">
-                          <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Смену принимает</p>
-                          <p className="mt-1 text-slate-200">
-                            {new Date(nextShiftSlot.date).toLocaleDateString('ru-RU')} · Вахта {getShiftCodeByDate(nextShiftSlot.date, nextShiftSlot.type)} · {nextShiftSlot.type === 'night' ? 'Ночь' : 'День'} · Начальник: {chiefNextChiefName}
-                          </p>
-                          <p className="mt-1 text-slate-300">Рабочих мест к приёмке: {chiefNextAcceptanceCount}.</p>
-                        </div>
-                      </>
-                    )}
+                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-1.5">
+                    <iframe
+                      key={`${statementShiftDate}-${statementShiftType}`}
+                      src={chiefPersonnelPanelUrl}
+                      title="Формирование состава смены НС КТЦ"
+                      className="h-[980px] w-full rounded-lg border border-white/10 bg-background"
+                    />
                   </div>
                 )}
                 <div className="grid gap-3 lg:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]">
