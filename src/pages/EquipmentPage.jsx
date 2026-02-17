@@ -5,23 +5,58 @@ import { useSupabase } from '../context/SupabaseProvider'
 const normalize = (value) => String(value || '').trim().toLowerCase()
 
 const defaultStatuses = ['работа', 'резерв', 'ремонт']
+const isMissingTableError = (error, tableName) =>
+  String(error?.message || '')
+    .toLowerCase()
+    .includes(`could not find the table 'public.${String(tableName || '').toLowerCase()}'`)
+
+const normalizeControlPointKey = (value) =>
+  normalize(value)
+    .replace(/\s+/g, '')
+    .replace(/_/g, '')
+    .replace(/-/g, '')
+
 const CONTROL_POINTS = [
-  { value: 'нс_ктц', label: 'НС КТЦ' },
-  { value: 'ст_машинист_по_ко', label: 'Ст. машинист по КО' },
-  { value: 'цтщупк_1', label: 'ЦТЩУпк 1' },
-  { value: 'цтщупк_2', label: 'ЦТЩУпк 2' },
-  { value: 'цтщупк_3', label: 'ЦТЩУпк 3' },
-  { value: 'машинист_обходчик_6р_по_ко', label: 'Машинист-обходчик 6р по КО' },
-  { value: 'машинист_обходчик_5р_по_ко', label: 'Машинист-обходчик 5р по КО' },
-  { value: 'машинист_обходчик_4р_по_ко', label: 'Машинист-обходчик 4р по КО' },
-  { value: 'ст_машинист_по_то', label: 'Ст. машинист по ТО' },
-  { value: 'цтщупт_1', label: 'ЦТЩУпт 1' },
-  { value: 'цтщупт_2', label: 'ЦТЩУпт 2' },
-  { value: 'цтщупт_3', label: 'ЦТЩУпт 3' },
-  { value: 'цтщупт_4', label: 'ЦТЩУпт 4' },
-  { value: 'машинист_обходчик_5р_по_то', label: 'Машинист-обходчик 5р по ТО' },
-  { value: 'машинист_обходчик_4р_по_то', label: 'Машинист-обходчик 4р по ТО' },
+  { dbValue: 'нс_ктц', label: 'НС КТЦ' },
+  { dbValue: 'ст_машинист_по_ко', label: 'Ст. Машинист по КО' },
+  { dbValue: 'цтщупк_1', label: 'ЦТЩУпк 1' },
+  { dbValue: 'цтщупк_2', label: 'ЦТЩУпк 2' },
+  { dbValue: 'цтщупк_3', label: 'ЦТЩУпк 3' },
+  { dbValue: 'машинист_обходчик_6р_по_ко', label: 'Машинист-обходчик 6р по КО' },
+  { dbValue: 'машинист_обходчик_5р_по_ко', label: 'Машинист-обходчик 5р по КО' },
+  { dbValue: 'машинист_обходчик_4р_по_ко', label: 'Машинист-обходчик 4р по КО' },
+  { dbValue: 'ст_машинист_по_то', label: 'Ст. Машинист по ТО' },
+  { dbValue: 'цтщупт_1', label: 'ЦТЩУпт 1' },
+  { dbValue: 'цтщупт_2', label: 'ЦТЩУпт 2' },
+  { dbValue: 'цтщупт_3', label: 'ЦТЩУпт 3' },
+  { dbValue: 'цтщупт_4', label: 'ЦТЩУпт 4' },
+  { dbValue: 'машинист_обходчик_5р_по_то', label: 'Машинист-обходчик 5р по ТО' },
+  { dbValue: 'машинист_обходчик_4р_по_то', label: 'Машинист-обходчик 4р по ТО' },
 ]
+
+const CONTROL_POINT_DB_BY_KEY = new Map()
+const CONTROL_POINT_LABEL_BY_DB = new Map()
+for (const row of CONTROL_POINTS) {
+  const dbValue = String(row.dbValue || '').trim()
+  const label = String(row.label || '').trim()
+  if (!dbValue) continue
+  CONTROL_POINT_DB_BY_KEY.set(normalizeControlPointKey(dbValue), dbValue)
+  if (label) CONTROL_POINT_DB_BY_KEY.set(normalizeControlPointKey(label), dbValue)
+  CONTROL_POINT_LABEL_BY_DB.set(dbValue, label || dbValue)
+}
+
+const toDbControlPoint = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const normalized = normalizeControlPointKey(raw)
+  return CONTROL_POINT_DB_BY_KEY.get(normalized) || raw
+}
+
+const toControlPointLabel = (value) => {
+  const dbValue = toDbControlPoint(value)
+  if (!dbValue) return ''
+  return CONTROL_POINT_LABEL_BY_DB.get(dbValue) || String(value || '').trim() || dbValue
+}
 
 function EquipmentPage() {
   const { unit } = useParams()
@@ -33,7 +68,6 @@ function EquipmentPage() {
   const [subsystemTypes, setSubsystemTypes] = useState([])
   const [systemSubsystemLinks, setSystemSubsystemLinks] = useState([])
   const [systemControlPointLinks, setSystemControlPointLinks] = useState([])
-  const [workplaces, setWorkplaces] = useState([])
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -74,11 +108,13 @@ function EquipmentPage() {
   }, [subsystemTypes])
 
   const controlPointOptions = useMemo(() => {
-    const values = new Map(CONTROL_POINTS.map((row) => [row.value, row.label]))
+    const values = new Map(CONTROL_POINTS.map((row) => [row.dbValue, row.label]))
     for (const row of systemControlPointLinks || []) {
       const value = String(row?.control_point || '').trim()
       if (!value) continue
-      values.set(value, values.get(value) || value)
+      const dbValue = toDbControlPoint(value)
+      if (!dbValue) continue
+      values.set(dbValue, values.get(dbValue) || toControlPointLabel(value))
     }
     return [...values.entries()]
       .map(([value, label]) => ({ value, label }))
@@ -113,7 +149,7 @@ function EquipmentPage() {
     if (!selectedSystemId) return controlPointOptions
     const allowed = (systemControlPointLinks || [])
       .filter((row) => String(row?.system_id || '') === selectedSystemId)
-      .map((row) => String(row?.control_point || '').trim())
+      .map((row) => toDbControlPoint(row?.control_point))
       .filter(Boolean)
     if (!allowed.length) return controlPointOptions
     const allowedSet = new Set(allowed)
@@ -157,7 +193,10 @@ function EquipmentPage() {
         return
       }
 
-      const dictErrors = [stRes.error, sysRes.error, subTypeRes.error, linkRes.error, cpLinkRes.error, wpRes.error].filter(Boolean)
+      const cpLinkErrorIgnored = isMissingTableError(cpLinkRes.error, 'equipment_system_control_points')
+      const dictErrors = [stRes.error, sysRes.error, subTypeRes.error, linkRes.error, wpRes.error]
+        .filter(Boolean)
+        .concat(cpLinkErrorIgnored ? [] : (cpLinkRes.error ? [cpLinkRes.error] : []))
       if (dictErrors.length) {
         setError(dictErrors.map((e) => e.message).join(' · '))
       }
@@ -186,8 +225,7 @@ function EquipmentPage() {
       if (!subTypeRes.error) setSubsystemTypes(subTypeRes.data || [])
       if (!linkRes.error) setSystemSubsystemLinks(linkRes.data || [])
       if (!cpLinkRes.error) setSystemControlPointLinks(cpLinkRes.data || [])
-      if (!wpRes.error) setWorkplaces(scopedWorkplaces)
-
+      else if (cpLinkErrorIgnored) setSystemControlPointLinks([])
       setLoading(false)
     }
 
@@ -253,7 +291,7 @@ function EquipmentPage() {
       system_id: row.system_id || '',
       subsystem_type_id: row.subsystem_type_id || '',
       station_number: row.stationNumber || '',
-      control_point: row.control_point || '',
+      control_point: toDbControlPoint(row.control_point) || '',
       status: row.status || 'работа',
     }
   }
@@ -275,7 +313,7 @@ function EquipmentPage() {
       subsystem_type_id: draft.subsystem_type_id ? Number(draft.subsystem_type_id) : null,
       equipment_system: systemById.get(String(draft.system_id || ''))?.name || null,
       status: draft.status,
-      control_point: draft.control_point || null,
+      control_point: toDbControlPoint(draft.control_point),
       station_number: draft.station_number || null,
     }
 
@@ -297,21 +335,19 @@ function EquipmentPage() {
   }
 
   const addRow = async () => {
+    const normalizedUnit = String(unit || '').trim().toLowerCase()
     const payload = {
       system_id: newRow.system_id ? Number(newRow.system_id) : null,
       subsystem_type_id: newRow.subsystem_type_id ? Number(newRow.subsystem_type_id) : null,
       equipment_system: systemById.get(String(newRow.system_id || ''))?.name || null,
       status: newRow.status || 'работа',
-      control_point: newRow.control_point || null,
+      control_point: toDbControlPoint(newRow.control_point),
       station_number: newRow.station_number || null,
+      ...(normalizedUnit ? { unit: normalizedUnit } : {}),
     }
 
     if (!newRow.system_id) {
       setError('Выберите систему из справочника equipment_systems.')
-      return
-    }
-    if (!newRow.subsystem_type_id) {
-      setError('Выберите подсистему, связанную с выбранной системой.')
       return
     }
 
@@ -380,7 +416,7 @@ function EquipmentPage() {
             className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
             disabled={!newRow.system_id}
           >
-            <option value="">Подсистема</option>
+            <option value="">Подсистема (необязательно)</option>
             {subsystemOptionsForNewRow.map((info) => (
               <option key={info.id} value={info.id}>
                 {info.name}
