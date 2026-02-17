@@ -43,7 +43,17 @@ const isChiefPosition = (value) => {
   const text = normalizeRoleText(value)
   return text.includes('начальник смен') || text.includes('нс ктц') || text.includes('нсктц')
 }
-const isOperationalType = (value) => normalizeRoleText(value).includes('оператив')
+const isOperationalType = (value, positionName = '') => {
+  const typeText = normalizeRoleText(value)
+  if (typeText.includes('оператив')) return true
+  const positionText = normalizeRoleText(positionName)
+  return (
+    positionText.includes('машинист') ||
+    positionText.includes('обходчик') ||
+    positionText.includes('начальник смен') ||
+    positionText.includes('нс ктц')
+  )
+}
 const isReserveWorkplace = (workplace) => {
   const text = normalizeRoleText([workplace?.name, workplace?.code, workplace?.section, workplace?.area].filter(Boolean).join(' '))
   return text.includes('резерв') || text.includes('без пост')
@@ -87,27 +97,46 @@ const getPositionWeight = (name) => {
   return 999
 }
 const splitRoleTokens = (value) => normalizeRoleText(value).split(' ').filter((token) => token.length > 2)
+const hasPositionConstraint = (value) => {
+  const text = normalizeRoleText(value)
+  if (!text) return false
+  return (
+    text.includes('машинист') ||
+    text.includes('обход') ||
+    text.includes('начальник') ||
+    text.includes('старш') ||
+    text.includes('оператор') ||
+    text.includes('инженер')
+  )
+}
 const canEmployeeCoverWorkplace = (employeePosition, workplacePosition, allowedPositions = []) => {
   const employeeText = normalizeRoleText(employeePosition)
   const workplaceText = normalizeRoleText(workplacePosition)
-  if (!employeeText || !workplaceText) return false
+  const normalizedAllowed = (Array.isArray(allowedPositions) ? allowedPositions : [])
+    .map((name) => normalizeRoleText(name))
+    .filter(Boolean)
+  const hasExplicitConstraint = hasPositionConstraint(workplaceText) || normalizedAllowed.length > 0
+  if (!employeeText) return false
+  if (!hasExplicitConstraint) return true
+  if (!workplaceText) return true
   if (employeeText === workplaceText || employeeText.includes(workplaceText) || workplaceText.includes(employeeText)) return true
 
   const employeeTokens = splitRoleTokens(employeeText)
   const workplaceTokens = splitRoleTokens(workplaceText)
+  if (!workplaceTokens.length) return true
   const commonTokens = workplaceTokens.filter((token) =>
     employeeTokens.some((employeeToken) => employeeToken === token || employeeToken.startsWith(token) || token.startsWith(employeeToken)),
   ).length
-  if (commonTokens >= Math.max(2, Math.ceil(workplaceTokens.length * 0.6))) return true
+  const minCommon = workplaceTokens.length <= 2 ? 1 : Math.max(2, Math.ceil(workplaceTokens.length * 0.6))
+  if (commonTokens >= minCommon) return true
 
-  const normalizedAllowed = (Array.isArray(allowedPositions) ? allowedPositions : [])
-    .map((name) => normalizeRoleText(name))
-    .filter(Boolean)
   if (normalizedAllowed.some((name) => employeeText.includes(name))) return true
 
   const isSenior = employeeText.includes('старш') && employeeText.includes('машинист')
   const isLowerTarget =
     workplaceText.includes('щит') ||
+    workplaceText.includes('щу') ||
+    workplaceText.includes('мщу') ||
     workplaceText.includes('обход') ||
     (workplaceText.includes('машинист') && !workplaceText.includes('старш'))
   if (isSenior && isLowerTarget) return true
@@ -346,7 +375,7 @@ function WorkplacePage() {
       const sample = rows[0]
       const positionName = sample.employees?.positions?.name || ''
       const positionType = sample.employees?.positions?.type || ''
-      if (!isChiefPosition(positionName) && !isOperationalType(positionType)) return
+      if (!isChiefPosition(positionName) && !isOperationalType(positionType, positionName)) return
       candidates.push({
         id: sample.employee_id,
         positionId: sample.employees?.position_id ?? null,
@@ -372,6 +401,13 @@ function WorkplacePage() {
         const allowedPositions = Array.isArray(wp?.allowed_positions) ? wp.allowed_positions : []
         const canFill = (emp) => {
           if (!emp || used.has(String(emp.id))) return false
+          const samePositionId =
+            wpPosId != null &&
+            emp?.positionId != null &&
+            Number.isFinite(Number(wpPosId)) &&
+            Number.isFinite(Number(emp.positionId)) &&
+            Number(emp.positionId) === Number(wpPosId)
+          if (samePositionId) return true
           const empDivision = employeeDivisionKey(emp.positionName)
           const divisionOk = wpDivision === 'other' ? empDivision === 'other' : empDivision === wpDivision || empDivision === 'other'
           if (!divisionOk) return false
@@ -840,7 +876,7 @@ function WorkplacePage() {
         if (!id) return
         const positionName = String(emp?.positions?.name || '')
         const positionType = String(emp?.positions?.type || '')
-        if (!isChiefPosition(positionName) && !isOperationalType(positionType)) return
+        if (!isChiefPosition(positionName) && !isOperationalType(positionType, positionName)) return
         const fio = [emp.last_name, emp.first_name, emp.middle_name].filter(Boolean).join(' ') || `ID ${id}`
         const empWeight = emp?.positions?.sort_weight ?? getPositionWeight(positionName)
         if (candidatesById.has(id)) {
@@ -1278,6 +1314,9 @@ function WorkplacePage() {
         id: String(wp.id),
         name: wp.name || wp.code || `Пост ${wp.id}`,
         code: wp.code || '',
+        positionId: wp?.position_id ?? null,
+        requiredPositionText: String(wp.position_name || wp.position || ''),
+        allowedPositions: Array.isArray(wp.allowed_positions) ? wp.allowed_positions : [],
         division: workplaceDivisionKey(wp),
         sort: Number.isFinite(Number(wp.sort_weight))
           ? Number(wp.sort_weight)
@@ -1365,12 +1404,20 @@ function WorkplacePage() {
     const map = {}
     ;(chiefRowsByDivision.boiler || []).concat(chiefRowsByDivision.turbine || []).forEach((row) => {
       const division = row.division
-      const workplacePosition = String(row?.position_name || row?.position || row?.name || '')
-      const allowedPositions = Array.isArray(row?.allowed_positions) ? row.allowed_positions : []
+      const workplacePosition = String(row?.requiredPositionText || row?.name || '')
+      const requiredPositionId = row?.positionId ?? null
+      const allowedPositions = Array.isArray(row?.allowedPositions) ? row.allowedPositions : []
       const requiredWeight = getPositionWeight(workplacePosition)
       const workplaceIsChief = isChiefPosition(workplacePosition)
       const eligible = (chiefCandidates || []).filter((candidate) => {
         const candidatePosition = String(candidate?.positionName || '')
+        const samePositionId =
+          requiredPositionId != null &&
+          candidate?.positionId != null &&
+          Number.isFinite(Number(requiredPositionId)) &&
+          Number.isFinite(Number(candidate.positionId)) &&
+          Number(candidate.positionId) === Number(requiredPositionId)
+        if (samePositionId) return true
         const candidateIsChief = isChiefPosition(candidatePosition)
         if (!workplaceIsChief && candidateIsChief) return false
         const candidateDivision = employeeDivisionKey(candidatePosition)

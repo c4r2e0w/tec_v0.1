@@ -102,7 +102,17 @@ const normalizeRoleTextValue = (value) =>
     .replace(/\s+/g, ' ')
     .trim()
 
-const isOperationalType = (value) => normalizeRoleTextValue(value).includes('оператив')
+const isOperationalType = (value, positionName = '') => {
+  const typeText = normalizeRoleTextValue(value)
+  if (typeText.includes('оператив')) return true
+  const positionText = normalizeRoleTextValue(positionName)
+  return (
+    positionText.includes('машинист') ||
+    positionText.includes('обходчик') ||
+    positionText.includes('начальник смен') ||
+    positionText.includes('нс ктц')
+  )
+}
 const isAdministrativeType = (value) => normalizeRoleTextValue(value).includes('административ')
 const isChiefPosition = (value) => {
   const normalized = normalizeRoleTextValue(value)
@@ -681,14 +691,14 @@ function UnitSectionPage() {
       .sort((a, b) => a.weight - b.weight || a.label.localeCompare(b.label, 'ru'))
   }, [staffWithLabels, scheduleRows, getPositionWeight, unit])
   const operationalEmployeesFromSchedule = useMemo(
-    () => allEmployeesFromSchedule.filter((emp) => isOperationalType(emp.positionType)),
+    () => allEmployeesFromSchedule.filter((emp) => isOperationalType(emp.positionType, emp.position)),
     [allEmployeesFromSchedule],
   )
 
   const employeesFromSchedule = useMemo(() => {
     let list = [...allEmployeesFromSchedule]
     if (filterCategory === 'operational') {
-      list = list.filter((e) => isOperationalType(e.positionType))
+      list = list.filter((e) => isOperationalType(e.positionType, e.position))
     } else if (filterCategory === 'administrative') {
       list = list.filter((e) => isAdministrativeType(e.positionType))
     }
@@ -904,10 +914,12 @@ function UnitSectionPage() {
           ''
         const division = String(rawDivision || '').toLowerCase()
         const sort = Number(wp.sort_weight ?? wp.sort_order ?? wp.order_index ?? index)
-        const rawPosition = wp.position_id || wp.position_name || wp.position || wp.allowed_position_name || ''
-        const positionText = String(rawPosition || '').toLowerCase().trim()
+        const requiredPositionId = Number.isFinite(Number(wp.position_id)) ? Number(wp.position_id) : null
+        const positionFromId = requiredPositionId != null ? positionsMap[requiredPositionId]?.name || '' : ''
+        const rawPosition = wp.position_name || wp.position || wp.allowed_position_name || positionFromId || ''
+        const positionText = String(rawPosition || '').trim()
         const allowedPositions = Array.isArray(wp.allowed_positions)
-          ? wp.allowed_positions.map((n) => String(n || '').toLowerCase().trim()).filter(Boolean)
+          ? wp.allowed_positions.map((n) => String(n || '').trim()).filter(Boolean)
           : []
         const divisionKey = division.includes('котель')
           ? 'boiler'
@@ -920,18 +932,34 @@ function UnitSectionPage() {
           name,
           divisionKey,
           sort: Number.isFinite(sort) ? sort : index,
+          requiredPositionId,
           positionText,
           allowedPositions,
         }
       })
       .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'ru'))
-  }, [workplaces])
+  }, [workplaces, positionsMap])
 
   const normalizeRoleText = useCallback(
     (value) => normalizeRoleTextValue(value),
     [],
   )
   const splitRoleTokens = useCallback((value) => normalizeRoleText(value).split(' ').filter((t) => t.length > 2), [normalizeRoleText])
+  const hasPositionConstraint = useCallback(
+    (value) => {
+      const text = normalizeRoleText(value)
+      if (!text) return false
+      return (
+        text.includes('машинист') ||
+        text.includes('обход') ||
+        text.includes('начальник') ||
+        text.includes('старш') ||
+        text.includes('оператор') ||
+        text.includes('инженер')
+      )
+    },
+    [normalizeRoleText],
+  )
   const detectDivisionKey = useCallback(
     (emp) => {
       const raw = `${emp?.division || ''} ${emp?.department || ''} ${emp?.position || ''}`
@@ -944,24 +972,38 @@ function UnitSectionPage() {
   )
   const canEmployeeCoverWorkplace = useCallback(
     (emp, workplace) => {
+      const employeePositionId = Number.isFinite(Number(emp?.position_id)) ? Number(emp.position_id) : null
+      const requiredPositionId = Number.isFinite(Number(workplace?.requiredPositionId)) ? Number(workplace.requiredPositionId) : null
+      if (requiredPositionId != null && employeePositionId != null && employeePositionId === requiredPositionId) return true
       const employeeText = normalizeRoleText(emp?.position)
       const workplaceText = normalizeRoleText(workplace?.positionText)
-      if (!employeeText || !workplaceText) return false
+      const normalizedAllowed = (Array.isArray(workplace?.allowedPositions) ? workplace.allowedPositions : [])
+        .map((name) => normalizeRoleText(name))
+        .filter(Boolean)
+      const hasExplicitConstraint = hasPositionConstraint(workplaceText) || normalizedAllowed.length > 0
+      if (!employeeText) return false
+      if (!hasExplicitConstraint) return true
+      if (!workplaceText) return true
+      if (!/[a-zа-я]/.test(workplaceText)) return true
       if (employeeText === workplaceText || employeeText.includes(workplaceText) || workplaceText.includes(employeeText)) return true
       const empTokens = splitRoleTokens(employeeText)
       const wpTokens = splitRoleTokens(workplaceText)
+      if (!wpTokens.length) return true
       const common = wpTokens.filter((t) => empTokens.some((e) => e === t || e.startsWith(t) || t.startsWith(e))).length
-      if (common >= Math.max(2, Math.ceil(wpTokens.length * 0.6))) return true
-      if (workplace.allowedPositions.some((name) => employeeText.includes(normalizeRoleText(name)))) return true
+      const minCommon = wpTokens.length <= 2 ? 1 : Math.max(2, Math.ceil(wpTokens.length * 0.6))
+      if (common >= minCommon) return true
+      if (normalizedAllowed.some((name) => employeeText.includes(name))) return true
       const isSenior = employeeText.includes('старш') && employeeText.includes('машинист')
       const isLowerTarget =
         workplaceText.includes('щит') ||
+        workplaceText.includes('щу') ||
+        workplaceText.includes('мщу') ||
         workplaceText.includes('обход') ||
         (workplaceText.includes('машинист') && !workplaceText.includes('старш'))
       if (isSenior && isLowerTarget) return true
       return false
     },
-    [normalizeRoleText, splitRoleTokens],
+    [hasPositionConstraint, normalizeRoleText, splitRoleTokens],
   )
   const resolveEmployeesForShift = useCallback(
     (mode, targetDate, targetShiftType) => {
@@ -1011,7 +1053,9 @@ function UnitSectionPage() {
           workplaceId: wp.id,
           workplaceNavId: wp.navId || wp.id,
           workplaceName: wp.name,
+          requiredPositionId: wp.requiredPositionId ?? null,
           requiredPositionText: wp.positionText,
+          allowedPositions: wp.allowedPositions || [],
           divisionKey,
           employee: assigned,
         }
@@ -1058,7 +1102,7 @@ function UnitSectionPage() {
     }
   }, [activeShiftDate, handoverService, section, shiftWorkflowService, unit])
   const operationalStaffPool = useMemo(
-    () => allEmployeesFromSchedule.filter((emp) => isOperationalType(emp.positionType)),
+    () => allEmployeesFromSchedule.filter((emp) => isOperationalType(emp.positionType, emp.position)),
     [allEmployeesFromSchedule],
   )
   const currentShiftEmployees = useMemo(
@@ -1087,22 +1131,28 @@ function UnitSectionPage() {
   const getCandidatesForWorkplace = useCallback(
     (row) => {
       const requiredWeight = getPositionWeight(row.requiredPositionText || row.workplaceName || '')
+      const requiredPositionId = Number.isFinite(Number(row.requiredPositionId)) ? Number(row.requiredPositionId) : null
       const byDivision = (pool) =>
         pool.filter((emp) => {
+          const employeePositionId = Number.isFinite(Number(emp?.position_id)) ? Number(emp.position_id) : null
+          if (requiredPositionId != null && employeePositionId != null && employeePositionId === requiredPositionId) return true
           const divisionKey = detectDivisionKey(emp)
           if (row.divisionKey === 'other') return divisionKey === 'other'
           return divisionKey === row.divisionKey || divisionKey === 'other'
         })
       const byWorkplaceAndRank = (pool) =>
         byDivision(pool).filter((emp) => {
+          const employeePositionId = Number.isFinite(Number(emp?.position_id)) ? Number(emp.position_id) : null
+          if (requiredPositionId != null && employeePositionId != null && employeePositionId === requiredPositionId) return true
           const isChief = isChiefPosition(emp.position)
           const workplaceIsChief = isChiefPosition(row.requiredPositionText || row.workplaceName)
           if (isChief && !workplaceIsChief && pool === currentShiftEmployees) return false
           const rankOk = requiredWeight >= 900 || (Number.isFinite(emp.weight) ? emp.weight <= requiredWeight : true)
           if (!rankOk) return false
           return canEmployeeCoverWorkplace(emp, {
+            requiredPositionId,
             positionText: row.requiredPositionText,
-            allowedPositions: [],
+            allowedPositions: row.allowedPositions || [],
           })
         })
       const primary = byWorkplaceAndRank(currentShiftEmployees)
@@ -1472,7 +1522,7 @@ function UnitSectionPage() {
     setSelectedCells([])
     setSelectionAnchor(null)
     setLoadingStaff(false)
-  }, [scheduleService, section, user, filterCategory, filterSection, positionFilter, positionsList])
+  }, [scheduleService, section, user, unit, filterCategory, filterSection, positionFilter, positionsList])
 
   const loadShiftTemplates = useCallback(async () => {
     const { data, error } = await scheduleService.fetchShiftTemplates()
