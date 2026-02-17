@@ -174,8 +174,11 @@ function WorkplacePage() {
     [statementShiftDate, statementShiftType],
   )
   const chiefNextAcceptanceCount = useMemo(
-    () => (chiefRowsByDivision.boiler?.length || 0) + (chiefRowsByDivision.turbine?.length || 0),
-    [chiefRowsByDivision.boiler, chiefRowsByDivision.turbine],
+    () => (chiefWorkplaces || []).filter((wp) => {
+      const division = workplaceDivisionKey(wp)
+      return division === 'boiler' || division === 'turbine'
+    }).length,
+    [chiefWorkplaces],
   )
 
   const isEmployeeInShift = (rows, date, type) => {
