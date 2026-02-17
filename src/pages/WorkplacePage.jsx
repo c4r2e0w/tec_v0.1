@@ -186,6 +186,15 @@ const calcDurationHours = (startTime, endTime) => {
   return Number.isFinite(hours) ? Number(hours.toFixed(2)) : null
 }
 
+const toUiErrorMessage = (error, fallback) => {
+  const raw = String(error?.message || error?.details || error?.hint || '').trim()
+  const lower = raw.toLowerCase()
+  if (lower.includes('failed to fetch')) {
+    return 'Не удалось связаться с сервером (Failed to fetch). Проверьте интернет/VPN, доступ к Supabase и блокировку запросов в браузере.'
+  }
+  return raw || fallback
+}
+
 function WorkplacePage() {
   const { unit, workplaceId } = useParams()
   const supabase = useSupabase()
@@ -1269,132 +1278,137 @@ function WorkplacePage() {
     setSavingChiefTeam(true)
     setChiefTeamError('')
     setChiefTeamMessage('')
-    let sessionId = chiefSessionId
-    if (!sessionId) {
-      const createRes = await shiftWorkflowService.createOrGetBriefing({
-        date: statementShiftDate,
-        unit,
-        shiftType: statementShiftType,
+    try {
+      let sessionId = chiefSessionId
+      if (!sessionId) {
+        const createRes = await shiftWorkflowService.createOrGetBriefing({
+          date: statementShiftDate,
+          unit,
+          shiftType: statementShiftType,
+        })
+        const createdSessionId = Number(createRes?.data || 0)
+        if (createRes?.error || !createdSessionId) {
+          setChiefTeamError(toUiErrorMessage(createRes?.error, 'Не удалось создать или получить сессию смены'))
+          return
+        }
+        sessionId = createdSessionId
+        setChiefSessionId(sessionId)
+      }
+
+      const chiefEmployeeId = assignee?.id || profile?.employee?.id || null
+      if (chiefEmployeeId) {
+        const updateRes = await handoverService.updateSession({
+          sessionId,
+          payload: {
+            chief_employee_id: Number(chiefEmployeeId),
+            status: 'active',
+          },
+        })
+        if (updateRes?.error) {
+          setChiefTeamError(toUiErrorMessage(updateRes.error, 'Не удалось назначить начальника смены'))
+          return
+        }
+      }
+
+      const used = new Set()
+      const allowedCandidateIds = new Set((chiefCandidates || []).map((candidate) => String(candidate.id)))
+      const payload = []
+      Object.entries(chiefDraftByWorkplace).forEach(([workplaceKey, employeeValue]) => {
+        const employeeId = String(employeeValue || '')
+        if (!employeeId || used.has(employeeId) || !allowedCandidateIds.has(employeeId)) return
+        used.add(employeeId)
+        const source = chiefCandidates.find((c) => String(c.id) === employeeId)
+        const fact = chiefFactDraftByWorkplace[workplaceKey] || defaultFactDraft(statementShiftType)
+        const attendanceStatus = normalizeFactStatus(fact.attendance_status)
+        const actualStart = attendanceStatus === 'absent' ? null : toDbTimeValue(fact.actual_start_time)
+        const actualEnd = attendanceStatus === 'absent' ? null : toDbTimeValue(fact.actual_end_time)
+        const computedHours = actualStart && actualEnd ? calcDurationHours(actualStart.slice(0, 5), actualEnd.slice(0, 5)) : null
+        const parsedHours = Number(fact.actual_hours)
+        const actualHours =
+          attendanceStatus === 'absent'
+            ? 0
+            : Number.isFinite(parsedHours)
+              ? Number(parsedHours.toFixed(2))
+              : computedHours == null
+                ? null
+                : computedHours
+        payload.push({
+          session_id: sessionId,
+          employee_id: Number(employeeId),
+          workplace_code: workplaceKey,
+          position_name: source?.positionName || null,
+          source: 'manual',
+          is_present: true,
+          attendance_status: attendanceStatus,
+          actual_start_time: actualStart,
+          actual_end_time: actualEnd,
+          actual_hours: actualHours,
+          fact_note: String(fact.fact_note || '').trim() || null,
+          note: String(fact.fact_note || '').trim() || null,
+          confirmed_by_chief: false,
+          confirmed_at: null,
+        })
       })
-      const createdSessionId = Number(createRes?.data || 0)
-      if (createRes?.error || !createdSessionId) {
-        setSavingChiefTeam(false)
-        setChiefTeamError(createRes?.error?.message || 'Не удалось создать или получить сессию смены')
+      ;(chiefAssignments || []).forEach((row) => {
+        const employeeId = String(row?.employee_id || '')
+        if (!employeeId || used.has(employeeId)) return
+        const assignmentKey = String(
+          (chiefWorkplaces || []).find((wp) => {
+            const wpId = String(wp?.id || '')
+            const raw = String(row.workplace_code || '')
+            return wpId && (raw === wpId || normalizeKey(raw) === normalizeKey(wp.code) || normalizeKey(raw) === normalizeKey(wp.name))
+          })?.id || row.workplace_code || '',
+        )
+        const fact = chiefFactDraftByWorkplace[assignmentKey] || null
+        const noteText = String(fact?.fact_note || row?.fact_note || row?.note || '').trim() || null
+        payload.push({
+          session_id: sessionId,
+          employee_id: Number(employeeId),
+          workplace_code: row.workplace_code,
+          position_name: row.position_name || null,
+          source: 'manual',
+          is_present: false,
+          attendance_status: 'absent',
+          actual_start_time: null,
+          actual_end_time: null,
+          actual_hours: 0,
+          fact_note: noteText,
+          note: noteText,
+          confirmed_by_chief: false,
+          confirmed_at: null,
+        })
+      })
+
+      if (!payload.length) {
+        setChiefTeamError('Нет сотрудников по графику для подтверждения состава этой смены.')
         return
       }
-      sessionId = createdSessionId
-      setChiefSessionId(sessionId)
-    }
 
-    const chiefEmployeeId = assignee?.id || profile?.employee?.id || null
-    if (chiefEmployeeId) {
-      const updateRes = await handoverService.updateSession({
-        sessionId,
-        payload: {
-          chief_employee_id: Number(chiefEmployeeId),
-          status: 'active',
-        },
-      })
-      if (updateRes?.error) {
-        setSavingChiefTeam(false)
-        setChiefTeamError(updateRes.error.message || 'Не удалось назначить начальника смены')
+      const saveRes = await handoverService.upsertAssignments(payload)
+      if (saveRes?.error) {
+        setChiefTeamError(toUiErrorMessage(saveRes.error, 'Не удалось сохранить состав смены'))
         return
       }
-    }
 
-    const used = new Set()
-    const allowedCandidateIds = new Set((chiefCandidates || []).map((candidate) => String(candidate.id)))
-    const payload = []
-    Object.entries(chiefDraftByWorkplace).forEach(([workplaceKey, employeeValue]) => {
-      const employeeId = String(employeeValue || '')
-      if (!employeeId || used.has(employeeId) || !allowedCandidateIds.has(employeeId)) return
-      used.add(employeeId)
-      const source = chiefCandidates.find((c) => String(c.id) === employeeId)
-      const fact = chiefFactDraftByWorkplace[workplaceKey] || defaultFactDraft(statementShiftType)
-      const attendanceStatus = normalizeFactStatus(fact.attendance_status)
-      const actualStart = attendanceStatus === 'absent' ? null : toDbTimeValue(fact.actual_start_time)
-      const actualEnd = attendanceStatus === 'absent' ? null : toDbTimeValue(fact.actual_end_time)
-      const computedHours = actualStart && actualEnd ? calcDurationHours(actualStart.slice(0, 5), actualEnd.slice(0, 5)) : null
-      const parsedHours = Number(fact.actual_hours)
-      const actualHours =
-        attendanceStatus === 'absent'
-          ? 0
-          : Number.isFinite(parsedHours)
-            ? Number(parsedHours.toFixed(2))
-            : computedHours == null
-              ? null
-              : computedHours
-      payload.push({
-        session_id: sessionId,
-        employee_id: Number(employeeId),
-        workplace_code: workplaceKey,
-        position_name: source?.positionName || null,
-        source: 'manual',
-        is_present: true,
-        attendance_status: attendanceStatus,
-        actual_start_time: actualStart,
-        actual_end_time: actualEnd,
-        actual_hours: actualHours,
-        fact_note: String(fact.fact_note || '').trim() || null,
-        note: String(fact.fact_note || '').trim() || null,
-        confirmed_by_chief: false,
-        confirmed_at: null,
-      })
-    })
-    ;(chiefAssignments || []).forEach((row) => {
-      const employeeId = String(row?.employee_id || '')
-      if (!employeeId || used.has(employeeId)) return
-      const assignmentKey = String(
-        (chiefWorkplaces || []).find((wp) => {
-          const wpId = String(wp?.id || '')
-          const raw = String(row.workplace_code || '')
-          return wpId && (raw === wpId || normalizeKey(raw) === normalizeKey(wp.code) || normalizeKey(raw) === normalizeKey(wp.name))
-        })?.id || row.workplace_code || '',
-      )
-      const fact = chiefFactDraftByWorkplace[assignmentKey] || null
-      const noteText = String(fact?.fact_note || row?.fact_note || row?.note || '').trim() || null
-      payload.push({
-        session_id: sessionId,
-        employee_id: Number(employeeId),
-        workplace_code: row.workplace_code,
-        position_name: row.position_name || null,
-        source: 'manual',
-        is_present: false,
-        attendance_status: 'absent',
-        actual_start_time: null,
-        actual_end_time: null,
-        actual_hours: 0,
-        fact_note: noteText,
-        note: noteText,
-        confirmed_by_chief: false,
-        confirmed_at: null,
-      })
-    })
+      const confirmRes = await shiftWorkflowService.confirmBriefing({ briefingId: sessionId })
+      if (confirmRes?.error) {
+        setChiefTeamError(toUiErrorMessage(confirmRes.error, 'Не удалось подтвердить состав смены'))
+        return
+      }
 
-    if (!payload.length) {
+      setChiefTeamMessage('Состав смены подтвержден')
+      const refreshed = await handoverService.fetchAssignments({ sessionId })
+      if (refreshed?.error) {
+        setChiefTeamError(toUiErrorMessage(refreshed.error, 'Состав сохранен, но не удалось обновить отображение.'))
+        return
+      }
+      setChiefAssignments(refreshed.data || [])
+    } catch (error) {
+      console.error('handleSaveChiefTeam failed', error)
+      setChiefTeamError(toUiErrorMessage(error, 'Не удалось сохранить состав смены'))
+    } finally {
       setSavingChiefTeam(false)
-      setChiefTeamError('Нет сотрудников по графику для подтверждения состава этой смены.')
-      return
     }
-
-    const saveRes = await handoverService.upsertAssignments(payload)
-    if (saveRes?.error) {
-      setSavingChiefTeam(false)
-      setChiefTeamError(saveRes.error.message || 'Не удалось сохранить состав смены')
-      return
-    }
-
-    const confirmRes = await shiftWorkflowService.confirmBriefing({ briefingId: sessionId })
-    if (confirmRes?.error) {
-      setSavingChiefTeam(false)
-      setChiefTeamError(confirmRes.error.message || 'Не удалось подтвердить состав смены')
-      return
-    }
-
-    setSavingChiefTeam(false)
-    setChiefTeamMessage('Состав смены подтвержден')
-    const refreshed = await handoverService.fetchAssignments({ sessionId })
-    if (!refreshed?.error) setChiefAssignments(refreshed.data || [])
   }
 
   return (
