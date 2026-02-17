@@ -948,6 +948,27 @@ function WorkplacePage() {
       turbine: rows.filter((row) => row.division === 'turbine'),
     }
   }, [chiefWorkplaces])
+  const chiefAssignedByWorkplace = useMemo(() => {
+    const byId = new Map((chiefWorkplaces || []).map((wp) => [String(wp.id), wp]))
+    const byCode = new Map(
+      (chiefWorkplaces || [])
+        .filter((wp) => wp.code)
+        .map((wp) => [normalizeKey(wp.code), wp]),
+    )
+    const map = new Map()
+    ;(chiefAssignments || []).forEach((row) => {
+      if (row?.is_present === false) return
+      const raw = String(row?.workplace_code || '')
+      const wp = byId.get(raw) || byCode.get(normalizeKey(raw))
+      const key = wp?.id ? String(wp.id) : raw
+      if (!key || map.has(key)) return
+      const fio = row?.employees
+        ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ')
+        : ''
+      map.set(key, fio || `ID ${row?.employee_id || '—'}`)
+    })
+    return map
+  }, [chiefAssignments, chiefWorkplaces])
 
   const handleSaveChiefTeam = async () => {
     if (!isChiefWorkplaceView || !chiefSessionId) return
@@ -1135,7 +1156,9 @@ function WorkplacePage() {
               <div className="mt-3 space-y-3">
                 {isChiefWorkplaceView && (
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Формирование состава смены</p>
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
+                      {isViewedCurrentShift ? 'Формирование состава смены' : 'Сводный состав смены'}
+                    </p>
                     {loadingChiefTeam && <p className="mt-2 text-xs text-slate-400">Загрузка…</p>}
                     {!loadingChiefTeam && (
                       <>
@@ -1150,20 +1173,24 @@ function WorkplacePage() {
                                 {(chiefRowsByDivision[block.key] || []).map((row) => (
                                   <div key={row.id}>
                                     <p className="text-xs text-slate-300">{row.name}</p>
-                                    <select
-                                      value={chiefDraftByWorkplace[row.id] || ''}
-                                      onChange={(e) =>
-                                        setChiefDraftByWorkplace((prev) => ({ ...prev, [row.id]: String(e.target.value || '') }))
-                                      }
-                                      className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                                    >
-                                      <option value="">—</option>
-                                      {chiefCandidates.map((emp) => (
-                                        <option key={emp.id} value={emp.id}>
-                                          {emp.label}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    {isViewedCurrentShift ? (
+                                      <select
+                                        value={chiefDraftByWorkplace[row.id] || ''}
+                                        onChange={(e) =>
+                                          setChiefDraftByWorkplace((prev) => ({ ...prev, [row.id]: String(e.target.value || '') }))
+                                        }
+                                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                                      >
+                                        <option value="">—</option>
+                                        {chiefCandidates.map((emp) => (
+                                          <option key={emp.id} value={emp.id}>
+                                            {emp.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <p className="mt-1 text-xs text-slate-100">{chiefAssignedByWorkplace.get(row.id) || '—'}</p>
+                                    )}
                                   </div>
                                 ))}
                                 {!chiefRowsByDivision[block.key]?.length && <p className="text-xs text-slate-500">—</p>}
@@ -1171,18 +1198,22 @@ function WorkplacePage() {
                             </div>
                           ))}
                         </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void handleSaveChiefTeam()}
-                            disabled={savingChiefTeam || !chiefSessionId}
-                            className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
-                          >
-                            {savingChiefTeam ? 'Сохраняем...' : 'Сохранить состав смены'}
-                          </button>
-                          {chiefTeamMessage && <span className="text-xs text-emerald-300">{chiefTeamMessage}</span>}
-                          {chiefTeamError && <span className="text-xs text-rose-300">{chiefTeamError}</span>}
-                        </div>
+                        {isViewedCurrentShift ? (
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveChiefTeam()}
+                              disabled={savingChiefTeam || !chiefSessionId}
+                              className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
+                            >
+                              {savingChiefTeam ? 'Сохраняем...' : 'Сохранить состав смены'}
+                            </button>
+                            {chiefTeamMessage && <span className="text-xs text-emerald-300">{chiefTeamMessage}</span>}
+                            {chiefTeamError && <span className="text-xs text-rose-300">{chiefTeamError}</span>}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs text-slate-400">Архивный просмотр: редактирование состава недоступно.</p>
+                        )}
                       </>
                     )}
                   </div>
