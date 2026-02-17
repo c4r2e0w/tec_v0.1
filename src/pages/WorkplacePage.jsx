@@ -639,16 +639,12 @@ function WorkplacePage() {
       const sid = sessionRes?.data?.id || null
       setChiefSessionId(sid)
       setChiefWorkplaces(workplacesRes.data || [])
-      if (!sid) {
-        setChiefAssignments([])
-        setChiefCandidates([])
-        setChiefDraftByWorkplace({})
-        setLoadingChiefTeam(false)
-        return
+      let assignments = []
+      if (sid) {
+        const assRes = await handoverService.fetchAssignments({ sessionId: sid })
+        if (!active) return
+        assignments = assRes?.error ? [] : assRes.data || []
       }
-      const assRes = await handoverService.fetchAssignments({ sessionId: sid })
-      if (!active) return
-      const assignments = assRes?.error ? [] : assRes.data || []
       setChiefAssignments(assignments)
       const byWpId = new Map((workplacesRes.data || []).map((wp) => [String(wp.id), wp]))
       const byWpCode = new Map((workplacesRes.data || []).filter((wp) => wp.code).map((wp) => [normalizeKey(wp.code), wp]))
