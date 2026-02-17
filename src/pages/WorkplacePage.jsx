@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 import { createScheduleService } from '../services/scheduleService'
 import { createShiftHandoverService } from '../services/shiftHandoverService'
+import { createShiftWorkflowService } from '../services/shiftWorkflowService'
 import { useAuth } from '../hooks/useAuth'
 import { useProfile } from '../hooks/useProfile'
 
@@ -73,7 +74,6 @@ const employeeDivisionKey = (positionName) => {
   if (text.includes('турбин') || text.includes('то ') || text.endsWith('то') || text.includes('цтщупт')) return 'turbine'
   return 'other'
 }
-const isOperationalPositionType = (value) => normalizeRoleText(value).includes('оператив')
 
 const compactControlPoint = (value) =>
   normalizeKey(value)
@@ -146,6 +146,7 @@ function WorkplacePage() {
   const profile = useProfile()
   const scheduleService = useMemo(() => createScheduleService(supabase), [supabase])
   const handoverService = useMemo(() => createShiftHandoverService(supabase), [supabase])
+  const shiftWorkflowService = useMemo(() => createShiftWorkflowService(supabase), [supabase])
 
   const [workplace, setWorkplace] = useState(null)
   const [assignee, setAssignee] = useState(null)
@@ -169,7 +170,6 @@ function WorkplacePage() {
   const [chiefWorkplaces, setChiefWorkplaces] = useState([])
   const [chiefAssignments, setChiefAssignments] = useState([])
   const [chiefCandidates, setChiefCandidates] = useState([])
-  const [chiefAllCandidates, setChiefAllCandidates] = useState([])
   const [chiefDraftByWorkplace, setChiefDraftByWorkplace] = useState({})
   const [chiefExpandedSelects, setChiefExpandedSelects] = useState({})
   const [chiefScheduleFallbackByWorkplace, setChiefScheduleFallbackByWorkplace] = useState({})
@@ -182,6 +182,7 @@ function WorkplacePage() {
   const [chiefNextChiefName, setChiefNextChiefName] = useState('не назначен')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const shiftIconStartTimerRef = useRef(null)
   const shiftIconOutTimerRef = useRef(null)
   const shiftIconInTimerRef = useRef(null)
   const viewedShiftCode = useMemo(() => getShiftCodeByDate(statementShiftDate, statementShiftType), [statementShiftDate, statementShiftType])
@@ -216,14 +217,14 @@ function WorkplacePage() {
     [chiefWorkplaces],
   )
 
-  const isEmployeeInShift = (rows, date, type) => {
+  const isEmployeeInShift = useCallback((rows, date, type) => {
     const dayRows = (rows || []).filter((r) => String(r.date) === String(date))
     const has12 = dayRows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 12)
     const has3 = dayRows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 3)
     return type === 'night' ? has3 : has12
-  }
+  }, [])
 
-  const buildChiefScheduleFallback = (workplacesList, scheduleRows, date, type) => {
+  const buildChiefScheduleFallback = useCallback((workplacesList, scheduleRows, date, type) => {
     const byEmp = new Map()
     ;(scheduleRows || []).forEach((row) => {
       const key = String(row.employee_id || '')
@@ -266,22 +267,26 @@ function WorkplacePage() {
         draft[String(wp.id)] = String(candidate.id)
       })
     return { draft, candidates }
-  }
+  }, [isEmployeeInShift])
 
   useEffect(() => {
     if (iconDisplayShiftType === statementShiftType) return
+    if (shiftIconStartTimerRef.current) clearTimeout(shiftIconStartTimerRef.current)
     if (shiftIconOutTimerRef.current) clearTimeout(shiftIconOutTimerRef.current)
     if (shiftIconInTimerRef.current) clearTimeout(shiftIconInTimerRef.current)
-    setShiftIconPhase('out')
-    shiftIconOutTimerRef.current = setTimeout(() => {
-      setIconDisplayShiftType(statementShiftType)
-      setShiftIconPhase('in')
-      shiftIconInTimerRef.current = setTimeout(() => {
-        setShiftIconPhase('idle')
-        setShiftIconMotion('')
+    shiftIconStartTimerRef.current = setTimeout(() => {
+      setShiftIconPhase('out')
+      shiftIconOutTimerRef.current = setTimeout(() => {
+        setIconDisplayShiftType(statementShiftType)
+        setShiftIconPhase('in')
+        shiftIconInTimerRef.current = setTimeout(() => {
+          setShiftIconPhase('idle')
+          setShiftIconMotion('')
+        }, 170)
       }, 170)
-    }, 170)
+    }, 0)
     return () => {
+      if (shiftIconStartTimerRef.current) clearTimeout(shiftIconStartTimerRef.current)
       if (shiftIconOutTimerRef.current) clearTimeout(shiftIconOutTimerRef.current)
       if (shiftIconInTimerRef.current) clearTimeout(shiftIconInTimerRef.current)
     }
@@ -631,7 +636,6 @@ function WorkplacePage() {
         setChiefWorkplaces([])
         setChiefAssignments([])
         setChiefCandidates([])
-        setChiefAllCandidates([])
         setChiefDraftByWorkplace({})
         setChiefExpandedSelects({})
         setChiefScheduleFallbackByWorkplace({})
@@ -676,27 +680,16 @@ function WorkplacePage() {
       if (!active) return
       const fallback = buildChiefScheduleFallback(workplacesRes.data || [], schedRes?.data || [], statementShiftDate, statementShiftType)
       setChiefScheduleFallbackByWorkplace(fallback.draft)
-      setChiefDraftByWorkplace(Object.keys(nextDraft).length ? nextDraft : fallback.draft)
+      setChiefDraftByWorkplace({ ...fallback.draft, ...nextDraft })
 
       setChiefCandidates(fallback.candidates)
-      const allOperationalRes = await scheduleService.fetchEmployeesByUnit({ unit })
-      if (!active) return
-      const allOperational = (allOperationalRes?.data || [])
-        .filter((emp) => isOperationalPositionType(emp?.positions?.type))
-        .map((emp) => ({
-          id: emp.id,
-          label: [emp.last_name, emp.first_name, emp.middle_name].filter(Boolean).join(' ') || `ID ${emp.id}`,
-          positionName: emp?.positions?.name || '',
-        }))
-        .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
-      setChiefAllCandidates(allOperational)
       setLoadingChiefTeam(false)
     }
     void loadChiefTeam()
     return () => {
       active = false
     }
-  }, [handoverService, isChiefWorkplaceView, scheduleService, statementShiftDate, statementShiftType, unit])
+  }, [buildChiefScheduleFallback, handoverService, isChiefWorkplaceView, scheduleService, statementShiftDate, statementShiftType, unit])
 
   useEffect(() => {
     let active = true
@@ -743,10 +736,12 @@ function WorkplacePage() {
   }, [handoverService, isChiefWorkplaceView, nextShiftSlot.date, nextShiftSlot.type, statementShiftDate, supabase, unit])
 
   useEffect(() => {
-    if (compareShiftSlots(statementShiftDate, statementShiftType, currentShift.date, currentShift.type) > 0) {
+    if (compareShiftSlots(statementShiftDate, statementShiftType, currentShift.date, currentShift.type) <= 0) return
+    const correctionTimer = setTimeout(() => {
       setStatementShiftDate(currentShift.date)
       setStatementShiftType(currentShift.type)
-    }
+    }, 0)
+    return () => clearTimeout(correctionTimer)
   }, [statementShiftDate, statementShiftType, currentShift.date, currentShift.type])
 
   useEffect(() => {
@@ -781,7 +776,10 @@ function WorkplacePage() {
   useEffect(() => {
     let active = true
     async function loadEquipment() {
-      if (!workplace?.code && !workplace?.name) return
+      if (!workplace?.code && !workplace?.name) {
+        if (active) setEquipmentList([])
+        return
+      }
       const modern = await supabase.from('equipment').select('*').order('id', { ascending: true }).limit(3000)
       if (modern.error) return
       const eqRows = modern.data || []
@@ -822,12 +820,6 @@ function WorkplacePage() {
       active = false
     }
   }, [supabase, workplace?.code, workplace?.name, subsystemsById, systemsById])
-
-  useEffect(() => {
-    if (!workplace?.code) {
-      setEquipmentList([])
-    }
-  }, [workplace?.code])
 
   useEffect(() => {
     let active = true
@@ -1127,8 +1119,26 @@ function WorkplacePage() {
     })
     return map
   }, [chiefAssignments, chiefCandidates, chiefScheduleFallbackByWorkplace, chiefWorkplaces])
+  const chiefCandidateById = useMemo(() => {
+    const map = new Map()
+    ;(chiefCandidates || []).forEach((emp) => {
+      map.set(String(emp.id), emp)
+    })
+    ;(chiefAssignments || []).forEach((row) => {
+      const employeeId = String(row?.employee_id || '')
+      if (!employeeId || map.has(employeeId)) return
+      const label = row?.employees
+        ? [row.employees.last_name, row.employees.first_name, row.employees.middle_name].filter(Boolean).join(' ')
+        : ''
+      map.set(employeeId, {
+        id: row.employee_id,
+        label: label || `ID ${row?.employee_id || '—'}`,
+        positionName: row?.position_name || row?.employees?.positions?.name || '',
+      })
+    })
+    return map
+  }, [chiefAssignments, chiefCandidates])
   const chiefCandidateSetsByWorkplace = useMemo(() => {
-    const primaryIds = new Set((chiefCandidates || []).map((c) => String(c.id)))
     const map = {}
     ;(chiefRowsByDivision.boiler || []).concat(chiefRowsByDivision.turbine || []).forEach((row) => {
       const division = row.division
@@ -1136,44 +1146,60 @@ function WorkplacePage() {
         const d = employeeDivisionKey(c.positionName)
         return d === division || d === 'other'
       })
-      const extra = (chiefAllCandidates || []).filter((c) => {
-        if (primaryIds.has(String(c.id))) return false
-        const d = employeeDivisionKey(c.positionName)
-        return d === division || d === 'other'
-      })
-      map[row.id] = { primary, extra }
+      map[row.id] = { primary, extra: [] }
     })
     return map
-  }, [chiefAllCandidates, chiefCandidates, chiefRowsByDivision.boiler, chiefRowsByDivision.turbine])
+  }, [chiefCandidates, chiefRowsByDivision.boiler, chiefRowsByDivision.turbine])
 
   const handleSaveChiefTeam = async () => {
     if (!isChiefWorkplaceView) return
+    if (!isFormationMode) {
+      setChiefTeamMessage('')
+      setChiefTeamError('Архивная смена доступна только для просмотра.')
+      return
+    }
     setSavingChiefTeam(true)
     setChiefTeamError('')
     setChiefTeamMessage('')
     let sessionId = chiefSessionId
     if (!sessionId) {
-      const createRes = await handoverService.createSession({
+      const createRes = await shiftWorkflowService.createOrGetBriefing({
+        date: statementShiftDate,
         unit,
-        shift_date: statementShiftDate,
-        shift_type: statementShiftType,
-        status: 'active',
-        chief_employee_id: assignee?.id || profile?.employee?.id || null,
+        shiftType: statementShiftType,
       })
-      if (createRes?.error || !createRes?.data?.id) {
+      const createdSessionId = Number(createRes?.data || 0)
+      if (createRes?.error || !createdSessionId) {
         setSavingChiefTeam(false)
-        setChiefTeamError(createRes?.error?.message || 'Не удалось создать сессию смены')
+        setChiefTeamError(createRes?.error?.message || 'Не удалось создать или получить сессию смены')
         return
       }
-      sessionId = createRes.data.id
+      sessionId = createdSessionId
       setChiefSessionId(sessionId)
     }
 
+    const chiefEmployeeId = assignee?.id || profile?.employee?.id || null
+    if (chiefEmployeeId) {
+      const updateRes = await handoverService.updateSession({
+        sessionId,
+        payload: {
+          chief_employee_id: Number(chiefEmployeeId),
+          status: 'active',
+        },
+      })
+      if (updateRes?.error) {
+        setSavingChiefTeam(false)
+        setChiefTeamError(updateRes.error.message || 'Не удалось назначить начальника смены')
+        return
+      }
+    }
+
     const used = new Set()
+    const allowedCandidateIds = new Set((chiefCandidates || []).map((candidate) => String(candidate.id)))
     const payload = []
     Object.entries(chiefDraftByWorkplace).forEach(([workplaceKey, employeeValue]) => {
       const employeeId = String(employeeValue || '')
-      if (!employeeId || used.has(employeeId)) return
+      if (!employeeId || used.has(employeeId) || !allowedCandidateIds.has(employeeId)) return
       used.add(employeeId)
       const source = chiefCandidates.find((c) => String(c.id) === employeeId)
       payload.push({
@@ -1183,8 +1209,8 @@ function WorkplacePage() {
         position_name: source?.positionName || null,
         source: 'manual',
         is_present: true,
-        confirmed_by_chief: true,
-        confirmed_at: new Date().toISOString(),
+        confirmed_by_chief: false,
+        confirmed_at: null,
       })
     })
     ;(chiefAssignments || []).forEach((row) => {
@@ -1197,17 +1223,33 @@ function WorkplacePage() {
         position_name: row.position_name || null,
         source: 'manual',
         is_present: false,
-        confirmed_by_chief: true,
-        confirmed_at: new Date().toISOString(),
+        confirmed_by_chief: false,
+        confirmed_at: null,
       })
     })
-    const res = await handoverService.upsertAssignments(payload)
-    setSavingChiefTeam(false)
-    if (res?.error) {
-      setChiefTeamError(res.error.message || 'Не удалось сохранить состав смены')
+
+    if (!payload.length) {
+      setSavingChiefTeam(false)
+      setChiefTeamError('Нет сотрудников по графику для подтверждения состава этой смены.')
       return
     }
-    setChiefTeamMessage('Состав смены сохранен')
+
+    const saveRes = await handoverService.upsertAssignments(payload)
+    if (saveRes?.error) {
+      setSavingChiefTeam(false)
+      setChiefTeamError(saveRes.error.message || 'Не удалось сохранить состав смены')
+      return
+    }
+
+    const confirmRes = await shiftWorkflowService.confirmBriefing({ briefingId: sessionId })
+    if (confirmRes?.error) {
+      setSavingChiefTeam(false)
+      setChiefTeamError(confirmRes.error.message || 'Не удалось подтвердить состав смены')
+      return
+    }
+
+    setSavingChiefTeam(false)
+    setChiefTeamMessage('Состав смены подтвержден')
     const refreshed = await handoverService.fetchAssignments({ sessionId })
     if (!refreshed?.error) setChiefAssignments(refreshed.data || [])
   }
@@ -1348,6 +1390,147 @@ function WorkplacePage() {
             </div>
             {activeTab === 'daily' ? (
               <div className="mt-3 space-y-3">
+                {isChiefWorkplaceView && (
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-200">На смене</p>
+                        <p className="mt-1 text-xs text-slate-200">
+                          {isFormationMode
+                            ? 'Текущая смена: доступно редактирование и подтверждение состава.'
+                            : 'Архивная смена: только просмотр подтвержденного состава.'}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-1 text-[11px] text-emerald-100">
+                        {new Date(statementShiftDate).toLocaleDateString('ru-RU')} · {statementShiftType === 'night' ? 'Ночь' : 'День'}
+                      </span>
+                    </div>
+                    <div className="mt-2 space-y-1 text-xs text-slate-300">
+                      <p>Тема пятиминутки: <span className="text-slate-100">{chiefBriefingTopic || 'не задана'}</span></p>
+                      <p>Тема обхода: <span className="text-slate-100">{chiefRoundTopic || 'не задана'}</span></p>
+                    </div>
+                    {loadingChiefTeam ? (
+                      <p className="mt-3 text-xs text-slate-300">Загрузка состава смены…</p>
+                    ) : (
+                      <>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          {[
+                            { key: 'boiler', title: 'Котельное', rows: chiefRowsByDivision.boiler || [] },
+                            { key: 'turbine', title: 'Турбинное', rows: chiefRowsByDivision.turbine || [] },
+                          ].map((column) => (
+                            <div key={column.key} className="rounded-lg border border-white/15 bg-slate-950/70 p-3">
+                              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-300">{column.title}</p>
+                              <div className="mt-2 space-y-2">
+                                {column.rows.map((row) => {
+                                  const rowKey = String(row.id)
+                                  const selectedId = String(chiefDraftByWorkplace[rowKey] || '')
+                                  const candidateSet = chiefCandidateSetsByWorkplace[rowKey] || { primary: [], extra: [] }
+                                  const primary = candidateSet.primary || []
+                                  const extra = candidateSet.extra || []
+                                  const selectedCandidate = selectedId ? chiefCandidateById.get(selectedId) || null : null
+                                  const selectedInPrimary = selectedCandidate
+                                    ? primary.some((emp) => String(emp.id) === String(selectedCandidate.id))
+                                    : false
+                                  const selectedInExtra = selectedCandidate
+                                    ? extra.some((emp) => String(emp.id) === String(selectedCandidate.id))
+                                    : false
+                                  const selectedLabel = selectedCandidate?.label || chiefAssignedByWorkplace.get(rowKey) || '—'
+                                  const isExpanded = Boolean(chiefExpandedSelects[rowKey])
+                                  return (
+                                    <div key={rowKey}>
+                                      <Link
+                                        to={`/workplaces/${unit}/${row.id}`}
+                                        className="text-xs text-emerald-200 underline decoration-emerald-300/30 underline-offset-2"
+                                      >
+                                        {row.name}
+                                      </Link>
+                                      {isFormationMode ? (
+                                        <div className="mt-1">
+                                          <select
+                                            value={selectedId}
+                                            onChange={(e) => {
+                                              const nextValue = String(e.target.value || '')
+                                              if (nextValue === '__more__') {
+                                                setChiefExpandedSelects((prev) => ({ ...prev, [rowKey]: true }))
+                                                return
+                                              }
+                                              setChiefDraftByWorkplace((prev) => {
+                                                const next = { ...prev }
+                                                if (!nextValue) {
+                                                  delete next[rowKey]
+                                                  return next
+                                                }
+                                                Object.keys(next).forEach((key) => {
+                                                  if (key !== rowKey && String(next[key]) === nextValue) delete next[key]
+                                                })
+                                                next[rowKey] = nextValue
+                                                return next
+                                              })
+                                            }}
+                                            className="w-full rounded-lg border border-white/15 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                                          >
+                                            <option value="">—</option>
+                                            {selectedCandidate && !selectedInPrimary && !selectedInExtra && (
+                                              <option value={selectedCandidate.id}>{selectedCandidate.label}</option>
+                                            )}
+                                            {primary.map((emp) => (
+                                              <option key={emp.id} value={emp.id}>
+                                                {emp.label}
+                                              </option>
+                                            ))}
+                                            {!isExpanded && extra.length > 0 && <option value="__more__">Еще…</option>}
+                                            {isExpanded &&
+                                              extra.map((emp) => (
+                                                <option key={`extra-${emp.id}`} value={emp.id}>
+                                                  {emp.label}
+                                                </option>
+                                              ))}
+                                          </select>
+                                        </div>
+                                      ) : (
+                                        <p className="mt-1 text-xs text-slate-100">{selectedLabel}</p>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                                {!column.rows.length && <p className="text-xs text-slate-400">Нет рабочих мест.</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {isFormationMode ? (
+                          <div className="mt-3 space-y-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveChiefTeam()}
+                              disabled={savingChiefTeam}
+                              className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
+                            >
+                              {savingChiefTeam ? 'Подтверждаем…' : 'Подтвердить состав смены'}
+                            </button>
+                            <div className="rounded-lg border border-white/10 bg-slate-950/70 p-2 text-xs text-slate-300">
+                              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Смену принимает</p>
+                              <p className="mt-1 text-slate-100">
+                                {new Date(nextShiftSlot.date).toLocaleDateString('ru-RU')} · Вахта {getShiftCodeByDate(nextShiftSlot.date, nextShiftSlot.type)} · {nextShiftSlot.type === 'night' ? 'Ночь' : 'День'} · НС КТЦ: {chiefNextChiefName}
+                              </p>
+                              <p className="mt-1 text-slate-400">
+                                Рабочих мест к приемке: {chiefNextAcceptanceCount}.
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs text-slate-300">
+                            Архивная смена отображается в режиме чтения. Источник: подтвержденная сессия; при отсутствии данных используется график смены.
+                          </p>
+                        )}
+
+                        {chiefTeamMessage && <p className="mt-2 text-xs text-emerald-300">{chiefTeamMessage}</p>}
+                        {chiefTeamError && <p className="mt-2 text-xs text-rose-300">{chiefTeamError}</p>}
+                      </>
+                    )}
+                  </div>
+                )}
                 <div
                   className={`grid gap-3 ${
                     isChiefWorkplaceView ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]'
