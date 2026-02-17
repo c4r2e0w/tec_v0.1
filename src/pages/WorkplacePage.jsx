@@ -42,6 +42,10 @@ const isChiefPosition = (value) => {
   const text = normalizeRoleText(value)
   return text.includes('начальник смен') || text.includes('нс ктц') || text.includes('нсктц')
 }
+const isReserveWorkplace = (workplace) => {
+  const text = normalizeRoleText([workplace?.name, workplace?.code, workplace?.section, workplace?.area].filter(Boolean).join(' '))
+  return text.includes('резерв') || text.includes('без пост')
+}
 const workplaceDivisionKey = (workplace) => {
   const text = normalizeRoleText([workplace?.name, workplace?.code, workplace?.section, workplace?.area, workplace?.division_name].filter(Boolean).join(' '))
   if (text.includes('котел') || text.includes('котель')) return 'boiler'
@@ -169,6 +173,10 @@ function WorkplacePage() {
     return currentShift.type === 'night'
   }, [statementShiftDate, currentShift.date, currentShift.type])
   const isChiefWorkplaceView = useMemo(() => isChiefWorkplace(workplace), [workplace])
+  const isFormationMode = useMemo(
+    () => isChiefWorkplaceView && statementShiftDate === currentShift.date,
+    [isChiefWorkplaceView, statementShiftDate, currentShift.date],
+  )
   const nextShiftSlot = useMemo(
     () => moveShiftSlot(statementShiftDate, statementShiftType, 1),
     [statementShiftDate, statementShiftType],
@@ -176,7 +184,7 @@ function WorkplacePage() {
   const chiefNextAcceptanceCount = useMemo(
     () => (chiefWorkplaces || []).filter((wp) => {
       const division = workplaceDivisionKey(wp)
-      return division === 'boiler' || division === 'turbine'
+      return (division === 'boiler' || division === 'turbine') && !isChiefWorkplace(wp) && !isReserveWorkplace(wp)
     }).length,
     [chiefWorkplaces],
   )
@@ -213,6 +221,7 @@ function WorkplacePage() {
     const draft = {}
     ;(workplacesList || [])
       .filter((wp) => workplaceDivisionKey(wp) === 'boiler' || workplaceDivisionKey(wp) === 'turbine')
+      .filter((wp) => !isChiefWorkplace(wp) && !isReserveWorkplace(wp))
       .forEach((wp) => {
         const wpPosId = wp?.position_id ?? null
         const wpText = normalizeRoleText(wp?.position_name || wp?.position || wp?.name || '')
@@ -223,6 +232,7 @@ function WorkplacePage() {
             const pos = normalizeRoleText(emp.positionName)
             return wpText && pos && (pos.includes(wpText) || wpText.includes(pos))
           }) ||
+          candidates.find((emp) => !used.has(String(emp.id))) ||
           null
         if (!candidate) return
         used.add(String(candidate.id))
@@ -1035,6 +1045,7 @@ function WorkplacePage() {
   const chiefRowsByDivision = useMemo(() => {
     const rows = (chiefWorkplaces || [])
       .filter((wp) => workplaceDivisionKey(wp) === 'boiler' || workplaceDivisionKey(wp) === 'turbine')
+      .filter((wp) => !isChiefWorkplace(wp) && !isReserveWorkplace(wp))
       .map((wp) => ({
         id: String(wp.id),
         name: wp.name || wp.code || `Пост ${wp.id}`,
@@ -1304,7 +1315,7 @@ function WorkplacePage() {
                                 {(chiefRowsByDivision[block.key] || []).map((row) => (
                                   <div key={row.id}>
                                     <p className="text-xs text-slate-300">{row.name}</p>
-                                    {isViewedCurrentShift ? (
+                                    {isFormationMode ? (
                                       <select
                                         value={chiefDraftByWorkplace[row.id] || ''}
                                         onChange={(e) =>
@@ -1329,7 +1340,7 @@ function WorkplacePage() {
                             </div>
                           ))}
                         </div>
-                        {isViewedCurrentShift ? (
+                        {isFormationMode ? (
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             <button
                               type="button"
