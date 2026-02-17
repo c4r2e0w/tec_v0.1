@@ -1222,6 +1222,21 @@ function WorkplacePage() {
     if (!refreshed?.error) setChiefAssignments(refreshed.data || [])
   }
 
+  if (!loading && isChiefWorkplaceView && activeTab === 'daily') {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-1.5 shadow-lg">
+          <iframe
+            key={`${statementShiftDate}-${statementShiftType}`}
+            src={chiefPersonnelPanelUrl}
+            title="Формирование состава смены НС КТЦ"
+            className="h-[1120px] w-full rounded-lg border border-white/10 bg-background"
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
