@@ -2356,19 +2356,28 @@ function UnitSectionPage() {
                     </Link>
                   )}
                 </div>
-                <details className="mt-2 rounded-xl border border-border bg-background/60 p-2">
-                  <summary className="cursor-pointer text-xs font-medium text-dark">Справка по управлению составом</summary>
-                  <div className="mt-2 space-y-1 text-[11px] text-grayText">
-                    <p>Назначение выполняется по рабочему месту в колонках «Котельное» и «Турбинное».</p>
-                    <p>Для текущей смены доступно редактирование и подтверждение, для прошлых смен отображается архив.</p>
-                    <p>Факт по сотруднику открывается кнопкой с иконкой часов рядом с фамилией.</p>
-                  </div>
-                </details>
               </div>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              {renderRosterColumn('Котельное', resolvedCurrentRoster.boiler, true)}
-              {renderRosterColumn('Турбинное', resolvedCurrentRoster.turbine, true)}
+            <div className="relative mt-3">
+              <details className="absolute right-0 top-0 z-20">
+                <summary className="list-none cursor-pointer rounded-full border border-border bg-surface/90 p-1.5 text-dark transition hover:border-accent/60 hover:text-primary [&::-webkit-details-marker]:hidden">
+                  <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                    <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.6" />
+                    <path d="M8 7.8C8 6.8 8.9 6 10 6C11.1 6 12 6.8 12 7.8C12 8.7 11.5 9.1 10.8 9.6C10.1 10 9.8 10.3 9.8 11.1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                    <circle cx="10" cy="14.1" r="0.9" fill="currentColor" />
+                  </svg>
+                  <span className="sr-only">Справка по работе с таблицами</span>
+                </summary>
+                <div className="mt-2 w-[18rem] rounded-lg border border-border bg-surface p-2 text-[11px] text-dark shadow-lg">
+                  <p>Назначение выполняется по рабочему месту в колонках «Котельное» и «Турбинное».</p>
+                  <p className="mt-1">Текущая смена редактируется и подтверждается, прошлые смены открываются как архив.</p>
+                  <p className="mt-1">Факт по сотруднику открывается кнопкой с иконкой часов рядом с фамилией.</p>
+                </div>
+              </details>
+              <div className="grid gap-3 pt-7 md:grid-cols-2">
+                {renderRosterColumn('Котельное', resolvedCurrentRoster.boiler, true)}
+                {renderRosterColumn('Турбинное', resolvedCurrentRoster.turbine, true)}
+              </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button

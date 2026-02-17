@@ -1793,14 +1793,6 @@ function WorkplacePage() {
                         {new Date(statementShiftDate).toLocaleDateString('ru-RU')} · {statementShiftType === 'night' ? 'Ночь' : 'День'}
                       </span>
                     </div>
-                    <details className="mt-2 rounded-lg border border-white/10 bg-slate-950/60 p-2">
-                      <summary className="cursor-pointer text-xs font-medium text-slate-200">Справка по управлению составом</summary>
-                      <div className="mt-2 space-y-1 text-[11px] text-slate-300">
-                        <p>Текущая смена: выбирайте сотрудников по рабочим местам, затем подтверждайте состав.</p>
-                        <p>Архивная смена: доступен только просмотр подтвержденного состава.</p>
-                        <p>Кнопка с иконкой часов открывает редактирование факта (опоздание, ранний уход, отсутствие, комментарий).</p>
-                      </div>
-                    </details>
                     <div className="mt-2 space-y-1 text-xs text-slate-300">
                       <p>Тема пятиминутки: <span className="text-slate-100">{chiefBriefingTopic || 'не задана'}</span></p>
                       <p>Тема обхода: <span className="text-slate-100">{chiefRoundTopic || 'не задана'}</span></p>
@@ -1809,7 +1801,23 @@ function WorkplacePage() {
                       <p className="mt-3 text-xs text-slate-300">Загрузка состава смены…</p>
                     ) : (
                       <>
-                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="relative mt-3">
+                          <details className="absolute right-0 top-0 z-20">
+                            <summary className="list-none cursor-pointer rounded-full border border-white/15 bg-slate-900/85 p-1.5 text-slate-200 transition hover:border-emerald-300/60 hover:text-emerald-100 [&::-webkit-details-marker]:hidden">
+                              <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                                <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.6" />
+                                <path d="M8 7.8C8 6.8 8.9 6 10 6C11.1 6 12 6.8 12 7.8C12 8.7 11.5 9.1 10.8 9.6C10.1 10 9.8 10.3 9.8 11.1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                                <circle cx="10" cy="14.1" r="0.9" fill="currentColor" />
+                              </svg>
+                              <span className="sr-only">Справка по работе с таблицами</span>
+                            </summary>
+                            <div className="mt-2 w-[18rem] rounded-lg border border-white/15 bg-slate-950/95 p-2 text-[11px] text-slate-200 shadow-xl">
+                              <p>Выбирайте сотрудников по рабочим местам и подтверждайте состав смены.</p>
+                              <p className="mt-1">По кнопке с часами рядом с сотрудником открывается ввод факта: опоздание, ранний уход, отсутствие, комментарий.</p>
+                              <p className="mt-1">В архиве доступен только просмотр подтвержденных данных.</p>
+                            </div>
+                          </details>
+                          <div className="grid gap-3 pt-7 md:grid-cols-2">
                           {[
                             { key: 'boiler', title: 'Котельное', rows: chiefRowsByDivision.boiler || [] },
                             { key: 'turbine', title: 'Турбинное', rows: chiefRowsByDivision.turbine || [] },
@@ -2054,6 +2062,7 @@ function WorkplacePage() {
                               </div>
                             </div>
                           ))}
+                          </div>
                         </div>
 
                         {isFormationMode ? (
