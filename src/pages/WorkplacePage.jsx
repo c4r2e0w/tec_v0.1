@@ -47,9 +47,24 @@ const isReserveWorkplace = (workplace) => {
   return text.includes('резерв') || text.includes('без пост')
 }
 const workplaceDivisionKey = (workplace) => {
-  const text = normalizeRoleText([workplace?.name, workplace?.code, workplace?.section, workplace?.area, workplace?.division_name].filter(Boolean).join(' '))
-  if (text.includes('котел') || text.includes('котель')) return 'boiler'
-  if (text.includes('турбин')) return 'turbine'
+  const text = normalizeRoleText(
+    [
+      workplace?.name,
+      workplace?.code,
+      workplace?.section,
+      workplace?.area,
+      workplace?.division_name,
+      workplace?.devision_name,
+      workplace?.department_name,
+      workplace?.departament_name,
+      workplace?.position_name,
+      workplace?.position,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  )
+  if (text.includes('котел') || text.includes('котель') || text.includes('ко ') || text.endsWith('ко') || text.includes('цтщупк')) return 'boiler'
+  if (text.includes('турбин') || text.includes('то ') || text.endsWith('то') || text.includes('цтщупт')) return 'turbine'
   return 'other'
 }
 
