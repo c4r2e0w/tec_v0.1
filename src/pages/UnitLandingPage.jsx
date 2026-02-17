@@ -118,6 +118,7 @@ function UnitLandingPage() {
     shiftDate: '',
     chief: '',
     chiefId: null,
+    chiefWorkplaceId: null,
     boilerRows: [],
     turbineRows: [],
   })
@@ -141,6 +142,7 @@ function UnitLandingPage() {
         shiftDate: '',
         chief: '',
         chiefId: null,
+        chiefWorkplaceId: null,
         boilerRows: [],
         turbineRows: [],
       })
@@ -280,11 +282,24 @@ function UnitLandingPage() {
           .filter((a) => a?.is_present !== false)
           .find((a) => isChiefPosition(a.position_name || a.employees?.positions?.name))?.employees || null
       const chiefFromSessionId = sessionRes?.data?.chief_employee_id ? employees.get(sessionRes.data.chief_employee_id) : null
+      const chiefWorkplaceFromAssignments =
+        (assignments || [])
+          .filter((a) => a?.is_present !== false)
+          .map((a) => {
+            const key = String(a.workplace_code || '')
+            if (!key) return null
+            return byWpId.get(key) || byWpCode.get(normalizeText(key)) || null
+          })
+          .find((wp) => wp && isChiefWorkplace(wp)) || null
+      const defaultChiefWorkplace = (workplaces || []).find((wp) => isChiefWorkplace(wp)) || null
 
       const chief = chiefFromAssignments
         ? [chiefFromAssignments.last_name, chiefFromAssignments.first_name, chiefFromAssignments.middle_name].filter(Boolean).join(' ')
         : chiefFromSessionId?.name || ''
       const chiefId = chiefFromAssignments?.id || sessionRes?.data?.chief_employee_id || chiefFromSessionId?.id || null
+      const chiefWorkplaceId =
+        (chiefWorkplaceFromAssignments?.id ? String(chiefWorkplaceFromAssignments.id) : null) ||
+        (defaultChiefWorkplace?.id ? String(defaultChiefWorkplace.id) : null)
 
       const boilerRows = rowsByWorkplace.filter((row) => row.divisionKey === 'boiler')
       const turbineRows = rowsByWorkplace.filter((row) => row.divisionKey === 'turbine')
@@ -298,6 +313,7 @@ function UnitLandingPage() {
         shiftDate,
         chief,
         chiefId,
+        chiefWorkplaceId,
         boilerRows,
         turbineRows,
       })
@@ -351,13 +367,21 @@ function UnitLandingPage() {
           <p className="text-xs uppercase tracking-[0.25em] text-grayText">Персонал</p>
           {unit === 'ktc' ? (
             <>
+              <p className="mt-1 text-xs text-grayText">
+                {shiftSummary.shiftDate
+                  ? new Date(shiftSummary.shiftDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+                  : '—'}
+              </p>
               <p className="mt-2 text-dark">
                 Сейчас на смене: вахта {shiftSummary.shiftCode} · {shiftSummary.shiftType === 'night' ? 'Ночь' : 'День'}
               </p>
               <p className="text-xs text-grayText">
-                {shiftSummary.shiftDate || '—'} · Начальник:{' '}
-                {shiftSummary.chiefId ? (
-                  <Link to={`/people/${shiftSummary.chiefId}`} className="text-primary underline decoration-primary/50 underline-offset-2">
+                Начальник смены:{' '}
+                {shiftSummary.chiefWorkplaceId ? (
+                  <Link
+                    to={`/workplaces/${unit}/${shiftSummary.chiefWorkplaceId}`}
+                    className="text-primary underline decoration-primary/50 underline-offset-2"
+                  >
                     {shiftSummary.chief || 'не назначен'}
                   </Link>
                 ) : (
@@ -365,7 +389,6 @@ function UnitLandingPage() {
                 )}
               </p>
               <div className="mt-2 grid gap-2">
-                {shiftSummary.notice && <p className="text-[11px] text-grayText">{shiftSummary.notice}</p>}
                 <div className="rounded-lg border border-border bg-background p-2">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-grayText">Котельное</p>
                   {shiftSummary.loading ? (
@@ -377,15 +400,7 @@ function UnitLandingPage() {
                           <Link to={`/workplaces/${unit}/${row.workplaceId}`} className="text-grayText underline decoration-grayText/40 underline-offset-2">
                             {row.workplaceName}
                           </Link>
-                          <span className="text-right">
-                            {row.employeeId ? (
-                              <Link to={`/people/${row.employeeId}`} className="text-primary underline decoration-primary/50 underline-offset-2">
-                                {row.employeeName || '—'}
-                              </Link>
-                            ) : (
-                              row.employeeName || '—'
-                            )}
-                          </span>
+                          <span className="text-right">{row.employeeName || '—'}</span>
                         </div>
                       ))}
                       {!shiftSummary.boilerRows?.length && <p>—</p>}
@@ -403,21 +418,14 @@ function UnitLandingPage() {
                           <Link to={`/workplaces/${unit}/${row.workplaceId}`} className="text-grayText underline decoration-grayText/40 underline-offset-2">
                             {row.workplaceName}
                           </Link>
-                          <span className="text-right">
-                            {row.employeeId ? (
-                              <Link to={`/people/${row.employeeId}`} className="text-primary underline decoration-primary/50 underline-offset-2">
-                                {row.employeeName || '—'}
-                              </Link>
-                            ) : (
-                              row.employeeName || '—'
-                            )}
-                          </span>
+                          <span className="text-right">{row.employeeName || '—'}</span>
                         </div>
                       ))}
                       {!shiftSummary.turbineRows?.length && <p>—</p>}
                     </div>
                   )}
                 </div>
+                {shiftSummary.notice && <p className="text-[11px] text-grayText">{shiftSummary.notice}</p>}
               </div>
               {shiftSummary.error && <p className="mt-2 text-xs text-red-300">Ошибка: {shiftSummary.error}</p>}
             </>
