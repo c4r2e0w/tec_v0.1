@@ -139,6 +139,53 @@ const moveShiftSlot = (dateStr, shiftType, direction) => {
 
 const hasTag = (tags, value) => (Array.isArray(tags) ? tags : []).includes(value)
 
+const FACT_STATUS_OPTIONS = [
+  { value: 'full', label: 'Полная смена' },
+  { value: 'late', label: 'Опоздал' },
+  { value: 'left_early', label: 'Ушел раньше' },
+  { value: 'partial', label: 'Неполная смена' },
+  { value: 'replaced', label: 'Подменен' },
+  { value: 'absent', label: 'Отсутствовал' },
+]
+const FACT_STATUS_SET = new Set(FACT_STATUS_OPTIONS.map((item) => item.value))
+const FACT_STATUS_LABELS = Object.fromEntries(FACT_STATUS_OPTIONS.map((item) => [item.value, item.label]))
+
+const normalizeFactStatus = (value) => {
+  const key = String(value || '').trim().toLowerCase()
+  return FACT_STATUS_SET.has(key) ? key : 'full'
+}
+
+const formatFactTimeValue = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  const timePart = raw.includes('T') ? raw.split('T')[1] || '' : raw
+  const hhmm = timePart.slice(0, 5)
+  return /^\d{2}:\d{2}$/.test(hhmm) ? hhmm : ''
+}
+
+const toDbTimeValue = (value) => {
+  const hhmm = formatFactTimeValue(value)
+  return hhmm ? `${hhmm}:00` : null
+}
+
+const parseTimeToMinutes = (value) => {
+  const hhmm = formatFactTimeValue(value)
+  if (!hhmm) return null
+  const [hh, mm] = hhmm.split(':').map((v) => Number(v))
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
+  return hh * 60 + mm
+}
+
+const calcDurationHours = (startTime, endTime) => {
+  const start = parseTimeToMinutes(startTime)
+  const end = parseTimeToMinutes(endTime)
+  if (start == null || end == null) return null
+  let diff = end - start
+  if (diff < 0) diff += 24 * 60
+  const hours = diff / 60
+  return Number.isFinite(hours) ? Number(hours.toFixed(2)) : null
+}
+
 function WorkplacePage() {
   const { unit, workplaceId } = useParams()
   const supabase = useSupabase()
@@ -171,6 +218,7 @@ function WorkplacePage() {
   const [chiefAssignments, setChiefAssignments] = useState([])
   const [chiefCandidates, setChiefCandidates] = useState([])
   const [chiefDraftByWorkplace, setChiefDraftByWorkplace] = useState({})
+  const [chiefFactDraftByWorkplace, setChiefFactDraftByWorkplace] = useState({})
   const [chiefExpandedSelects, setChiefExpandedSelects] = useState({})
   const [loadingChiefTeam, setLoadingChiefTeam] = useState(false)
   const [savingChiefTeam, setSavingChiefTeam] = useState(false)
@@ -214,6 +262,16 @@ function WorkplacePage() {
       return (division === 'boiler' || division === 'turbine') && !isChiefWorkplace(wp) && !isReserveWorkplace(wp)
     }).length,
     [chiefWorkplaces],
+  )
+  const defaultFactDraft = useCallback(
+    (shiftType) => ({
+      attendance_status: 'full',
+      actual_start_time: shiftType === 'night' ? '21:00' : '09:00',
+      actual_end_time: shiftType === 'night' ? '09:00' : '21:00',
+      actual_hours: '12',
+      fact_note: '',
+    }),
+    [],
   )
 
   const isEmployeeInShift = useCallback((rows, date, type) => {
@@ -636,6 +694,7 @@ function WorkplacePage() {
         setChiefAssignments([])
         setChiefCandidates([])
         setChiefDraftByWorkplace({})
+        setChiefFactDraftByWorkplace({})
         setChiefExpandedSelects({})
         return
       }
@@ -666,6 +725,7 @@ function WorkplacePage() {
       const byWpCode = new Map((workplacesRes.data || []).filter((wp) => wp.code).map((wp) => [normalizeKey(wp.code), wp]))
       const byWpName = new Map((workplacesRes.data || []).filter((wp) => wp.name).map((wp) => [normalizeKey(wp.name), wp]))
       const nextDraft = {}
+      const nextFactDraft = {}
       ;(assignments || []).forEach((row) => {
         if (row?.is_present === false || !row?.employee_id) return
         const wpRaw = String(row?.workplace_code || '')
@@ -673,12 +733,28 @@ function WorkplacePage() {
         const key = wp?.id ? String(wp.id) : ''
         if (!key) return
         if (!nextDraft[key]) nextDraft[key] = String(row.employee_id)
+        nextFactDraft[key] = {
+          attendance_status: normalizeFactStatus(row?.attendance_status),
+          actual_start_time: formatFactTimeValue(row?.actual_start_time) || defaultFactDraft(statementShiftType).actual_start_time,
+          actual_end_time: formatFactTimeValue(row?.actual_end_time) || defaultFactDraft(statementShiftType).actual_end_time,
+          actual_hours:
+            row?.actual_hours == null || row?.actual_hours === ''
+              ? defaultFactDraft(statementShiftType).actual_hours
+              : String(row.actual_hours),
+          fact_note: String(row?.fact_note || row?.note || ''),
+        }
       })
       const toDate = statementShiftType === 'night' ? addDays(statementShiftDate, 1) : statementShiftDate
       const schedRes = await scheduleService.fetchRange({ from: statementShiftDate, to: toDate, unit })
       if (!active) return
       const fallback = buildChiefScheduleFallback(workplacesRes.data || [], schedRes?.data || [], statementShiftDate, statementShiftType)
-      setChiefDraftByWorkplace(Object.keys(nextDraft).length ? nextDraft : fallback.draft)
+      const resolvedDraft = Object.keys(nextDraft).length ? nextDraft : fallback.draft
+      Object.keys(resolvedDraft || {}).forEach((workplaceKey) => {
+        if (nextFactDraft[workplaceKey]) return
+        nextFactDraft[workplaceKey] = defaultFactDraft(statementShiftType)
+      })
+      setChiefDraftByWorkplace(resolvedDraft)
+      setChiefFactDraftByWorkplace(nextFactDraft)
 
       setChiefCandidates(fallback.candidates)
       setLoadingChiefTeam(false)
@@ -687,7 +763,7 @@ function WorkplacePage() {
     return () => {
       active = false
     }
-  }, [buildChiefScheduleFallback, handoverService, isChiefWorkplaceView, scheduleService, statementShiftDate, statementShiftType, unit])
+  }, [buildChiefScheduleFallback, defaultFactDraft, handoverService, isChiefWorkplaceView, scheduleService, statementShiftDate, statementShiftType, unit])
 
   useEffect(() => {
     let active = true
@@ -1091,6 +1167,29 @@ function WorkplacePage() {
       turbine: rows.filter((row) => row.division === 'turbine'),
     }
   }, [chiefWorkplaces])
+  const chiefAssignmentByWorkplace = useMemo(() => {
+    const byId = new Map((chiefWorkplaces || []).map((wp) => [String(wp.id), wp]))
+    const byCode = new Map(
+      (chiefWorkplaces || [])
+        .filter((wp) => wp.code)
+        .map((wp) => [normalizeKey(wp.code), wp]),
+    )
+    const byName = new Map(
+      (chiefWorkplaces || [])
+        .filter((wp) => wp.name)
+        .map((wp) => [normalizeKey(wp.name), wp]),
+    )
+    const map = new Map()
+    ;(chiefAssignments || []).forEach((row) => {
+      if (row?.is_present === false) return
+      const raw = String(row?.workplace_code || '')
+      const wp = byId.get(raw) || byCode.get(normalizeKey(raw)) || byName.get(normalizeKey(raw))
+      const key = wp?.id ? String(wp.id) : raw
+      if (!key || map.has(key)) return
+      map.set(key, row)
+    })
+    return map
+  }, [chiefAssignments, chiefWorkplaces])
   const chiefAssignedByWorkplace = useMemo(() => {
     const byId = new Map((chiefWorkplaces || []).map((wp) => [String(wp.id), wp]))
     const byCode = new Map(
@@ -1148,6 +1247,17 @@ function WorkplacePage() {
     })
     return map
   }, [chiefCandidates, chiefRowsByDivision.boiler, chiefRowsByDivision.turbine])
+  const updateChiefFactDraft = useCallback((workplaceKey, patch) => {
+    setChiefFactDraftByWorkplace((prev) => {
+      const next = { ...prev }
+      const current = next[workplaceKey] || defaultFactDraft(statementShiftType)
+      next[workplaceKey] = {
+        ...current,
+        ...patch,
+      }
+      return next
+    })
+  }, [defaultFactDraft, statementShiftType])
 
   const handleSaveChiefTeam = async () => {
     if (!isChiefWorkplaceView) return
@@ -1200,6 +1310,20 @@ function WorkplacePage() {
       if (!employeeId || used.has(employeeId) || !allowedCandidateIds.has(employeeId)) return
       used.add(employeeId)
       const source = chiefCandidates.find((c) => String(c.id) === employeeId)
+      const fact = chiefFactDraftByWorkplace[workplaceKey] || defaultFactDraft(statementShiftType)
+      const attendanceStatus = normalizeFactStatus(fact.attendance_status)
+      const actualStart = attendanceStatus === 'absent' ? null : toDbTimeValue(fact.actual_start_time)
+      const actualEnd = attendanceStatus === 'absent' ? null : toDbTimeValue(fact.actual_end_time)
+      const computedHours = actualStart && actualEnd ? calcDurationHours(actualStart.slice(0, 5), actualEnd.slice(0, 5)) : null
+      const parsedHours = Number(fact.actual_hours)
+      const actualHours =
+        attendanceStatus === 'absent'
+          ? 0
+          : Number.isFinite(parsedHours)
+            ? Number(parsedHours.toFixed(2))
+            : computedHours == null
+              ? null
+              : computedHours
       payload.push({
         session_id: sessionId,
         employee_id: Number(employeeId),
@@ -1207,6 +1331,12 @@ function WorkplacePage() {
         position_name: source?.positionName || null,
         source: 'manual',
         is_present: true,
+        attendance_status: attendanceStatus,
+        actual_start_time: actualStart,
+        actual_end_time: actualEnd,
+        actual_hours: actualHours,
+        fact_note: String(fact.fact_note || '').trim() || null,
+        note: String(fact.fact_note || '').trim() || null,
         confirmed_by_chief: false,
         confirmed_at: null,
       })
@@ -1214,6 +1344,15 @@ function WorkplacePage() {
     ;(chiefAssignments || []).forEach((row) => {
       const employeeId = String(row?.employee_id || '')
       if (!employeeId || used.has(employeeId)) return
+      const assignmentKey = String(
+        (chiefWorkplaces || []).find((wp) => {
+          const wpId = String(wp?.id || '')
+          const raw = String(row.workplace_code || '')
+          return wpId && (raw === wpId || normalizeKey(raw) === normalizeKey(wp.code) || normalizeKey(raw) === normalizeKey(wp.name))
+        })?.id || row.workplace_code || '',
+      )
+      const fact = chiefFactDraftByWorkplace[assignmentKey] || null
+      const noteText = String(fact?.fact_note || row?.fact_note || row?.note || '').trim() || null
       payload.push({
         session_id: sessionId,
         employee_id: Number(employeeId),
@@ -1221,6 +1360,12 @@ function WorkplacePage() {
         position_name: row.position_name || null,
         source: 'manual',
         is_present: false,
+        attendance_status: 'absent',
+        actual_start_time: null,
+        actual_end_time: null,
+        actual_hours: 0,
+        fact_note: noteText,
+        note: noteText,
         confirmed_by_chief: false,
         confirmed_at: null,
       })
@@ -1432,6 +1577,30 @@ function WorkplacePage() {
                                   const selectedInExtra = selectedCandidate
                                     ? extra.some((emp) => String(emp.id) === String(selectedCandidate.id))
                                     : false
+                                  const assignmentRow = chiefAssignmentByWorkplace.get(rowKey) || null
+                                  const defaultFact = defaultFactDraft(statementShiftType)
+                                  const factRaw = chiefFactDraftByWorkplace[rowKey] || {}
+                                  const factStatus = normalizeFactStatus(
+                                    factRaw.attendance_status || assignmentRow?.attendance_status || defaultFact.attendance_status,
+                                  )
+                                  const factStart = formatFactTimeValue(
+                                    factRaw.actual_start_time || assignmentRow?.actual_start_time || defaultFact.actual_start_time,
+                                  )
+                                  const factEnd = formatFactTimeValue(
+                                    factRaw.actual_end_time || assignmentRow?.actual_end_time || defaultFact.actual_end_time,
+                                  )
+                                  const factHours = String(
+                                    factRaw.actual_hours ??
+                                      assignmentRow?.actual_hours ??
+                                      defaultFact.actual_hours ??
+                                      '',
+                                  )
+                                  const factNote = String(
+                                    factRaw.fact_note ??
+                                      assignmentRow?.fact_note ??
+                                      assignmentRow?.note ??
+                                      '',
+                                  )
                                   const selectedLabel = isFormationMode
                                     ? selectedCandidate?.label || chiefAssignedByWorkplace.get(rowKey) || '—'
                                     : chiefAssignedByWorkplace.get(rowKey) || '—'
@@ -1458,12 +1627,24 @@ function WorkplacePage() {
                                                 const next = { ...prev }
                                                 if (!nextValue) {
                                                   delete next[rowKey]
+                                                  setChiefFactDraftByWorkplace((factsPrev) => {
+                                                    const factsNext = { ...factsPrev }
+                                                    delete factsNext[rowKey]
+                                                    return factsNext
+                                                  })
                                                   return next
                                                 }
                                                 Object.keys(next).forEach((key) => {
                                                   if (key !== rowKey && String(next[key]) === nextValue) delete next[key]
                                                 })
                                                 next[rowKey] = nextValue
+                                                setChiefFactDraftByWorkplace((factsPrev) => {
+                                                  if (factsPrev[rowKey]) return factsPrev
+                                                  return {
+                                                    ...factsPrev,
+                                                    [rowKey]: defaultFactDraft(statementShiftType),
+                                                  }
+                                                })
                                                 return next
                                               })
                                             }}
@@ -1486,9 +1667,112 @@ function WorkplacePage() {
                                                 </option>
                                               ))}
                                           </select>
+                                          {selectedId ? (
+                                            <div className="mt-2 space-y-1 rounded-md border border-white/10 bg-black/20 p-2">
+                                              <p className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Факт смены</p>
+                                              <select
+                                                value={factStatus}
+                                                onChange={(e) => {
+                                                  const nextStatus = normalizeFactStatus(e.target.value)
+                                                  if (nextStatus === 'absent') {
+                                                    updateChiefFactDraft(rowKey, {
+                                                      attendance_status: nextStatus,
+                                                      actual_start_time: '',
+                                                      actual_end_time: '',
+                                                      actual_hours: '0',
+                                                    })
+                                                    return
+                                                  }
+                                                  if (nextStatus === 'full') {
+                                                    updateChiefFactDraft(rowKey, {
+                                                      attendance_status: nextStatus,
+                                                      actual_start_time: defaultFact.actual_start_time,
+                                                      actual_end_time: defaultFact.actual_end_time,
+                                                      actual_hours: defaultFact.actual_hours,
+                                                    })
+                                                    return
+                                                  }
+                                                  const nextStart = factStart || defaultFact.actual_start_time
+                                                  const nextEnd = factEnd || defaultFact.actual_end_time
+                                                  const nextHours = calcDurationHours(nextStart, nextEnd)
+                                                  updateChiefFactDraft(rowKey, {
+                                                    attendance_status: nextStatus,
+                                                    actual_start_time: nextStart,
+                                                    actual_end_time: nextEnd,
+                                                    actual_hours: nextHours == null ? factHours : String(nextHours),
+                                                  })
+                                                }}
+                                                className="w-full rounded border border-white/15 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                                              >
+                                                {FACT_STATUS_OPTIONS.map((item) => (
+                                                  <option key={item.value} value={item.value}>
+                                                    {item.label}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                              <div className="grid grid-cols-2 gap-1">
+                                                <input
+                                                  type="time"
+                                                  value={factStart}
+                                                  disabled={factStatus === 'absent'}
+                                                  onChange={(e) => {
+                                                    const nextStart = e.target.value
+                                                    const nextHours = calcDurationHours(nextStart, factEnd)
+                                                    updateChiefFactDraft(rowKey, {
+                                                      actual_start_time: nextStart,
+                                                      actual_hours: nextHours == null ? factHours : String(nextHours),
+                                                    })
+                                                  }}
+                                                  className="rounded border border-white/15 bg-slate-900 px-2 py-1 text-xs text-slate-100 disabled:opacity-50"
+                                                />
+                                                <input
+                                                  type="time"
+                                                  value={factEnd}
+                                                  disabled={factStatus === 'absent'}
+                                                  onChange={(e) => {
+                                                    const nextEnd = e.target.value
+                                                    const nextHours = calcDurationHours(factStart, nextEnd)
+                                                    updateChiefFactDraft(rowKey, {
+                                                      actual_end_time: nextEnd,
+                                                      actual_hours: nextHours == null ? factHours : String(nextHours),
+                                                    })
+                                                  }}
+                                                  className="rounded border border-white/15 bg-slate-900 px-2 py-1 text-xs text-slate-100 disabled:opacity-50"
+                                                />
+                                              </div>
+                                              <div className="grid grid-cols-[1fr_auto] items-center gap-1">
+                                                <input
+                                                  type="number"
+                                                  min="0"
+                                                  step="0.25"
+                                                  value={factHours}
+                                                  onChange={(e) => updateChiefFactDraft(rowKey, { actual_hours: e.target.value })}
+                                                  className="rounded border border-white/15 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                                                />
+                                                <span className="text-[11px] text-slate-300">час</span>
+                                              </div>
+                                              <input
+                                                type="text"
+                                                value={factNote}
+                                                onChange={(e) => updateChiefFactDraft(rowKey, { fact_note: e.target.value })}
+                                                placeholder="Причина/комментарий"
+                                                className="w-full rounded border border-white/15 bg-slate-900 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-500"
+                                              />
+                                            </div>
+                                          ) : (
+                                            <p className="mt-1 text-[11px] text-slate-400">Назначьте сотрудника, затем заполните факт.</p>
+                                          )}
                                         </div>
                                       ) : (
-                                        <p className="mt-1 text-xs text-slate-100">{selectedLabel}</p>
+                                        <div className="mt-1 space-y-1">
+                                          <p className="text-xs text-slate-100">{selectedLabel}</p>
+                                          <p className="text-[11px] text-slate-300">
+                                            Факт: {FACT_STATUS_LABELS[factStatus] || FACT_STATUS_LABELS.full}
+                                            {factHours ? ` · ${factHours} ч` : ''}
+                                            {factStart && factEnd ? ` · ${factStart}–${factEnd}` : ''}
+                                          </p>
+                                          {factNote && <p className="text-[11px] text-slate-400">Примечание: {factNote}</p>}
+                                        </div>
                                       )}
                                     </div>
                                   )
