@@ -57,6 +57,15 @@ const compactControlPoint = (value) =>
 const normalizeStationValue = (value) => String(value || '').replace(/\s+/g, ' ').trim()
 const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
 const SHIFT_CODES = ['А', 'Б', 'В', 'Г']
+const SHIFT_TIME_ZONE = 'Asia/Irkutsk'
+const shiftNowFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: SHIFT_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  hourCycle: 'h23',
+})
 
 const parseIsoLocalDate = (dateStr) => {
   const [y, m, d] = String(dateStr || '')
@@ -74,10 +83,14 @@ const getShiftCodeByDate = (dateStr, shiftType) => {
 }
 
 const getCurrentShiftSlot = () => {
-  const now = new Date()
-  const today = toIsoLocalDate(now)
-  const type = now.getHours() >= 21 || now.getHours() < 9 ? 'night' : 'day'
-  const date = type === 'night' && now.getHours() < 9 ? addDays(today, -1) : today
+  const parts = shiftNowFormatter.formatToParts(new Date())
+  const year = parts.find((p) => p.type === 'year')?.value || '1970'
+  const month = parts.find((p) => p.type === 'month')?.value || '01'
+  const day = parts.find((p) => p.type === 'day')?.value || '01'
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value || '0')
+  const today = `${year}-${month}-${day}`
+  const type = hour >= 21 || hour < 9 ? 'night' : 'day'
+  const date = type === 'night' && hour < 9 ? addDays(today, -1) : today
   return { date, type }
 }
 
@@ -141,7 +154,7 @@ function WorkplacePage() {
   const shiftIconInTimerRef = useRef(null)
   const viewedShiftCode = useMemo(() => getShiftCodeByDate(statementShiftDate, statementShiftType), [statementShiftDate, statementShiftType])
   const viewedShiftPeriod = useMemo(() => shiftPeriodLabel(statementShiftType), [statementShiftType])
-  const currentShift = useMemo(() => getCurrentShiftSlot(), [])
+  const currentShift = getCurrentShiftSlot()
   const isViewedCurrentShift = statementShiftDate === currentShift.date && statementShiftType === currentShift.type
   const canMoveForwardShift = useMemo(
     () => compareShiftSlots(statementShiftDate, statementShiftType, currentShift.date, currentShift.type) < 0,
