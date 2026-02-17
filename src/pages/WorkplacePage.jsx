@@ -1368,149 +1368,151 @@ function WorkplacePage() {
                     />
                   </div>
                 )}
-                <div className="grid gap-3 lg:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]">
-                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-2.5">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Состав оборудования</p>
-                    <div className="mt-1.5 space-y-1.5">
-                      {equipmentTree.map((system) => (
-                        <div key={system.systemName} className="rounded-md border border-white/10 bg-white/5 p-1.5">
-                          <p className="text-[11px] font-semibold text-slate-300">{system.systemName}</p>
-                          <div className="mt-1.5 space-y-1.5">
-                            {system.subsystems.map((sub) => (
-                              <div key={`${system.systemName}-${sub.subsystemName}`}>
-                                <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{sub.subsystemName}</p>
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  {sub.units.map((item) => (
-                                    <div key={item.id} className="relative">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))
-                                          setEquipmentMenuStep('status')
-                                        }}
-                                        className={`relative rounded border px-2 py-1 text-[11px] font-semibold text-slate-100 ${equipmentCellClass(item.status)}`}
-                                        title="Изменить состояние"
-                                      >
-                                        {formatEquipmentStateLabel(item)}
-                                        {normalizeEquipmentStatus(item.status) === 'Резерв' && reserveModeLabel(item.reserve_mode) && (
-                                          <span className="absolute -right-1 -top-1 rounded-full border border-white/30 bg-slate-900 px-1 text-[9px] leading-none text-emerald-200">
-                                            {reserveModeLabel(item.reserve_mode)}
-                                          </span>
-                                        )}
-                                      </button>
-                                      {equipmentMenuId === item.id && (
-                                        <div className="absolute left-0 top-8 z-20 w-28 rounded-md border border-white/15 bg-slate-900 p-1 shadow-xl">
-                                          {equipmentMenuStep === 'status' ? (
-                                            <>
-                                              <button
-                                                type="button"
-                                                onClick={() => void handleSetEquipmentStatus(item, 'Работа')}
-                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                              >
-                                                🔴 Работа
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  if (isPumpEquipment(item)) setEquipmentMenuStep('reserve')
-                                                  else void handleSetEquipmentStatus(item, 'Резерв')
-                                                }}
-                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                              >
-                                                🟢 Резерв
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => void handleSetEquipmentStatus(item, 'Ремонт')}
-                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                              >
-                                                ⚪️ Ремонт
-                                              </button>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <button
-                                                type="button"
-                                                onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'горячий')}
-                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                              >
-                                                Г · Горячий
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'холодный')}
-                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                              >
-                                                Х · Холодный
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'АВР')}
-                                                className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                              >
-                                                А · АВР
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => setEquipmentMenuStep('status')}
-                                                className="mt-1 block w-full rounded px-2 py-1 text-left text-[11px] text-slate-400 hover:bg-white/10"
-                                              >
-                                                ← Назад
-                                              </button>
-                                            </>
+                {!isChiefWorkplaceView && (
+                  <div className="grid gap-3 lg:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]">
+                    <div className="rounded-xl border border-white/10 bg-slate-950/70 p-2.5">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Состав оборудования</p>
+                      <div className="mt-1.5 space-y-1.5">
+                        {equipmentTree.map((system) => (
+                          <div key={system.systemName} className="rounded-md border border-white/10 bg-white/5 p-1.5">
+                            <p className="text-[11px] font-semibold text-slate-300">{system.systemName}</p>
+                            <div className="mt-1.5 space-y-1.5">
+                              {system.subsystems.map((sub) => (
+                                <div key={`${system.systemName}-${sub.subsystemName}`}>
+                                  <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{sub.subsystemName}</p>
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {sub.units.map((item) => (
+                                      <div key={item.id} className="relative">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))
+                                            setEquipmentMenuStep('status')
+                                          }}
+                                          className={`relative rounded border px-2 py-1 text-[11px] font-semibold text-slate-100 ${equipmentCellClass(item.status)}`}
+                                          title="Изменить состояние"
+                                        >
+                                          {formatEquipmentStateLabel(item)}
+                                          {normalizeEquipmentStatus(item.status) === 'Резерв' && reserveModeLabel(item.reserve_mode) && (
+                                            <span className="absolute -right-1 -top-1 rounded-full border border-white/30 bg-slate-900 px-1 text-[9px] leading-none text-emerald-200">
+                                              {reserveModeLabel(item.reserve_mode)}
+                                            </span>
                                           )}
-                                        </div>
-                                      )}
-                                      {equipmentSavingId === item.id && <span className="ml-1 text-[10px] text-slate-400">...</span>}
-                                    </div>
-                                  ))}
+                                        </button>
+                                        {equipmentMenuId === item.id && (
+                                          <div className="absolute left-0 top-8 z-20 w-28 rounded-md border border-white/15 bg-slate-900 p-1 shadow-xl">
+                                            {equipmentMenuStep === 'status' ? (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => void handleSetEquipmentStatus(item, 'Работа')}
+                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                                >
+                                                  🔴 Работа
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    if (isPumpEquipment(item)) setEquipmentMenuStep('reserve')
+                                                    else void handleSetEquipmentStatus(item, 'Резерв')
+                                                  }}
+                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                                >
+                                                  🟢 Резерв
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => void handleSetEquipmentStatus(item, 'Ремонт')}
+                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                                >
+                                                  ⚪️ Ремонт
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'горячий')}
+                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                                >
+                                                  Г · Горячий
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'холодный')}
+                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                                >
+                                                  Х · Холодный
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'АВР')}
+                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                                >
+                                                  А · АВР
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setEquipmentMenuStep('status')}
+                                                  className="mt-1 block w-full rounded px-2 py-1 text-left text-[11px] text-slate-400 hover:bg-white/10"
+                                                >
+                                                  ← Назад
+                                                </button>
+                                              </>
+                                            )}
+                                          </div>
+                                        )}
+                                        {equipmentSavingId === item.id && <span className="ml-1 text-[10px] text-slate-400">...</span>}
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                      {!equipmentTree.length && (
-                        <p className="text-xs text-slate-500">Закрепленное оборудование пока не найдено.</p>
-                      )}
+                        ))}
+                        {!equipmentTree.length && (
+                          <p className="text-xs text-slate-500">Закрепленное оборудование пока не найдено.</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                    <div className="mt-2 space-y-1.5">
-                      {statementEntries.map((item) => (
-                        <p key={item.id} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-100">
-                          {item.created_at
-                            ? new Date(item.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-                            : '--:--'}{' '}
-                          : {item.body || '—'}
-                        </p>
-                      ))}
-                      {!statementEntries.length && <p className="text-xs text-slate-500">Записей за эту смену пока нет.</p>}
-                      <div className="rounded-md border border-emerald-500/25 bg-slate-900/70 px-2 py-1">
-                        <div className="flex gap-2">
-                          <span className="pt-1 text-xs text-emerald-200">
-                            {new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} :
-                          </span>
-                          <input
-                            value={dailyInput}
-                            onChange={(e) => setDailyInput(e.target.value)}
-                            placeholder="Действие..."
-                            className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-500 outline-none"
-                          />
-                        </div>
-                        <div className="mt-1 flex justify-end">
-                          <button
-                            onClick={() => void handleAddDailyEntry()}
-                            disabled={savingEntry || !dailyInput.trim()}
-                            className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
-                          >
-                            {savingEntry ? '...' : 'Добавить'}
-                          </button>
+                    <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
+                      <div className="mt-2 space-y-1.5">
+                        {statementEntries.map((item) => (
+                          <p key={item.id} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-100">
+                            {item.created_at
+                              ? new Date(item.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+                              : '--:--'}{' '}
+                            : {item.body || '—'}
+                          </p>
+                        ))}
+                        {!statementEntries.length && <p className="text-xs text-slate-500">Записей за эту смену пока нет.</p>}
+                        <div className="rounded-md border border-emerald-500/25 bg-slate-900/70 px-2 py-1">
+                          <div className="flex gap-2">
+                            <span className="pt-1 text-xs text-emerald-200">
+                              {new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} :
+                            </span>
+                            <input
+                              value={dailyInput}
+                              onChange={(e) => setDailyInput(e.target.value)}
+                              placeholder="Действие..."
+                              className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-500 outline-none"
+                            />
+                          </div>
+                          <div className="mt-1 flex justify-end">
+                            <button
+                              onClick={() => void handleAddDailyEntry()}
+                              disabled={savingEntry || !dailyInput.trim()}
+                              className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
+                            >
+                              {savingEntry ? '...' : 'Добавить'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             ) : (
               <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/70 p-3">
