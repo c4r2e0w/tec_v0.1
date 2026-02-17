@@ -26,6 +26,47 @@ function Layout({ children }) {
     return unitMap[pathUnit] || null
   }, [location.pathname, unitMap])
   const mainOffset = 'md:ml-64'
+  const sectionMap = useMemo(
+    () => ({
+      personnel: 'Персонал',
+      equipment: 'Оборудование',
+      docs: 'Документация',
+    }),
+    [],
+  )
+  const breadcrumbs = useMemo(() => {
+    const parts = location.pathname.split('/').filter(Boolean)
+    const list = [{ to: '/', label: 'Главная' }]
+    if (!parts.length) return list
+
+    const withLabel = (to, label) => ({ to, label })
+
+    if (parts[0] === 'login') return [withLabel('/login', 'Вход')]
+    if (parts[0] === 'profile') return [...list, withLabel('/profile', 'Профиль')]
+    if (parts[0] === 'hub') return [...list, withLabel('/hub', 'Лента')]
+    if (parts[0] === 'union') return [...list, withLabel('/union', 'Профсоюз')]
+    if (parts[0] === 'equipment') return [...list, withLabel('/equipment', 'База оборудования')]
+    if (parts[0] === 'roster') return [...list, withLabel('/roster', 'График')]
+    if (parts[0] === 'topics') return [...list, withLabel('/topics', 'Темы смен')]
+    if (parts[0] === 'shift' && parts[1] === 'today') return [...list, withLabel('/shift/today', 'Смена сегодня')]
+    if (parts[0] === 'rounds' && parts[1] === 'today') return [...list, withLabel('/rounds/today', 'Обход сегодня')]
+    if (parts[0] === 'rounds' && parts[1] === 'history') return [...list, withLabel('/rounds/history', 'История обходов')]
+    if (parts[0] === 'rounds' && parts[1]) return [...list, withLabel('/rounds/today', 'Обходы'), withLabel(`/rounds/${parts[1]}`, `Обход #${parts[1]}`)]
+    if (parts[0] === 'people' && parts[1]) return [...list, withLabel('/hub', 'Лента'), withLabel(`/people/${parts[1]}`, `Сотрудник #${parts[1]}`)]
+    if (parts[0] === 'workplaces' && parts[1] && parts[2]) {
+      const unitTitle = unitMap[parts[1]] || parts[1].toUpperCase()
+      return [...list, withLabel(`/${parts[1]}`, unitTitle), withLabel(`/${parts[1]}/personnel`, 'Персонал'), withLabel(`/workplaces/${parts[1]}/${parts[2]}`, `Рабочее место #${parts[2]}`)]
+    }
+    if (unitMap[parts[0]]) {
+      const unitTitle = unitMap[parts[0]]
+      const section = parts[1]
+      const sectionLabel = section ? sectionMap[section] || section : null
+      if (!sectionLabel) return [...list, withLabel(`/${parts[0]}`, unitTitle)]
+      return [...list, withLabel(`/${parts[0]}`, unitTitle), withLabel(`/${parts[0]}/${section}`, sectionLabel)]
+    }
+
+    return [...list, withLabel(location.pathname, decodeURIComponent(parts[parts.length - 1] || 'Раздел'))]
+  }, [location.pathname, sectionMap, unitMap])
 
   const handleLogin = () => navigate('/login')
   const handleProfile = () => navigate('/profile')
@@ -256,7 +297,8 @@ function Layout({ children }) {
       <div className={`relative z-10 flex flex-1 flex-col ${mainOffset}`}>
         <header className="sticky top-0 flex flex-col gap-3 border-b border-accent/30 bg-[linear-gradient(120deg,#08110e_0%,#10241d_52%,#173628_100%)] px-4 py-3 text-white shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur md:z-10 md:flex-row md:flex-wrap md:items-center md:justify-between md:px-5 md:py-4">
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-accent/70 to-transparent" />
-          <div className="flex items-center gap-2 md:min-w-[180px]">
+          <div className="flex flex-col gap-1 md:min-w-[260px]">
+            <div className="flex items-center gap-2">
             {user && (
               <button
                 onClick={() => setMobileNavOpen((v) => !v)}
@@ -269,6 +311,26 @@ function Layout({ children }) {
             <p className="text-sm font-semibold text-white drop-shadow-[0_0_14px_rgba(62,219,138,0.25)]">
               {currentUnit || 'УИ-ТЭЦ'}
             </p>
+          </div>
+            <div className="flex flex-wrap items-center gap-1 text-[11px] text-white/75">
+              {breadcrumbs.map((item, idx) => {
+                const isLast = idx === breadcrumbs.length - 1
+                return (
+                  <span key={`${item.to}-${item.label}`} className="inline-flex items-center gap-1">
+                    {isLast ? (
+                      <span className="rounded-full border border-accent/30 bg-black/25 px-2 py-0.5 font-semibold text-white">
+                        {item.label}
+                      </span>
+                    ) : (
+                      <NavLink to={item.to} className="rounded-full border border-white/15 bg-black/15 px-2 py-0.5 text-white/85 transition hover:border-accent/50 hover:text-white">
+                        {item.label}
+                      </NavLink>
+                    )}
+                    {!isLast && <span className="text-white/45">›</span>}
+                  </span>
+                )
+              })}
+            </div>
           </div>
           <div className="flex w-full flex-wrap items-center justify-start gap-2 text-xs text-white/90 md:w-auto md:justify-end">
             <span className="rounded-full border border-accent/35 bg-black/20 px-3 py-1 text-white">
