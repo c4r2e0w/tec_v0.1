@@ -249,8 +249,10 @@ function UnitSectionPage() {
   const sectionLabel = sectionsMap[section]
   const isKtc = unit === 'ktc'
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search])
-  const panelMode = searchParams.get('panel') || ''
-  const isOnShiftPanelOnly = section === 'personnel' && panelMode === 'on-shift'
+  const panelMode = String(searchParams.get('panel') || '').trim().toLowerCase()
+  const isOnShiftPanelOnly =
+    section === 'personnel' &&
+    (panelMode === 'on-shift' || panelMode === 'on_shift' || panelMode === 'onshift' || panelMode === 'on-shift-only')
   const requestedShiftDate = searchParams.get('shift_date') || ''
   const requestedShiftTypeRaw = searchParams.get('shift_type') || ''
   const requestedShiftType = requestedShiftTypeRaw === 'night' ? 'night' : 'day'
