@@ -367,26 +367,18 @@ function UnitLandingPage() {
           <p className="text-xs uppercase tracking-[0.25em] text-grayText">Персонал</p>
           {unit === 'ktc' ? (
             <>
-              <p className="mt-1 text-xs text-grayText">
-                {shiftSummary.shiftDate
-                  ? new Date(shiftSummary.shiftDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
-                  : '—'}
-              </p>
               <p className="mt-2 text-dark">
                 Сейчас на смене: вахта {shiftSummary.shiftCode} · {shiftSummary.shiftType === 'night' ? 'Ночь' : 'День'}
               </p>
               <p className="text-xs text-grayText">
-                Начальник смены:{' '}
                 {shiftSummary.chiefWorkplaceId ? (
-                  <Link
-                    to={`/workplaces/${unit}/${shiftSummary.chiefWorkplaceId}`}
-                    className="text-primary underline decoration-primary/50 underline-offset-2"
-                  >
-                    {shiftSummary.chief || 'не назначен'}
+                  <Link to={`/workplaces/${unit}/${shiftSummary.chiefWorkplaceId}`} className="text-primary underline decoration-primary/50 underline-offset-2">
+                    Начальник смены
                   </Link>
                 ) : (
-                  shiftSummary.chief || 'не назначен'
-                )}
+                  'Начальник смены'
+                )}{' '}
+                : <span className="text-dark">{shiftSummary.chief || 'не назначен'}</span>
               </p>
               <div className="mt-2 grid gap-2">
                 <div className="rounded-lg border border-border bg-background p-2">
