@@ -113,7 +113,7 @@ export async function fetchShiftAssignments({ supabase, sessionId }) {
   if (!supabase) return { data: [], error: new Error('Supabase не сконфигурирован') }
   return supabase
     .from('shift_assignments')
-    .select('id, session_id, employee_id, workplace_code, position_name, source, is_present, note, attendance_status, actual_start_time, actual_end_time, actual_hours, fact_note, confirmed_by_chief, confirmed_at, employees:employee_id(id, first_name, last_name, middle_name, positions:position_id(name))')
+    .select('id, session_id, employee_id, workplace_code, position_name, source, is_present, note, attendance_status, actual_start_time, actual_end_time, actual_hours, fact_note, confirmed_by_chief, confirmed_at, employees:employee_id(id, first_name, last_name, middle_name, position_id, positions:position_id(name, sort_weight, type))')
     .eq('session_id', sessionId)
     .order('employee_id', { ascending: true })
 }
