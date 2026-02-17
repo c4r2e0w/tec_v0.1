@@ -106,6 +106,8 @@ function WorkplacePage() {
   const [dailyInput, setDailyInput] = useState('')
   const [statementShiftDate, setStatementShiftDate] = useState(() => getCurrentShiftSlot().date)
   const [statementShiftType, setStatementShiftType] = useState(() => getCurrentShiftSlot().type)
+  const [shiftIconMotion, setShiftIconMotion] = useState('')
+  const [shiftIconAnimKey, setShiftIconAnimKey] = useState(0)
   const [savingEntry, setSavingEntry] = useState(false)
   const [journalId, setJournalId] = useState(null)
   const [error, setError] = useState('')
@@ -122,6 +124,12 @@ function WorkplacePage() {
     if (statementShiftDate !== currentShift.date) return true
     return currentShift.type === 'night'
   }, [statementShiftDate, currentShift.date, currentShift.type])
+
+  useEffect(() => {
+    if (!shiftIconMotion) return
+    const timer = setTimeout(() => setShiftIconMotion(''), 340)
+    return () => clearTimeout(timer)
+  }, [shiftIconMotion])
 
   const subsystemsById = useMemo(
     () => new Map((equipmentSubsystems || []).map((row) => [String(row.id), row])),
@@ -718,6 +726,8 @@ function WorkplacePage() {
                     type="button"
                     onClick={() => {
                       const next = moveShiftSlot(statementShiftDate, statementShiftType, -1)
+                      setShiftIconMotion('left')
+                      setShiftIconAnimKey((v) => v + 1)
                       setStatementShiftDate(next.date)
                       setStatementShiftType(next.type)
                     }}
@@ -738,25 +748,37 @@ function WorkplacePage() {
                     }}
                     className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
                   />
-                  <select
-                    value={statementShiftType}
-                    onChange={(e) => {
-                      const nextType = e.target.value
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextType = statementShiftType === 'day' ? 'night' : 'day'
+                      if (!canSelectNightOnDate && nextType === 'night') return
                       if (compareShiftSlots(statementShiftDate, nextType, currentShift.date, currentShift.type) > 0) return
                       setStatementShiftType(nextType)
                     }}
+                    title={statementShiftType === 'day' ? 'Переключить на ночь' : 'Переключить на день'}
                     className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
                   >
-                    <option value="day">День</option>
-                    <option value="night" disabled={!canSelectNightOnDate}>
-                      Ночь
-                    </option>
-                  </select>
+                    <span
+                      key={shiftIconAnimKey}
+                      className={`inline-flex min-w-5 items-center justify-center text-sm leading-none ${
+                        shiftIconMotion === 'left'
+                          ? 'shift-icon-arc-left'
+                          : shiftIconMotion === 'right'
+                            ? 'shift-icon-arc-right'
+                            : ''
+                      }`}
+                    >
+                      {statementShiftType === 'day' ? '☀︎' : '☾'}
+                    </span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
                       if (!canMoveForwardShift) return
                       const next = moveShiftSlot(statementShiftDate, statementShiftType, 1)
+                      setShiftIconMotion('right')
+                      setShiftIconAnimKey((v) => v + 1)
                       setStatementShiftDate(next.date)
                       setStatementShiftType(next.type)
                     }}
