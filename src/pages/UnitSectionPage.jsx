@@ -2023,7 +2023,6 @@ function UnitSectionPage() {
                           </option>
                         ))}
                     </select>
-                    {selectedEmployee?.id && <div className="mt-1 text-[11px] text-grayText">Назначен на это рабочее место</div>}
                   </div>
                 ) : (
                   <p className="text-xs text-dark">{row.employee?.label || '—'}</p>
@@ -2357,6 +2356,14 @@ function UnitSectionPage() {
                     </Link>
                   )}
                 </div>
+                <details className="mt-2 rounded-xl border border-border bg-background/60 p-2">
+                  <summary className="cursor-pointer text-xs font-medium text-dark">Справка по управлению составом</summary>
+                  <div className="mt-2 space-y-1 text-[11px] text-grayText">
+                    <p>Назначение выполняется по рабочему месту в колонках «Котельное» и «Турбинное».</p>
+                    <p>Для текущей смены доступно редактирование и подтверждение, для прошлых смен отображается архив.</p>
+                    <p>Факт по сотруднику открывается кнопкой с иконкой часов рядом с фамилией.</p>
+                  </div>
+                </details>
               </div>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">

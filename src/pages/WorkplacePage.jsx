@@ -1783,16 +1783,24 @@ function WorkplacePage() {
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-200">На смене</p>
-                        <p className="mt-1 text-xs text-slate-200">
-                          {isFormationMode
-                            ? 'Текущая смена: доступно редактирование и подтверждение состава.'
-                            : 'Архивная смена: только просмотр подтвержденного состава.'}
-                        </p>
+                        {isFormationMode && (
+                          <p className="mt-1 text-xs text-slate-200">
+                            Текущая смена: доступно редактирование и подтверждение состава.
+                          </p>
+                        )}
                       </div>
                       <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-1 text-[11px] text-emerald-100">
                         {new Date(statementShiftDate).toLocaleDateString('ru-RU')} · {statementShiftType === 'night' ? 'Ночь' : 'День'}
                       </span>
                     </div>
+                    <details className="mt-2 rounded-lg border border-white/10 bg-slate-950/60 p-2">
+                      <summary className="cursor-pointer text-xs font-medium text-slate-200">Справка по управлению составом</summary>
+                      <div className="mt-2 space-y-1 text-[11px] text-slate-300">
+                        <p>Текущая смена: выбирайте сотрудников по рабочим местам, затем подтверждайте состав.</p>
+                        <p>Архивная смена: доступен только просмотр подтвержденного состава.</p>
+                        <p>Кнопка с иконкой часов открывает редактирование факта (опоздание, ранний уход, отсутствие, комментарий).</p>
+                      </div>
+                    </details>
                     <div className="mt-2 space-y-1 text-xs text-slate-300">
                       <p>Тема пятиминутки: <span className="text-slate-100">{chiefBriefingTopic || 'не задана'}</span></p>
                       <p>Тема обхода: <span className="text-slate-100">{chiefRoundTopic || 'не задана'}</span></p>
@@ -2026,9 +2034,7 @@ function WorkplacePage() {
                                                 </div>
                                               )}
                                             </div>
-                                          ) : (
-                                            <p className="mt-1 text-[11px] text-slate-400">Назначьте сотрудника, затем заполните факт.</p>
-                                          )}
+                                          ) : null}
                                         </div>
                                       ) : (
                                         <div className="mt-1 space-y-1">
