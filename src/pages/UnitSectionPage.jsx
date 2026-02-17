@@ -1173,6 +1173,11 @@ function UnitSectionPage() {
     manualWorkplaceAssignments,
     operationalStaffPool,
   ])
+  const chiefWorkplaceId = useMemo(() => {
+    const rows = [...(resolvedCurrentRoster.boiler || []), ...(resolvedCurrentRoster.turbine || [])]
+    const row = rows.find((item) => isChiefPosition(item?.requiredPositionText || item?.workplaceName))
+    return row?.workplaceId || null
+  }, [resolvedCurrentRoster.boiler, resolvedCurrentRoster.turbine])
 
   useEffect(() => {
     if (section !== 'personnel' || !unit || !user) return
@@ -1911,27 +1916,10 @@ function UnitSectionPage() {
                           </option>
                         ))}
                     </select>
-                    {selectedEmployee?.id && (
-                      <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
-                        <Link
-                          to={`/people/${selectedEmployee.id}`}
-                          className="text-primary underline decoration-primary/50 underline-offset-2"
-                        >
-                          Профиль сотрудника
-                        </Link>
-                      </div>
-                    )}
+                    {selectedEmployee?.id && <div className="mt-1 text-[11px] text-grayText">Назначен на это рабочее место</div>}
                   </div>
                 ) : (
-                  <p className="text-xs text-dark">
-                    {row.employee?.id ? (
-                      <Link to={`/people/${row.employee.id}`} className="text-primary underline decoration-primary/50 underline-offset-2">
-                        {row.employee?.label || '—'}
-                      </Link>
-                    ) : (
-                      row.employee?.label || '—'
-                    )}
-                  </p>
+                  <p className="text-xs text-dark">{row.employee?.label || '—'}</p>
                 )}
               </div>
             )
@@ -2232,21 +2220,60 @@ function UnitSectionPage() {
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-grayText">
                   <span>Начальник смены:</span>
-                  <span className="text-dark">{resolvedChief?.label || 'не назначен'}</span>
+                  <select
+                    value={resolvedChief?.id ? String(resolvedChief.id) : ''}
+                    onChange={(e) => {
+                      const key = assignmentKey(activeShiftDate, activeShiftType, 'chief')
+                      const value = String(e.target.value || '')
+                      setManualChiefAssignments((prev) => {
+                        const next = { ...prev }
+                        if (!value) delete next[key]
+                        else next[key] = value
+                        return next
+                      })
+                    }}
+                    className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
+                  >
+                    <option value="">—</option>
+                    {chiefCandidates.map((emp) => (
+                      <option key={`chief-${emp.id}`} value={emp.id}>
+                        {emp.label}
+                      </option>
+                    ))}
+                  </select>
                   {resolvedChief?.id && (
                     <Link
-                      to={`/people/${resolvedChief.id}`}
+                      to={chiefWorkplaceId ? `/workplaces/${unit}/${chiefWorkplaceId}` : `/${unit}/personnel`}
                       className="text-primary underline decoration-primary/50 underline-offset-2"
                     >
-                      Страница начальника
+                      Рабочее место НС КТЦ
                     </Link>
                   )}
                 </div>
               </div>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              {renderRosterColumn('Котельное', resolvedCurrentRoster.boiler, false)}
-              {renderRosterColumn('Турбинное', resolvedCurrentRoster.turbine, false)}
+              {renderRosterColumn('Котельное', resolvedCurrentRoster.boiler, true)}
+              {renderRosterColumn('Турбинное', resolvedCurrentRoster.turbine, true)}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => void handleConfirmWorkplaceAssignments()}
+                disabled={savingWorkplaces || confirmingWorkplaces}
+                className="rounded-full bg-eco px-4 py-2 text-xs font-semibold text-white transition hover:bg-primary-hover disabled:opacity-60"
+              >
+                {confirmStatus === 'saved'
+                  ? 'Сохранено'
+                  : confirmingWorkplaces || savingWorkplaces
+                    ? confirmStatus === 'saving'
+                      ? 'Сохраняем состав...'
+                      : 'Подтверждаем...'
+                    : confirmStatus === 'error'
+                      ? 'Ошибка, повторить'
+                      : 'Подтвердить смену (инструктаж проведен)'}
+              </button>
+              {workplaceSaveMessage && <span className="text-xs text-eco">{workplaceSaveMessage}</span>}
+              {workplaceSaveError && <span className="text-xs text-red-300">{workplaceSaveError}</span>}
             </div>
             <div className="mt-3 rounded-xl border border-border bg-background/70 p-3 text-xs">
               <p className="text-[11px] uppercase tracking-[0.2em] text-grayText">Смену принимает</p>
@@ -2256,11 +2283,6 @@ function UnitSectionPage() {
               <p className="mt-1 text-grayText">
                 Рабочих мест к приёмке: {(nextRoster.boiler?.length || 0) + (nextRoster.turbine?.length || 0)}.
               </p>
-              {resolvedChief?.id && (
-                <p className="mt-2 text-grayText">
-                  Формирование команды и подтверждение смены выполняется на странице начальника смены.
-                </p>
-              )}
             </div>
           </div>
 
