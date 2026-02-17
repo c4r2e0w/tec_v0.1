@@ -67,6 +67,13 @@ const workplaceDivisionKey = (workplace) => {
   if (text.includes('турбин') || text.includes('то ') || text.endsWith('то') || text.includes('цтщупт')) return 'turbine'
   return 'other'
 }
+const employeeDivisionKey = (positionName) => {
+  const text = normalizeRoleText(positionName)
+  if (text.includes('котел') || text.includes('котель') || text.includes('ко ') || text.endsWith('ко') || text.includes('цтщупк')) return 'boiler'
+  if (text.includes('турбин') || text.includes('то ') || text.endsWith('то') || text.includes('цтщупт')) return 'turbine'
+  return 'other'
+}
+const isOperationalPositionType = (value) => normalizeRoleText(value).includes('оператив')
 
 const compactControlPoint = (value) =>
   normalizeKey(value)
@@ -162,7 +169,9 @@ function WorkplacePage() {
   const [chiefWorkplaces, setChiefWorkplaces] = useState([])
   const [chiefAssignments, setChiefAssignments] = useState([])
   const [chiefCandidates, setChiefCandidates] = useState([])
+  const [chiefAllCandidates, setChiefAllCandidates] = useState([])
   const [chiefDraftByWorkplace, setChiefDraftByWorkplace] = useState({})
+  const [chiefExpandedSelects, setChiefExpandedSelects] = useState({})
   const [chiefScheduleFallbackByWorkplace, setChiefScheduleFallbackByWorkplace] = useState({})
   const [loadingChiefTeam, setLoadingChiefTeam] = useState(false)
   const [savingChiefTeam, setSavingChiefTeam] = useState(false)
@@ -622,7 +631,9 @@ function WorkplacePage() {
         setChiefWorkplaces([])
         setChiefAssignments([])
         setChiefCandidates([])
+        setChiefAllCandidates([])
         setChiefDraftByWorkplace({})
+        setChiefExpandedSelects({})
         setChiefScheduleFallbackByWorkplace({})
         return
       }
@@ -668,6 +679,17 @@ function WorkplacePage() {
       setChiefDraftByWorkplace(Object.keys(nextDraft).length ? nextDraft : fallback.draft)
 
       setChiefCandidates(fallback.candidates)
+      const allOperationalRes = await scheduleService.fetchEmployeesByUnit({ unit })
+      if (!active) return
+      const allOperational = (allOperationalRes?.data || [])
+        .filter((emp) => isOperationalPositionType(emp?.positions?.type))
+        .map((emp) => ({
+          id: emp.id,
+          label: [emp.last_name, emp.first_name, emp.middle_name].filter(Boolean).join(' ') || `ID ${emp.id}`,
+          positionName: emp?.positions?.name || '',
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+      setChiefAllCandidates(allOperational)
       setLoadingChiefTeam(false)
     }
     void loadChiefTeam()
@@ -1105,6 +1127,24 @@ function WorkplacePage() {
     })
     return map
   }, [chiefAssignments, chiefCandidates, chiefScheduleFallbackByWorkplace, chiefWorkplaces])
+  const chiefCandidateSetsByWorkplace = useMemo(() => {
+    const primaryIds = new Set((chiefCandidates || []).map((c) => String(c.id)))
+    const map = {}
+    ;(chiefRowsByDivision.boiler || []).concat(chiefRowsByDivision.turbine || []).forEach((row) => {
+      const division = row.division
+      const primary = (chiefCandidates || []).filter((c) => {
+        const d = employeeDivisionKey(c.positionName)
+        return d === division || d === 'other'
+      })
+      const extra = (chiefAllCandidates || []).filter((c) => {
+        if (primaryIds.has(String(c.id))) return false
+        const d = employeeDivisionKey(c.positionName)
+        return d === division || d === 'other'
+      })
+      map[row.id] = { primary, extra }
+    })
+    return map
+  }, [chiefAllCandidates, chiefCandidates, chiefRowsByDivision.boiler, chiefRowsByDivision.turbine])
 
   const handleSaveChiefTeam = async () => {
     if (!isChiefWorkplaceView) return
@@ -1340,16 +1380,33 @@ function WorkplacePage() {
                                       <select
                                         value={chiefDraftByWorkplace[row.id] || ''}
                                         onChange={(e) =>
-                                          setChiefDraftByWorkplace((prev) => ({ ...prev, [row.id]: String(e.target.value || '') }))
+                                          {
+                                            const nextValue = String(e.target.value || '')
+                                            if (nextValue === '__more__') {
+                                              setChiefExpandedSelects((prev) => ({ ...prev, [row.id]: true }))
+                                              return
+                                            }
+                                            setChiefDraftByWorkplace((prev) => ({ ...prev, [row.id]: nextValue }))
+                                          }
                                         }
                                         className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
                                       >
                                         <option value="">—</option>
-                                        {chiefCandidates.map((emp) => (
+                                        {(chiefCandidateSetsByWorkplace[row.id]?.primary || []).map((emp) => (
                                           <option key={emp.id} value={emp.id}>
                                             {emp.label}
                                           </option>
                                         ))}
+                                        {!chiefExpandedSelects[row.id] &&
+                                          (chiefCandidateSetsByWorkplace[row.id]?.extra || []).length > 0 && (
+                                            <option value="__more__">Еще…</option>
+                                          )}
+                                        {chiefExpandedSelects[row.id] &&
+                                          (chiefCandidateSetsByWorkplace[row.id]?.extra || []).map((emp) => (
+                                            <option key={`extra-${row.id}-${emp.id}`} value={emp.id}>
+                                              {emp.label}
+                                            </option>
+                                          ))}
                                       </select>
                                     ) : (
                                       <p className="mt-1 text-xs text-slate-100">{chiefAssignedByWorkplace.get(row.id) || '—'}</p>
