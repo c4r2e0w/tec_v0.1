@@ -60,17 +60,20 @@ const getCurrentShiftSlot = () => {
 }
 
 const shiftPeriodLabel = (type) => (type === 'night' ? '21:00–09:00' : '09:00–21:00')
-const shiftSlotIndex = (dateStr, shiftType) => {
-  const day = Math.floor(parseIsoLocalDate(dateStr).getTime() / 86400000)
-  return day * 2 + (shiftType === 'night' ? 1 : 0)
+const shiftTypeRank = (type) => (type === 'night' ? 1 : 0)
+const compareShiftSlots = (aDate, aType, bDate, bType) => {
+  const aTime = parseIsoLocalDate(aDate).getTime()
+  const bTime = parseIsoLocalDate(bDate).getTime()
+  if (aTime !== bTime) return aTime - bTime
+  return shiftTypeRank(aType) - shiftTypeRank(bType)
 }
-const shiftFromIndex = (index) => {
-  const day = Math.floor(index / 2)
-  const type = index % 2 === 0 ? 'day' : 'night'
-  return {
-    date: addDays('1970-01-01', day),
-    type,
+const moveShiftSlot = (dateStr, shiftType, direction) => {
+  if (direction > 0) {
+    if (shiftType === 'day') return { date: dateStr, type: 'night' }
+    return { date: addDays(dateStr, 1), type: 'day' }
   }
+  if (shiftType === 'night') return { date: dateStr, type: 'day' }
+  return { date: addDays(dateStr, -1), type: 'night' }
 }
 
 const getTagValue = (tags, prefix) => {
@@ -112,7 +115,7 @@ function WorkplacePage() {
   const currentShift = useMemo(() => getCurrentShiftSlot(), [])
   const isViewedCurrentShift = statementShiftDate === currentShift.date && statementShiftType === currentShift.type
   const canMoveForwardShift = useMemo(
-    () => shiftSlotIndex(statementShiftDate, statementShiftType) < shiftSlotIndex(currentShift.date, currentShift.type),
+    () => compareShiftSlots(statementShiftDate, statementShiftType, currentShift.date, currentShift.type) < 0,
     [statementShiftDate, statementShiftType, currentShift.date, currentShift.type],
   )
   const canSelectNightOnDate = useMemo(() => {
@@ -366,9 +369,7 @@ function WorkplacePage() {
   }, [handoverService, unit, statementShiftDate, statementShiftType, workplace, workplaceId])
 
   useEffect(() => {
-    const viewed = shiftSlotIndex(statementShiftDate, statementShiftType)
-    const current = shiftSlotIndex(currentShift.date, currentShift.type)
-    if (viewed > current) {
+    if (compareShiftSlots(statementShiftDate, statementShiftType, currentShift.date, currentShift.type) > 0) {
       setStatementShiftDate(currentShift.date)
       setStatementShiftType(currentShift.type)
     }
@@ -716,7 +717,7 @@ function WorkplacePage() {
                   <button
                     type="button"
                     onClick={() => {
-                      const next = shiftFromIndex(shiftSlotIndex(statementShiftDate, statementShiftType) - 1)
+                      const next = moveShiftSlot(statementShiftDate, statementShiftType, -1)
                       setStatementShiftDate(next.date)
                       setStatementShiftType(next.type)
                     }}
@@ -731,9 +732,9 @@ function WorkplacePage() {
                     onChange={(e) => {
                       const nextDate = e.target.value
                       setStatementShiftDate(nextDate)
-                      const viewed = shiftSlotIndex(nextDate, statementShiftType)
-                      const current = shiftSlotIndex(currentShift.date, currentShift.type)
-                      if (viewed > current) setStatementShiftType(currentShift.type)
+                      if (compareShiftSlots(nextDate, statementShiftType, currentShift.date, currentShift.type) > 0) {
+                        setStatementShiftType(currentShift.type)
+                      }
                     }}
                     className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
                   />
@@ -741,9 +742,7 @@ function WorkplacePage() {
                     value={statementShiftType}
                     onChange={(e) => {
                       const nextType = e.target.value
-                      const viewed = shiftSlotIndex(statementShiftDate, nextType)
-                      const current = shiftSlotIndex(currentShift.date, currentShift.type)
-                      if (viewed > current) return
+                      if (compareShiftSlots(statementShiftDate, nextType, currentShift.date, currentShift.type) > 0) return
                       setStatementShiftType(nextType)
                     }}
                     className="rounded border border-white/10 bg-slate-900 px-2 py-1 text-slate-200"
@@ -757,7 +756,7 @@ function WorkplacePage() {
                     type="button"
                     onClick={() => {
                       if (!canMoveForwardShift) return
-                      const next = shiftFromIndex(shiftSlotIndex(statementShiftDate, statementShiftType) + 1)
+                      const next = moveShiftSlot(statementShiftDate, statementShiftType, 1)
                       setStatementShiftDate(next.date)
                       setStatementShiftType(next.type)
                     }}
