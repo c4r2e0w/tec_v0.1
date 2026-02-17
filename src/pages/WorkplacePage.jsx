@@ -710,21 +710,6 @@ function WorkplacePage() {
             <h2 className="mt-2 text-xl font-semibold text-white">
               {workplace?.name || workplace?.code || `Пост ${workplaceId}`}
             </h2>
-            <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/70 p-3">
-              {assignee ? (
-                <>
-                  <Link
-                    to={`/people/${assignee.id}`}
-                    className="inline-flex text-sm font-semibold text-emerald-100 underline decoration-emerald-300/50 underline-offset-2"
-                  >
-                    {assignee.fio}
-                  </Link>
-                  <p className="mt-1 text-xs text-slate-400">{assignee.position || 'Должность не указана'}</p>
-                </>
-              ) : (
-                <p className="text-sm text-slate-300">Сотрудник не назначен</p>
-              )}
-            </div>
             {activeTab === 'daily' && (
               <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-2.5">
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
@@ -794,10 +779,25 @@ function WorkplacePage() {
                   </button>
                 </div>
                 <p className="mt-2 text-xs text-slate-300">
-                  {new Date(statementShiftDate).toLocaleDateString('ru-RU')} · {statementShiftType === 'night' ? 'Ночь' : 'День'} · Период {viewedShiftPeriod} · Вахта {viewedShiftCode}
+                  Период {viewedShiftPeriod} · Вахта {viewedShiftCode}
                 </p>
               </div>
             )}
+            <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/70 p-3">
+              {assignee ? (
+                <>
+                  <Link
+                    to={`/people/${assignee.id}`}
+                    className="inline-flex text-sm font-semibold text-emerald-100 underline decoration-emerald-300/50 underline-offset-2"
+                  >
+                    {assignee.fio}
+                  </Link>
+                  <p className="mt-1 text-xs text-slate-400">{assignee.position || 'Должность не указана'}</p>
+                </>
+              ) : (
+                <p className="text-sm text-slate-300">Сотрудник не назначен</p>
+              )}
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => setActiveTab('daily')}
