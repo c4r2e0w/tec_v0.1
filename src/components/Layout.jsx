@@ -19,6 +19,7 @@ function Layout({ children }) {
   const [now, setNow] = useState(new Date())
   const [openUnit, setOpenUnit] = useState(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [workplaceCrumbLabel, setWorkplaceCrumbLabel] = useState('')
   const location = useLocation()
   const unitMap = useMemo(() => Object.fromEntries(units.map((u) => [u.key, u.title])), [])
   const currentUnit = useMemo(() => {
@@ -55,7 +56,8 @@ function Layout({ children }) {
     if (parts[0] === 'people' && parts[1]) return [...list, withLabel('/hub', 'Лента'), withLabel(`/people/${parts[1]}`, `Сотрудник #${parts[1]}`)]
     if (parts[0] === 'workplaces' && parts[1] && parts[2]) {
       const unitTitle = unitMap[parts[1]] || parts[1].toUpperCase()
-      return [...list, withLabel(`/${parts[1]}`, unitTitle), withLabel(`/${parts[1]}/personnel`, 'Персонал'), withLabel(`/workplaces/${parts[1]}/${parts[2]}`, `Рабочее место #${parts[2]}`)]
+      const wpLabel = workplaceCrumbLabel || `Рабочее место #${parts[2]}`
+      return [...list, withLabel(`/${parts[1]}`, unitTitle), withLabel(`/${parts[1]}/personnel`, 'Персонал'), withLabel(`/workplaces/${parts[1]}/${parts[2]}`, wpLabel)]
     }
     if (unitMap[parts[0]]) {
       const unitTitle = unitMap[parts[0]]
@@ -66,7 +68,7 @@ function Layout({ children }) {
     }
 
     return [...list, withLabel(location.pathname, decodeURIComponent(parts[parts.length - 1] || 'Раздел'))]
-  }, [location.pathname, sectionMap, unitMap])
+  }, [location.pathname, sectionMap, unitMap, workplaceCrumbLabel])
 
   const handleLogin = () => navigate('/login')
   const handleProfile = () => navigate('/profile')
@@ -80,6 +82,31 @@ function Layout({ children }) {
     const id = setInterval(() => setNow(new Date()), 30 * 1000)
     return () => clearInterval(id)
   }, [])
+
+  useEffect(() => {
+    let active = true
+    async function loadWorkplaceCrumb() {
+      const parts = location.pathname.split('/').filter(Boolean)
+      if (!(parts[0] === 'workplaces' && parts[1] && parts[2])) {
+        setWorkplaceCrumbLabel('')
+        return
+      }
+      const unit = parts[1]
+      const workplaceId = parts[2]
+      const res = await supabase
+        .from('workplace')
+        .select('id, name, code')
+        .eq('unit', unit)
+        .eq('id', Number(workplaceId))
+        .maybeSingle()
+      if (!active) return
+      setWorkplaceCrumbLabel(res?.data?.name || res?.data?.code || `Рабочее место #${workplaceId}`)
+    }
+    void loadWorkplaceCrumb()
+    return () => {
+      active = false
+    }
+  }, [location.pathname, supabase])
 
   const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
     weekday: 'short',

@@ -27,6 +27,14 @@ const normalizeKey = (value) =>
     .trim()
     .toLowerCase()
 
+const normalizeRoleText = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replaceAll('ё', 'е')
+    .replace(/[^a-zа-я0-9]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
 const compactControlPoint = (value) =>
   normalizeKey(value)
     .replace(/\s+/g, '')
@@ -383,14 +391,61 @@ function WorkplacePage() {
           position: assignment.position_name || assignment.employees?.positions?.name || '',
         })
       } else {
-        setAssignee(null)
+        const toDate = statementShiftType === 'night' ? addDays(statementShiftDate, 1) : statementShiftDate
+        const schedRes = await scheduleService.fetchRange({ from: statementShiftDate, to: toDate, unit })
+        if (!active || schedRes?.error) {
+          setAssignee(null)
+          return
+        }
+        const byEmp = new Map()
+        ;(schedRes.data || []).forEach((row) => {
+          const key = String(row.employee_id || '')
+          if (!key) return
+          const list = byEmp.get(key) || []
+          list.push(row)
+          byEmp.set(key, list)
+        })
+        const candidates = []
+        byEmp.forEach((rows) => {
+          const dayRows = rows.filter((r) => String(r.date) === statementShiftDate)
+          const has12 = dayRows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 12)
+          const has3 = dayRows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 3)
+          const has9 = rows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 9)
+          const inShift = statementShiftType === 'night' ? has3 : has12 && !has3 && !has9
+          if (!inShift) return
+          const sample = rows[0]
+          candidates.push({
+            id: sample.employee_id,
+            positionId: sample.employees?.position_id ?? null,
+            positionName: sample.employees?.positions?.name || '',
+            fio: [sample.employees?.last_name, sample.employees?.first_name, sample.employees?.middle_name].filter(Boolean).join(' '),
+          })
+        })
+        const wpPositionId = workplace?.position_id ?? null
+        const wpPositionText = normalizeRoleText(workplace?.position_name || workplace?.position || workplace?.name || '')
+        const picked =
+          candidates.find((emp) => wpPositionId && Number(emp.positionId) === Number(wpPositionId)) ||
+          candidates.find((emp) => {
+            const pos = normalizeRoleText(emp.positionName)
+            return wpPositionText && pos && (pos.includes(wpPositionText) || wpPositionText.includes(pos))
+          }) ||
+          null
+        setAssignee(
+          picked
+            ? {
+                id: picked.id,
+                fio: picked.fio || `ID ${picked.id}`,
+                position: picked.positionName || '',
+              }
+            : null,
+        )
       }
     }
     void loadViewedAssignee()
     return () => {
       active = false
     }
-  }, [handoverService, unit, statementShiftDate, statementShiftType, workplace, workplaceId])
+  }, [handoverService, scheduleService, unit, statementShiftDate, statementShiftType, workplace, workplaceId])
 
   useEffect(() => {
     if (compareShiftSlots(statementShiftDate, statementShiftType, currentShift.date, currentShift.type) > 0) {

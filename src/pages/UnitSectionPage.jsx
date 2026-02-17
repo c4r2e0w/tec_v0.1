@@ -106,7 +106,12 @@ const isOperationalType = (value) => normalizeRoleTextValue(value).includes('о�
 const isAdministrativeType = (value) => normalizeRoleTextValue(value).includes('административ')
 const isChiefPosition = (value) => {
   const normalized = normalizeRoleTextValue(value)
-  return normalized.includes('начальник смены') || normalized.includes('нач смены')
+  return (
+    normalized.includes('начальник смены') ||
+    normalized.includes('нач смены') ||
+    normalized.includes('нс ктц') ||
+    normalized.includes('нсктц')
+  )
 }
 const SECTION_FIELD_MAP = {
   turbine: ['турбинное отделение', 'турбинное'],
