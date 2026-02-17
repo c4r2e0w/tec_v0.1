@@ -1220,63 +1220,41 @@ function WorkplacePage() {
               <div className="mt-3 space-y-3">
                 {isChiefWorkplaceView && (
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                      {isViewedCurrentShift ? 'Формирование состава смены' : 'Сводный состав смены'}
-                    </p>
-                    {loadingChiefTeam && <p className="mt-2 text-xs text-slate-400">Загрузка…</p>}
-                    {!loadingChiefTeam && (
+                    {isViewedCurrentShift ? (
                       <>
-                        <div className="mt-2 grid gap-3 md:grid-cols-2">
-                          {[
-                            { key: 'boiler', label: 'Котельное' },
-                            { key: 'turbine', label: 'Турбинное' },
-                          ].map((block) => (
-                            <div key={block.key} className="rounded-lg border border-white/10 bg-white/5 p-2">
-                              <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">{block.label}</p>
-                              <div className="mt-2 space-y-2">
-                                {(chiefRowsByDivision[block.key] || []).map((row) => (
-                                  <div key={row.id}>
-                                    <p className="text-xs text-slate-300">{row.name}</p>
-                                    {isViewedCurrentShift ? (
-                                      <select
-                                        value={chiefDraftByWorkplace[row.id] || ''}
-                                        onChange={(e) =>
-                                          setChiefDraftByWorkplace((prev) => ({ ...prev, [row.id]: String(e.target.value || '') }))
-                                        }
-                                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                                      >
-                                        <option value="">—</option>
-                                        {chiefCandidates.map((emp) => (
-                                          <option key={emp.id} value={emp.id}>
-                                            {emp.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    ) : (
-                                      <p className="mt-1 text-xs text-slate-100">{chiefAssignedByWorkplace.get(row.id) || '—'}</p>
-                                    )}
-                                  </div>
-                                ))}
-                                {!chiefRowsByDivision[block.key]?.length && <p className="text-xs text-slate-500">—</p>}
-                              </div>
-                            </div>
-                          ))}
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Формирование состава смены (из КТЦ / Персонал)</p>
+                        <div className="mt-2 overflow-hidden rounded-lg border border-white/10">
+                          <iframe
+                            title="Формирование смены КТЦ"
+                            src={`/${unit}/personnel`}
+                            className="h-[980px] w-full bg-slate-950"
+                          />
                         </div>
-                        {isViewedCurrentShift ? (
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleSaveChiefTeam()}
-                              disabled={savingChiefTeam}
-                              className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
-                            >
-                              {savingChiefTeam ? 'Сохраняем...' : 'Сохранить состав смены'}
-                            </button>
-                            {chiefTeamMessage && <span className="text-xs text-emerald-300">{chiefTeamMessage}</span>}
-                            {chiefTeamError && <span className="text-xs text-rose-300">{chiefTeamError}</span>}
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Сводный состав смены</p>
+                        {loadingChiefTeam && <p className="mt-2 text-xs text-slate-400">Загрузка…</p>}
+                        {!loadingChiefTeam && (
+                          <div className="mt-2 grid gap-3 md:grid-cols-2">
+                            {[
+                              { key: 'boiler', label: 'Котельное' },
+                              { key: 'turbine', label: 'Турбинное' },
+                            ].map((block) => (
+                              <div key={block.key} className="rounded-lg border border-white/10 bg-white/5 p-2">
+                                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">{block.label}</p>
+                                <div className="mt-2 space-y-2">
+                                  {(chiefRowsByDivision[block.key] || []).map((row) => (
+                                    <div key={row.id}>
+                                      <p className="text-xs text-slate-300">{row.name}</p>
+                                      <p className="mt-1 text-xs text-slate-100">{chiefAssignedByWorkplace.get(row.id) || '—'}</p>
+                                    </div>
+                                  ))}
+                                  {!chiefRowsByDivision[block.key]?.length && <p className="text-xs text-slate-500">—</p>}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        ) : (
-                          <p className="mt-3 text-xs text-slate-400">Архивный просмотр: редактирование состава недоступно.</p>
                         )}
                       </>
                     )}
