@@ -208,16 +208,6 @@ function WorkplacePage() {
     () => moveShiftSlot(statementShiftDate, statementShiftType, 1),
     [statementShiftDate, statementShiftType],
   )
-  const chiefPersonnelPanelUrl = useMemo(() => {
-    if (!isChiefWorkplaceView) return ''
-    const params = new URLSearchParams({
-      embed: '1',
-      panel: 'on-shift',
-      shift_date: statementShiftDate,
-      shift_type: statementShiftType,
-    })
-    return `/${unit}/personnel?${params.toString()}`
-  }, [isChiefWorkplaceView, statementShiftDate, statementShiftType, unit])
   const chiefNextAcceptanceCount = useMemo(
     () => (chiefWorkplaces || []).filter((wp) => {
       const division = workplaceDivisionKey(wp)
@@ -1222,21 +1212,6 @@ function WorkplacePage() {
     if (!refreshed?.error) setChiefAssignments(refreshed.data || [])
   }
 
-  if (!loading && isChiefWorkplaceView && activeTab === 'daily') {
-    return (
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-1.5 shadow-lg">
-          <iframe
-            key={`${statementShiftDate}-${statementShiftType}`}
-            src={chiefPersonnelPanelUrl}
-            title="Формирование состава смены НС КТЦ"
-            className="h-[1120px] w-full rounded-lg border border-white/10 bg-background"
-          />
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
@@ -1247,7 +1222,7 @@ function WorkplacePage() {
             <h2 className="mt-2 text-xl font-semibold text-white">
               {workplace?.name || workplace?.code || `Пост ${workplaceId}`}
             </h2>
-            {activeTab === 'daily' && !isChiefWorkplaceView && (
+            {activeTab === 'daily' && (
               <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-2.5">
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
                   <button
@@ -1334,23 +1309,21 @@ function WorkplacePage() {
                 </p>
               </div>
             )}
-            {!(isChiefWorkplaceView && activeTab === 'daily') && (
-              <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                {assignee ? (
-                  <>
-                    <Link
-                      to={`/people/${assignee.id}`}
-                      className="inline-flex text-sm font-semibold text-emerald-100 underline decoration-emerald-300/50 underline-offset-2"
-                    >
-                      {assignee.fio}
-                    </Link>
-                    <p className="mt-1 text-xs text-slate-400">{assignee.position || 'Должность не указана'}</p>
-                  </>
-                ) : (
-                  <p className="text-sm text-slate-300">Сотрудник не назначен</p>
-                )}
-              </div>
-            )}
+            <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/70 p-3">
+              {assignee ? (
+                <>
+                  <Link
+                    to={`/people/${assignee.id}`}
+                    className="inline-flex text-sm font-semibold text-emerald-100 underline decoration-emerald-300/50 underline-offset-2"
+                  >
+                    {assignee.fio}
+                  </Link>
+                  <p className="mt-1 text-xs text-slate-400">{assignee.position || 'Должность не указана'}</p>
+                </>
+              ) : (
+                <p className="text-sm text-slate-300">Сотрудник не назначен</p>
+              )}
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => setActiveTab('daily')}
@@ -1375,18 +1348,12 @@ function WorkplacePage() {
             </div>
             {activeTab === 'daily' ? (
               <div className="mt-3 space-y-3">
-                {isChiefWorkplaceView && (
-                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-1.5">
-                    <iframe
-                      key={`${statementShiftDate}-${statementShiftType}`}
-                      src={chiefPersonnelPanelUrl}
-                      title="Формирование состава смены НС КТЦ"
-                      className="h-[980px] w-full rounded-lg border border-white/10 bg-background"
-                    />
-                  </div>
-                )}
-                {!isChiefWorkplaceView && (
-                  <div className="grid gap-3 lg:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]">
+                <div
+                  className={`grid gap-3 ${
+                    isChiefWorkplaceView ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]'
+                  }`}
+                >
+                  {!isChiefWorkplaceView && (
                     <div className="rounded-xl border border-white/10 bg-slate-950/70 p-2.5">
                       <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Состав оборудования</p>
                       <div className="mt-1.5 space-y-1.5">
@@ -1493,6 +1460,7 @@ function WorkplacePage() {
                         )}
                       </div>
                     </div>
+                  )}
                     <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
                       <div className="mt-2 space-y-1.5">
                         {statementEntries.map((item) => (
@@ -1529,7 +1497,6 @@ function WorkplacePage() {
                       </div>
                     </div>
                   </div>
-                )}
               </div>
             ) : (
               <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/70 p-3">
@@ -1557,22 +1524,20 @@ function WorkplacePage() {
                 <p className="mt-2 text-xs text-slate-500">Далее сюда добавим разделы документов и рабочие журналы по посту.</p>
               </div>
             )}
-            {!(isChiefWorkplaceView && activeTab === 'daily') && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Link
-                  to={`/${unit}/personnel`}
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-100 transition hover:border-sky-400/60"
-                >
-                  К персоналу
-                </Link>
-                <Link
-                  to="/rounds/today"
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-100 transition hover:border-sky-400/60"
-                >
-                  Обход сегодня
-                </Link>
-              </div>
-            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                to={`/${unit}/personnel`}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-100 transition hover:border-sky-400/60"
+              >
+                К персоналу
+              </Link>
+              <Link
+                to="/rounds/today"
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-100 transition hover:border-sky-400/60"
+              >
+                Обход сегодня
+              </Link>
+            </div>
             {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
           </>
         )}
