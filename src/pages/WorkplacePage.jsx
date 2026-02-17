@@ -42,6 +42,12 @@ const isChiefPosition = (value) => {
   const text = normalizeRoleText(value)
   return text.includes('начальник смен') || text.includes('нс ктц') || text.includes('нсктц')
 }
+const workplaceDivisionKey = (workplace) => {
+  const text = normalizeRoleText([workplace?.name, workplace?.code, workplace?.section, workplace?.area, workplace?.division_name].filter(Boolean).join(' '))
+  if (text.includes('котел') || text.includes('котель')) return 'boiler'
+  if (text.includes('турбин')) return 'turbine'
+  return 'other'
+}
 
 const compactControlPoint = (value) =>
   normalizeKey(value)
@@ -120,6 +126,15 @@ function WorkplacePage() {
   const [iconDisplayShiftType, setIconDisplayShiftType] = useState(() => getCurrentShiftSlot().type)
   const [savingEntry, setSavingEntry] = useState(false)
   const [journalId, setJournalId] = useState(null)
+  const [chiefSessionId, setChiefSessionId] = useState(null)
+  const [chiefWorkplaces, setChiefWorkplaces] = useState([])
+  const [chiefAssignments, setChiefAssignments] = useState([])
+  const [chiefCandidates, setChiefCandidates] = useState([])
+  const [chiefDraftByWorkplace, setChiefDraftByWorkplace] = useState({})
+  const [loadingChiefTeam, setLoadingChiefTeam] = useState(false)
+  const [savingChiefTeam, setSavingChiefTeam] = useState(false)
+  const [chiefTeamMessage, setChiefTeamMessage] = useState('')
+  const [chiefTeamError, setChiefTeamError] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const shiftIconOutTimerRef = useRef(null)
@@ -494,6 +509,95 @@ function WorkplacePage() {
   }, [handoverService, scheduleService, supabase, unit, statementShiftDate, statementShiftType, workplace, workplaceId])
 
   useEffect(() => {
+    let active = true
+    async function loadChiefTeam() {
+      if (!isChiefWorkplaceView) {
+        setChiefSessionId(null)
+        setChiefWorkplaces([])
+        setChiefAssignments([])
+        setChiefCandidates([])
+        setChiefDraftByWorkplace({})
+        return
+      }
+      setLoadingChiefTeam(true)
+      setChiefTeamError('')
+      setChiefTeamMessage('')
+      const [workplacesRes, sessionRes] = await Promise.all([
+        scheduleService.fetchWorkplaces({ unit }),
+        handoverService.fetchSession({ unit, shiftDate: statementShiftDate, shiftType: statementShiftType }),
+      ])
+      if (!active) return
+      if (workplacesRes?.error) {
+        setChiefTeamError(workplacesRes.error.message || 'Не удалось загрузить рабочие места')
+        setLoadingChiefTeam(false)
+        return
+      }
+      const sid = sessionRes?.data?.id || null
+      setChiefSessionId(sid)
+      setChiefWorkplaces(workplacesRes.data || [])
+      if (!sid) {
+        setChiefAssignments([])
+        setChiefCandidates([])
+        setChiefDraftByWorkplace({})
+        setLoadingChiefTeam(false)
+        return
+      }
+      const assRes = await handoverService.fetchAssignments({ sessionId: sid })
+      if (!active) return
+      const assignments = assRes?.error ? [] : assRes.data || []
+      setChiefAssignments(assignments)
+      const byWpId = new Map((workplacesRes.data || []).map((wp) => [String(wp.id), wp]))
+      const byWpCode = new Map((workplacesRes.data || []).filter((wp) => wp.code).map((wp) => [normalizeKey(wp.code), wp]))
+      const nextDraft = {}
+      ;(assignments || []).forEach((row) => {
+        if (row?.is_present === false || !row?.employee_id) return
+        const wpRaw = String(row?.workplace_code || '')
+        const wp = byWpId.get(wpRaw) || byWpCode.get(normalizeKey(wpRaw))
+        const key = wp?.id ? String(wp.id) : ''
+        if (!key) return
+        if (!nextDraft[key]) nextDraft[key] = String(row.employee_id)
+      })
+      setChiefDraftByWorkplace(nextDraft)
+
+      const toDate = statementShiftType === 'night' ? addDays(statementShiftDate, 1) : statementShiftDate
+      const schedRes = await scheduleService.fetchRange({ from: statementShiftDate, to: toDate, unit })
+      if (!active) return
+      const byEmp = new Map()
+      ;(schedRes?.data || []).forEach((row) => {
+        const key = String(row.employee_id || '')
+        if (!key) return
+        const list = byEmp.get(key) || []
+        list.push(row)
+        byEmp.set(key, list)
+      })
+      const candidates = []
+      byEmp.forEach((rows) => {
+        const dayRows = rows.filter((r) => String(r.date) === statementShiftDate)
+        const has12 = dayRows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 12)
+        const has3 = dayRows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 3)
+        const inShift = statementShiftType === 'night' ? has3 : has12
+        if (!inShift) return
+        const sample = rows[0]
+        const label = [sample.employees?.last_name, sample.employees?.first_name, sample.employees?.middle_name]
+          .filter(Boolean)
+          .join(' ')
+        candidates.push({
+          id: sample.employee_id,
+          label: label || `ID ${sample.employee_id}`,
+          positionName: sample.employees?.positions?.name || '',
+        })
+      })
+      candidates.sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+      setChiefCandidates(candidates)
+      setLoadingChiefTeam(false)
+    }
+    void loadChiefTeam()
+    return () => {
+      active = false
+    }
+  }, [handoverService, isChiefWorkplaceView, scheduleService, statementShiftDate, statementShiftType, unit])
+
+  useEffect(() => {
     if (compareShiftSlots(statementShiftDate, statementShiftType, currentShift.date, currentShift.type) > 0) {
       setStatementShiftDate(currentShift.date)
       setStatementShiftType(currentShift.type)
@@ -661,7 +765,7 @@ function WorkplacePage() {
 
   const handleAddDailyEntry = async () => {
     if (!journalId) {
-      setError('Не найден журнал для суточной ведомости.')
+      setError(isChiefWorkplaceView ? 'Не найден журнал для оперативного журнала.' : 'Не найден журнал для суточной ведомости.')
       return
     }
     const text = String(dailyInput || '').trim()
@@ -829,6 +933,70 @@ function WorkplacePage() {
     }
   }
 
+  const chiefRowsByDivision = useMemo(() => {
+    const rows = (chiefWorkplaces || [])
+      .filter((wp) => workplaceDivisionKey(wp) === 'boiler' || workplaceDivisionKey(wp) === 'turbine')
+      .map((wp) => ({
+        id: String(wp.id),
+        name: wp.name || wp.code || `Пост ${wp.id}`,
+        code: wp.code || '',
+        division: workplaceDivisionKey(wp),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    return {
+      boiler: rows.filter((row) => row.division === 'boiler'),
+      turbine: rows.filter((row) => row.division === 'turbine'),
+    }
+  }, [chiefWorkplaces])
+
+  const handleSaveChiefTeam = async () => {
+    if (!isChiefWorkplaceView || !chiefSessionId) return
+    setSavingChiefTeam(true)
+    setChiefTeamError('')
+    setChiefTeamMessage('')
+    const used = new Set()
+    const payload = []
+    Object.entries(chiefDraftByWorkplace).forEach(([workplaceKey, employeeValue]) => {
+      const employeeId = String(employeeValue || '')
+      if (!employeeId || used.has(employeeId)) return
+      used.add(employeeId)
+      const source = chiefCandidates.find((c) => String(c.id) === employeeId)
+      payload.push({
+        session_id: chiefSessionId,
+        employee_id: Number(employeeId),
+        workplace_code: workplaceKey,
+        position_name: source?.positionName || null,
+        source: 'manual',
+        is_present: true,
+        confirmed_by_chief: true,
+        confirmed_at: new Date().toISOString(),
+      })
+    })
+    ;(chiefAssignments || []).forEach((row) => {
+      const employeeId = String(row?.employee_id || '')
+      if (!employeeId || used.has(employeeId)) return
+      payload.push({
+        session_id: chiefSessionId,
+        employee_id: Number(employeeId),
+        workplace_code: row.workplace_code,
+        position_name: row.position_name || null,
+        source: 'manual',
+        is_present: false,
+        confirmed_by_chief: true,
+        confirmed_at: new Date().toISOString(),
+      })
+    })
+    const res = await handoverService.upsertAssignments(payload)
+    setSavingChiefTeam(false)
+    if (res?.error) {
+      setChiefTeamError(res.error.message || 'Не удалось сохранить состав смены')
+      return
+    }
+    setChiefTeamMessage('Состав смены сохранен')
+    const refreshed = await handoverService.fetchAssignments({ sessionId: chiefSessionId })
+    if (!refreshed?.error) setChiefAssignments(refreshed.data || [])
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
@@ -950,7 +1118,7 @@ function WorkplacePage() {
                     : 'border-white/10 bg-white/5 text-slate-200'
                 }`}
               >
-                Суточная ведомость
+                {isChiefWorkplaceView ? 'Оперативный журнал НС КТЦ' : 'Суточная ведомость'}
               </button>
               <button
                 onClick={() => setActiveTab('docs')}
@@ -965,6 +1133,60 @@ function WorkplacePage() {
             </div>
             {activeTab === 'daily' ? (
               <div className="mt-3 space-y-3">
+                {isChiefWorkplaceView && (
+                  <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Формирование состава смены</p>
+                    {loadingChiefTeam && <p className="mt-2 text-xs text-slate-400">Загрузка…</p>}
+                    {!loadingChiefTeam && (
+                      <>
+                        <div className="mt-2 grid gap-3 md:grid-cols-2">
+                          {[
+                            { key: 'boiler', label: 'Котельное' },
+                            { key: 'turbine', label: 'Турбинное' },
+                          ].map((block) => (
+                            <div key={block.key} className="rounded-lg border border-white/10 bg-white/5 p-2">
+                              <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">{block.label}</p>
+                              <div className="mt-2 space-y-2">
+                                {(chiefRowsByDivision[block.key] || []).map((row) => (
+                                  <div key={row.id}>
+                                    <p className="text-xs text-slate-300">{row.name}</p>
+                                    <select
+                                      value={chiefDraftByWorkplace[row.id] || ''}
+                                      onChange={(e) =>
+                                        setChiefDraftByWorkplace((prev) => ({ ...prev, [row.id]: String(e.target.value || '') }))
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                                    >
+                                      <option value="">—</option>
+                                      {chiefCandidates.map((emp) => (
+                                        <option key={emp.id} value={emp.id}>
+                                          {emp.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                ))}
+                                {!chiefRowsByDivision[block.key]?.length && <p className="text-xs text-slate-500">—</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveChiefTeam()}
+                            disabled={savingChiefTeam || !chiefSessionId}
+                            className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
+                          >
+                            {savingChiefTeam ? 'Сохраняем...' : 'Сохранить состав смены'}
+                          </button>
+                          {chiefTeamMessage && <span className="text-xs text-emerald-300">{chiefTeamMessage}</span>}
+                          {chiefTeamError && <span className="text-xs text-rose-300">{chiefTeamError}</span>}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
                 <div className="grid gap-3 lg:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]">
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-2.5">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Состав оборудования</p>
