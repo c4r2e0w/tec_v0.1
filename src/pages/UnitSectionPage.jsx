@@ -868,6 +868,7 @@ function UnitSectionPage() {
     return (workplaces || [])
       .map((wp, index) => {
         const code = String(wp.code || wp.workplace_code || wp.slug || wp.id || `wp-${index}`)
+        const navId = String(wp.id || code)
         const name = String(wp.name || wp.workplace_name || wp.title || wp.position_name || wp.position || code)
         const rawDivision =
           wp.devision_name ||
@@ -892,6 +893,7 @@ function UnitSectionPage() {
             : 'other'
         return {
           id: code,
+          navId,
           name,
           divisionKey,
           sort: Number.isFinite(sort) ? sort : index,
@@ -984,6 +986,7 @@ function UnitSectionPage() {
         if (assigned) used.add(assigned.id)
         return {
           workplaceId: wp.id,
+          workplaceNavId: wp.navId || wp.id,
           workplaceName: wp.name,
           requiredPositionText: wp.positionText,
           divisionKey,
@@ -1174,10 +1177,11 @@ function UnitSectionPage() {
     operationalStaffPool,
   ])
   const chiefWorkplaceId = useMemo(() => {
-    const rows = [...(resolvedCurrentRoster.boiler || []), ...(resolvedCurrentRoster.turbine || [])]
-    const row = rows.find((item) => isChiefPosition(item?.requiredPositionText || item?.workplaceName))
-    return row?.workplaceId || null
-  }, [resolvedCurrentRoster.boiler, resolvedCurrentRoster.turbine])
+    const chiefWp = (workplaces || []).find((wp) =>
+      isChiefPosition([wp?.position_name, wp?.position, wp?.name, wp?.code].filter(Boolean).join(' ')),
+    )
+    return chiefWp?.id ? String(chiefWp.id) : null
+  }, [workplaces])
 
   useEffect(() => {
     if (section !== 'personnel' || !unit || !user) return
@@ -1866,7 +1870,7 @@ function UnitSectionPage() {
                   <p className="text-[11px] text-grayText">{row.workplaceName}</p>
                 ) : (
                   <Link
-                    to={`/workplaces/${unit}/${row.workplaceId}`}
+                    to={`/workplaces/${unit}/${row.workplaceNavId || row.workplaceId}`}
                     className="text-[11px] text-primary underline decoration-primary/40 underline-offset-2"
                   >
                     {row.workplaceName}
