@@ -144,6 +144,7 @@ function WorkplacePage() {
   const [chiefAssignments, setChiefAssignments] = useState([])
   const [chiefCandidates, setChiefCandidates] = useState([])
   const [chiefDraftByWorkplace, setChiefDraftByWorkplace] = useState({})
+  const [chiefScheduleFallbackByWorkplace, setChiefScheduleFallbackByWorkplace] = useState({})
   const [loadingChiefTeam, setLoadingChiefTeam] = useState(false)
   const [savingChiefTeam, setSavingChiefTeam] = useState(false)
   const [chiefTeamMessage, setChiefTeamMessage] = useState('')
@@ -165,6 +166,56 @@ function WorkplacePage() {
     return currentShift.type === 'night'
   }, [statementShiftDate, currentShift.date, currentShift.type])
   const isChiefWorkplaceView = useMemo(() => isChiefWorkplace(workplace), [workplace])
+
+  const isEmployeeInShift = (rows, date, type) => {
+    const dayRows = (rows || []).filter((r) => String(r.date) === String(date))
+    const has12 = dayRows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 12)
+    const has3 = dayRows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 3)
+    return type === 'night' ? has3 : has12
+  }
+
+  const buildChiefScheduleFallback = (workplacesList, scheduleRows, date, type) => {
+    const byEmp = new Map()
+    ;(scheduleRows || []).forEach((row) => {
+      const key = String(row.employee_id || '')
+      if (!key) return
+      const list = byEmp.get(key) || []
+      list.push(row)
+      byEmp.set(key, list)
+    })
+    const candidates = []
+    byEmp.forEach((rows) => {
+      if (!isEmployeeInShift(rows, date, type)) return
+      const sample = rows[0]
+      candidates.push({
+        id: sample.employee_id,
+        positionId: sample.employees?.position_id ?? null,
+        positionName: sample.employees?.positions?.name || '',
+        label: [sample.employees?.last_name, sample.employees?.first_name, sample.employees?.middle_name].filter(Boolean).join(' ') || `ID ${sample.employee_id}`,
+      })
+    })
+    candidates.sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+    const used = new Set()
+    const draft = {}
+    ;(workplacesList || [])
+      .filter((wp) => workplaceDivisionKey(wp) === 'boiler' || workplaceDivisionKey(wp) === 'turbine')
+      .forEach((wp) => {
+        const wpPosId = wp?.position_id ?? null
+        const wpText = normalizeRoleText(wp?.position_name || wp?.position || wp?.name || '')
+        const candidate =
+          candidates.find((emp) => wpPosId && Number(emp.positionId) === Number(wpPosId) && !used.has(String(emp.id))) ||
+          candidates.find((emp) => {
+            if (used.has(String(emp.id))) return false
+            const pos = normalizeRoleText(emp.positionName)
+            return wpText && pos && (pos.includes(wpText) || wpText.includes(pos))
+          }) ||
+          null
+        if (!candidate) return
+        used.add(String(candidate.id))
+        draft[String(wp.id)] = String(candidate.id)
+      })
+    return { draft, candidates }
+  }
 
   useEffect(() => {
     if (iconDisplayShiftType === statementShiftType) return
@@ -530,6 +581,7 @@ function WorkplacePage() {
         setChiefAssignments([])
         setChiefCandidates([])
         setChiefDraftByWorkplace({})
+        setChiefScheduleFallbackByWorkplace({})
         return
       }
       setLoadingChiefTeam(true)
@@ -570,38 +622,14 @@ function WorkplacePage() {
         if (!key) return
         if (!nextDraft[key]) nextDraft[key] = String(row.employee_id)
       })
-      setChiefDraftByWorkplace(nextDraft)
-
       const toDate = statementShiftType === 'night' ? addDays(statementShiftDate, 1) : statementShiftDate
       const schedRes = await scheduleService.fetchRange({ from: statementShiftDate, to: toDate, unit })
       if (!active) return
-      const byEmp = new Map()
-      ;(schedRes?.data || []).forEach((row) => {
-        const key = String(row.employee_id || '')
-        if (!key) return
-        const list = byEmp.get(key) || []
-        list.push(row)
-        byEmp.set(key, list)
-      })
-      const candidates = []
-      byEmp.forEach((rows) => {
-        const dayRows = rows.filter((r) => String(r.date) === statementShiftDate)
-        const has12 = dayRows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 12)
-        const has3 = dayRows.some((r) => Math.round(Number(r?.planned_hours || 0)) === 3)
-        const inShift = statementShiftType === 'night' ? has3 : has12
-        if (!inShift) return
-        const sample = rows[0]
-        const label = [sample.employees?.last_name, sample.employees?.first_name, sample.employees?.middle_name]
-          .filter(Boolean)
-          .join(' ')
-        candidates.push({
-          id: sample.employee_id,
-          label: label || `ID ${sample.employee_id}`,
-          positionName: sample.employees?.positions?.name || '',
-        })
-      })
-      candidates.sort((a, b) => a.label.localeCompare(b.label, 'ru'))
-      setChiefCandidates(candidates)
+      const fallback = buildChiefScheduleFallback(workplacesRes.data || [], schedRes?.data || [], statementShiftDate, statementShiftType)
+      setChiefScheduleFallbackByWorkplace(fallback.draft)
+      setChiefDraftByWorkplace(Object.keys(nextDraft).length ? nextDraft : fallback.draft)
+
+      setChiefCandidates(fallback.candidates)
       setLoadingChiefTeam(false)
     }
     void loadChiefTeam()
@@ -980,14 +1008,37 @@ function WorkplacePage() {
         : ''
       map.set(key, fio || `ID ${row?.employee_id || '—'}`)
     })
+    Object.entries(chiefScheduleFallbackByWorkplace || {}).forEach(([workplaceId, employeeId]) => {
+      if (map.has(String(workplaceId))) return
+      const emp = (chiefCandidates || []).find((c) => String(c.id) === String(employeeId))
+      if (emp?.label) map.set(String(workplaceId), emp.label)
+    })
     return map
-  }, [chiefAssignments, chiefWorkplaces])
+  }, [chiefAssignments, chiefCandidates, chiefScheduleFallbackByWorkplace, chiefWorkplaces])
 
   const handleSaveChiefTeam = async () => {
-    if (!isChiefWorkplaceView || !chiefSessionId) return
+    if (!isChiefWorkplaceView) return
     setSavingChiefTeam(true)
     setChiefTeamError('')
     setChiefTeamMessage('')
+    let sessionId = chiefSessionId
+    if (!sessionId) {
+      const createRes = await handoverService.createSession({
+        unit,
+        shift_date: statementShiftDate,
+        shift_type: statementShiftType,
+        status: 'active',
+        chief_employee_id: assignee?.id || profile?.employee?.id || null,
+      })
+      if (createRes?.error || !createRes?.data?.id) {
+        setSavingChiefTeam(false)
+        setChiefTeamError(createRes?.error?.message || 'Не удалось создать сессию смены')
+        return
+      }
+      sessionId = createRes.data.id
+      setChiefSessionId(sessionId)
+    }
+
     const used = new Set()
     const payload = []
     Object.entries(chiefDraftByWorkplace).forEach(([workplaceKey, employeeValue]) => {
@@ -996,7 +1047,7 @@ function WorkplacePage() {
       used.add(employeeId)
       const source = chiefCandidates.find((c) => String(c.id) === employeeId)
       payload.push({
-        session_id: chiefSessionId,
+        session_id: sessionId,
         employee_id: Number(employeeId),
         workplace_code: workplaceKey,
         position_name: source?.positionName || null,
@@ -1010,7 +1061,7 @@ function WorkplacePage() {
       const employeeId = String(row?.employee_id || '')
       if (!employeeId || used.has(employeeId)) return
       payload.push({
-        session_id: chiefSessionId,
+        session_id: sessionId,
         employee_id: Number(employeeId),
         workplace_code: row.workplace_code,
         position_name: row.position_name || null,
@@ -1027,7 +1078,7 @@ function WorkplacePage() {
       return
     }
     setChiefTeamMessage('Состав смены сохранен')
-    const refreshed = await handoverService.fetchAssignments({ sessionId: chiefSessionId })
+    const refreshed = await handoverService.fetchAssignments({ sessionId })
     if (!refreshed?.error) setChiefAssignments(refreshed.data || [])
   }
 
@@ -1216,7 +1267,7 @@ function WorkplacePage() {
                             <button
                               type="button"
                               onClick={() => void handleSaveChiefTeam()}
-                              disabled={savingChiefTeam || !chiefSessionId}
+                              disabled={savingChiefTeam}
                               className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
                             >
                               {savingChiefTeam ? 'Сохраняем...' : 'Сохранить состав смены'}
