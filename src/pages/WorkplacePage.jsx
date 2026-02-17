@@ -92,13 +92,6 @@ const moveShiftSlot = (dateStr, shiftType, direction) => {
   return { date: addDays(dateStr, -1), type: 'night' }
 }
 
-const getTagValue = (tags, prefix) => {
-  const list = Array.isArray(tags) ? tags : []
-  const item = list.find((tag) => String(tag || '').startsWith(prefix))
-  if (!item) return ''
-  return String(item).slice(prefix.length)
-}
-
 const hasTag = (tags, value) => (Array.isArray(tags) ? tags : []).includes(value)
 
 function WorkplacePage() {
