@@ -189,8 +189,11 @@ function WorkplacePage() {
   }, [statementShiftDate, currentShift.date, currentShift.type])
   const isChiefWorkplaceView = useMemo(() => isChiefWorkplace(workplace), [workplace])
   const isFormationMode = useMemo(
-    () => isChiefWorkplaceView && statementShiftDate === currentShift.date,
-    [isChiefWorkplaceView, statementShiftDate, currentShift.date],
+    () =>
+      isChiefWorkplaceView &&
+      statementShiftDate === currentShift.date &&
+      statementShiftType === currentShift.type,
+    [isChiefWorkplaceView, statementShiftDate, statementShiftType, currentShift.date, currentShift.type],
   )
   const nextShiftSlot = useMemo(
     () => moveShiftSlot(statementShiftDate, statementShiftType, 1),
@@ -1062,8 +1065,15 @@ function WorkplacePage() {
         name: wp.name || wp.code || `Пост ${wp.id}`,
         code: wp.code || '',
         division: workplaceDivisionKey(wp),
+        sort: Number.isFinite(Number(wp.sort_weight))
+          ? Number(wp.sort_weight)
+          : Number.isFinite(Number(wp.sort_order))
+            ? Number(wp.sort_order)
+            : Number.isFinite(Number(wp.order_index))
+              ? Number(wp.order_index)
+              : Number(wp.id || 999999),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+      .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'ru'))
     return {
       boiler: rows.filter((row) => row.division === 'boiler'),
       turbine: rows.filter((row) => row.division === 'turbine'),
