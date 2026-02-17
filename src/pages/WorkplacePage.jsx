@@ -149,6 +149,9 @@ function WorkplacePage() {
   const [savingChiefTeam, setSavingChiefTeam] = useState(false)
   const [chiefTeamMessage, setChiefTeamMessage] = useState('')
   const [chiefTeamError, setChiefTeamError] = useState('')
+  const [chiefBriefingTopic, setChiefBriefingTopic] = useState('')
+  const [chiefRoundTopic, setChiefRoundTopic] = useState('')
+  const [chiefNextChiefName, setChiefNextChiefName] = useState('не назначен')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const shiftIconOutTimerRef = useRef(null)
@@ -166,6 +169,14 @@ function WorkplacePage() {
     return currentShift.type === 'night'
   }, [statementShiftDate, currentShift.date, currentShift.type])
   const isChiefWorkplaceView = useMemo(() => isChiefWorkplace(workplace), [workplace])
+  const nextShiftSlot = useMemo(
+    () => moveShiftSlot(statementShiftDate, statementShiftType, 1),
+    [statementShiftDate, statementShiftType],
+  )
+  const chiefNextAcceptanceCount = useMemo(
+    () => (chiefRowsByDivision.boiler?.length || 0) + (chiefRowsByDivision.turbine?.length || 0),
+    [chiefRowsByDivision.boiler, chiefRowsByDivision.turbine],
+  )
 
   const isEmployeeInShift = (rows, date, type) => {
     const dayRows = (rows || []).filter((r) => String(r.date) === String(date))
@@ -637,6 +648,50 @@ function WorkplacePage() {
       active = false
     }
   }, [handoverService, isChiefWorkplaceView, scheduleService, statementShiftDate, statementShiftType, unit])
+
+  useEffect(() => {
+    let active = true
+    async function loadChiefTopicsAndNextChief() {
+      if (!isChiefWorkplaceView) {
+        setChiefBriefingTopic('')
+        setChiefRoundTopic('')
+        setChiefNextChiefName('не назначен')
+        return
+      }
+      const topicRes = await handoverService.fetchTopicForDate({ unit, shiftDate: statementShiftDate })
+      if (!active) return
+      setChiefBriefingTopic(topicRes?.error ? '' : String(topicRes?.data?.topic || ''))
+      setChiefRoundTopic(topicRes?.error ? '' : String(topicRes?.data?.round_topic || ''))
+
+      const nextSessionRes = await handoverService.fetchSession({
+        unit,
+        shiftDate: nextShiftSlot.date,
+        shiftType: nextShiftSlot.type,
+      })
+      if (!active) return
+      const nextChiefId = nextSessionRes?.data?.chief_employee_id
+      if (!nextChiefId) {
+        setChiefNextChiefName('не назначен')
+        return
+      }
+      const empRes = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, middle_name')
+        .eq('id', Number(nextChiefId))
+        .maybeSingle()
+      if (!active) return
+      if (empRes?.error || !empRes?.data) {
+        setChiefNextChiefName('не назначен')
+        return
+      }
+      const fio = [empRes.data.last_name, empRes.data.first_name, empRes.data.middle_name].filter(Boolean).join(' ')
+      setChiefNextChiefName(fio || 'не назначен')
+    }
+    void loadChiefTopicsAndNextChief()
+    return () => {
+      active = false
+    }
+  }, [handoverService, isChiefWorkplaceView, nextShiftSlot.date, nextShiftSlot.type, statementShiftDate, supabase, unit])
 
   useEffect(() => {
     if (compareShiftSlots(statementShiftDate, statementShiftType, currentShift.date, currentShift.type) > 0) {
@@ -1220,42 +1275,80 @@ function WorkplacePage() {
               <div className="mt-3 space-y-3">
                 {isChiefWorkplaceView && (
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3">
-                    {isViewedCurrentShift ? (
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">На смене</p>
+                    <div className="mt-2 space-y-1 text-xs text-slate-300">
+                      <p>
+                        Тема пятиминутки: <span className="text-slate-100">{chiefBriefingTopic || '—'}</span>
+                      </p>
+                      <p>
+                        Тема обхода: <span className="text-slate-100">{chiefRoundTopic || '—'}</span>
+                      </p>
+                      <p className="pt-1">
+                        Начальник смены: <span className="text-slate-100">{assignee?.fio || 'не назначен'}</span>
+                      </p>
+                    </div>
+                    {loadingChiefTeam && <p className="mt-2 text-xs text-slate-400">Загрузка…</p>}
+                    {!loadingChiefTeam && (
                       <>
-                        <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Формирование состава смены (из КТЦ / Персонал)</p>
-                        <div className="mt-2 overflow-hidden rounded-lg border border-white/10">
-                          <iframe
-                            title="Формирование смены КТЦ"
-                            src={`/${unit}/personnel`}
-                            className="h-[980px] w-full bg-slate-950"
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Сводный состав смены</p>
-                        {loadingChiefTeam && <p className="mt-2 text-xs text-slate-400">Загрузка…</p>}
-                        {!loadingChiefTeam && (
-                          <div className="mt-2 grid gap-3 md:grid-cols-2">
-                            {[
-                              { key: 'boiler', label: 'Котельное' },
-                              { key: 'turbine', label: 'Турбинное' },
-                            ].map((block) => (
-                              <div key={block.key} className="rounded-lg border border-white/10 bg-white/5 p-2">
-                                <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">{block.label}</p>
-                                <div className="mt-2 space-y-2">
-                                  {(chiefRowsByDivision[block.key] || []).map((row) => (
-                                    <div key={row.id}>
-                                      <p className="text-xs text-slate-300">{row.name}</p>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          {[
+                            { key: 'boiler', label: 'Котельное' },
+                            { key: 'turbine', label: 'Турбинное' },
+                          ].map((block) => (
+                            <div key={block.key} className="rounded-lg border border-white/10 bg-white/5 p-2">
+                              <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">{block.label}</p>
+                              <div className="mt-2 space-y-2">
+                                {(chiefRowsByDivision[block.key] || []).map((row) => (
+                                  <div key={row.id}>
+                                    <p className="text-xs text-slate-300">{row.name}</p>
+                                    {isViewedCurrentShift ? (
+                                      <select
+                                        value={chiefDraftByWorkplace[row.id] || ''}
+                                        onChange={(e) =>
+                                          setChiefDraftByWorkplace((prev) => ({ ...prev, [row.id]: String(e.target.value || '') }))
+                                        }
+                                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                                      >
+                                        <option value="">—</option>
+                                        {chiefCandidates.map((emp) => (
+                                          <option key={emp.id} value={emp.id}>
+                                            {emp.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
                                       <p className="mt-1 text-xs text-slate-100">{chiefAssignedByWorkplace.get(row.id) || '—'}</p>
-                                    </div>
-                                  ))}
-                                  {!chiefRowsByDivision[block.key]?.length && <p className="text-xs text-slate-500">—</p>}
-                                </div>
+                                    )}
+                                  </div>
+                                ))}
+                                {!chiefRowsByDivision[block.key]?.length && <p className="text-xs text-slate-500">—</p>}
                               </div>
-                            ))}
+                            </div>
+                          ))}
+                        </div>
+                        {isViewedCurrentShift ? (
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveChiefTeam()}
+                              disabled={savingChiefTeam}
+                              className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:opacity-60"
+                            >
+                              {savingChiefTeam ? 'Сохраняем...' : 'Подтвердить смену (инструктаж проведен)'}
+                            </button>
+                            {chiefTeamMessage && <span className="text-xs text-emerald-300">{chiefTeamMessage}</span>}
+                            {chiefTeamError && <span className="text-xs text-rose-300">{chiefTeamError}</span>}
                           </div>
+                        ) : (
+                          <p className="mt-3 text-xs text-slate-400">Архивный просмотр: редактирование состава недоступно.</p>
                         )}
+                        <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-2 text-xs">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400">Смену принимает</p>
+                          <p className="mt-1 text-slate-200">
+                            {new Date(nextShiftSlot.date).toLocaleDateString('ru-RU')} · Вахта {getShiftCodeByDate(nextShiftSlot.date, nextShiftSlot.type)} · {nextShiftSlot.type === 'night' ? 'Ночь' : 'День'} · Начальник: {chiefNextChiefName}
+                          </p>
+                          <p className="mt-1 text-slate-300">Рабочих мест к приёмке: {chiefNextAcceptanceCount}.</p>
+                        </div>
                       </>
                     )}
                   </div>
