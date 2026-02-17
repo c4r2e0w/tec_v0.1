@@ -172,7 +172,6 @@ function WorkplacePage() {
   const [chiefCandidates, setChiefCandidates] = useState([])
   const [chiefDraftByWorkplace, setChiefDraftByWorkplace] = useState({})
   const [chiefExpandedSelects, setChiefExpandedSelects] = useState({})
-  const [chiefScheduleFallbackByWorkplace, setChiefScheduleFallbackByWorkplace] = useState({})
   const [loadingChiefTeam, setLoadingChiefTeam] = useState(false)
   const [savingChiefTeam, setSavingChiefTeam] = useState(false)
   const [chiefTeamMessage, setChiefTeamMessage] = useState('')
@@ -638,7 +637,6 @@ function WorkplacePage() {
         setChiefCandidates([])
         setChiefDraftByWorkplace({})
         setChiefExpandedSelects({})
-        setChiefScheduleFallbackByWorkplace({})
         return
       }
       setLoadingChiefTeam(true)
@@ -666,11 +664,12 @@ function WorkplacePage() {
       setChiefAssignments(assignments)
       const byWpId = new Map((workplacesRes.data || []).map((wp) => [String(wp.id), wp]))
       const byWpCode = new Map((workplacesRes.data || []).filter((wp) => wp.code).map((wp) => [normalizeKey(wp.code), wp]))
+      const byWpName = new Map((workplacesRes.data || []).filter((wp) => wp.name).map((wp) => [normalizeKey(wp.name), wp]))
       const nextDraft = {}
       ;(assignments || []).forEach((row) => {
         if (row?.is_present === false || !row?.employee_id) return
         const wpRaw = String(row?.workplace_code || '')
-        const wp = byWpId.get(wpRaw) || byWpCode.get(normalizeKey(wpRaw))
+        const wp = byWpId.get(wpRaw) || byWpCode.get(normalizeKey(wpRaw)) || byWpName.get(normalizeKey(wpRaw))
         const key = wp?.id ? String(wp.id) : ''
         if (!key) return
         if (!nextDraft[key]) nextDraft[key] = String(row.employee_id)
@@ -679,8 +678,7 @@ function WorkplacePage() {
       const schedRes = await scheduleService.fetchRange({ from: statementShiftDate, to: toDate, unit })
       if (!active) return
       const fallback = buildChiefScheduleFallback(workplacesRes.data || [], schedRes?.data || [], statementShiftDate, statementShiftType)
-      setChiefScheduleFallbackByWorkplace(fallback.draft)
-      setChiefDraftByWorkplace({ ...fallback.draft, ...nextDraft })
+      setChiefDraftByWorkplace(Object.keys(nextDraft).length ? nextDraft : fallback.draft)
 
       setChiefCandidates(fallback.candidates)
       setLoadingChiefTeam(false)
@@ -1100,11 +1098,16 @@ function WorkplacePage() {
         .filter((wp) => wp.code)
         .map((wp) => [normalizeKey(wp.code), wp]),
     )
+    const byName = new Map(
+      (chiefWorkplaces || [])
+        .filter((wp) => wp.name)
+        .map((wp) => [normalizeKey(wp.name), wp]),
+    )
     const map = new Map()
     ;(chiefAssignments || []).forEach((row) => {
       if (row?.is_present === false) return
       const raw = String(row?.workplace_code || '')
-      const wp = byId.get(raw) || byCode.get(normalizeKey(raw))
+      const wp = byId.get(raw) || byCode.get(normalizeKey(raw)) || byName.get(normalizeKey(raw))
       const key = wp?.id ? String(wp.id) : raw
       if (!key || map.has(key)) return
       const fio = row?.employees
@@ -1112,13 +1115,8 @@ function WorkplacePage() {
         : ''
       map.set(key, fio || `ID ${row?.employee_id || '—'}`)
     })
-    Object.entries(chiefScheduleFallbackByWorkplace || {}).forEach(([workplaceId, employeeId]) => {
-      if (map.has(String(workplaceId))) return
-      const emp = (chiefCandidates || []).find((c) => String(c.id) === String(employeeId))
-      if (emp?.label) map.set(String(workplaceId), emp.label)
-    })
     return map
-  }, [chiefAssignments, chiefCandidates, chiefScheduleFallbackByWorkplace, chiefWorkplaces])
+  }, [chiefAssignments, chiefWorkplaces])
   const chiefCandidateById = useMemo(() => {
     const map = new Map()
     ;(chiefCandidates || []).forEach((emp) => {
@@ -1434,7 +1432,9 @@ function WorkplacePage() {
                                   const selectedInExtra = selectedCandidate
                                     ? extra.some((emp) => String(emp.id) === String(selectedCandidate.id))
                                     : false
-                                  const selectedLabel = selectedCandidate?.label || chiefAssignedByWorkplace.get(rowKey) || '—'
+                                  const selectedLabel = isFormationMode
+                                    ? selectedCandidate?.label || chiefAssignedByWorkplace.get(rowKey) || '—'
+                                    : chiefAssignedByWorkplace.get(rowKey) || '—'
                                   const isExpanded = Boolean(chiefExpandedSelects[rowKey])
                                   return (
                                     <div key={rowKey}>
