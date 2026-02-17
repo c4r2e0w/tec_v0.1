@@ -121,6 +121,20 @@ function EmployeeWorkspacePage() {
       })
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
   }, [workplaces, assignments, draftByWorkplace])
+  const chiefWorkplaceLink = useMemo(() => {
+    if (!isChiefKtc) return null
+    const ownAssignment = (assignments || []).find(
+      (row) => Number(row?.employee_id) === Number(employeeId) && row?.is_present !== false,
+    )
+    const ownCode = String(ownAssignment?.workplace_code || '').trim()
+    if (ownCode) {
+      const ownWp = (workplaces || []).find((wp) => String(wp?.code || '').trim() === ownCode)
+      if (ownWp?.id) return `/workplaces/${preferredUnit}/${ownWp.id}`
+    }
+    const chiefWp = (workplaces || []).find((wp) => normalize(wp?.name).includes('начальник смен'))
+    if (chiefWp?.id) return `/workplaces/${preferredUnit}/${chiefWp.id}`
+    return null
+  }, [isChiefKtc, assignments, employeeId, workplaces, preferredUnit])
 
   useEffect(() => {
     let active = true
@@ -396,6 +410,16 @@ function EmployeeWorkspacePage() {
               </button>
             </div>
           </div>
+          {chiefWorkplaceLink && (
+            <div className="mt-2">
+              <Link
+                to={chiefWorkplaceLink}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-100 transition hover:border-sky-400/60"
+              >
+                Перейти на рабочее место НС КТЦ
+              </Link>
+            </div>
+          )}
           <p className="mt-2 text-xs text-slate-400">
             {new Date(shiftDate).toLocaleDateString('ru-RU')} · {shiftTypeLabel(shiftType)} · Период {shiftPeriodLabel(shiftType)}
           </p>
