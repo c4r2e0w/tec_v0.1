@@ -783,8 +783,8 @@ function WorkplacePage() {
                             : 'shift-icon-out-right'
                           : shiftIconPhase === 'in'
                             ? shiftIconMotion === 'left'
-                              ? 'shift-icon-in-left'
-                              : 'shift-icon-in-right'
+                              ? 'shift-icon-in-right'
+                              : 'shift-icon-in-left'
                             : ''
                       }`}
                     >

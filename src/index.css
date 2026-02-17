@@ -53,44 +53,44 @@ body {
 @keyframes shiftIconOutLeft {
   0% {
     opacity: 1;
-    transform: translate(0, 0) scale(1);
+    transform: translate(0, 0) rotate(0deg) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-10px, -8px) scale(0.9);
+    transform: translate(-12px, -9px) rotate(-35deg) scale(0.88);
   }
 }
 
 @keyframes shiftIconOutRight {
   0% {
     opacity: 1;
-    transform: translate(0, 0) scale(1);
+    transform: translate(0, 0) rotate(0deg) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(10px, -8px) scale(0.9);
+    transform: translate(12px, -9px) rotate(35deg) scale(0.88);
   }
 }
 
 @keyframes shiftIconInLeft {
   0% {
     opacity: 0;
-    transform: translate(-10px, -8px) scale(0.9);
+    transform: translate(-12px, 9px) rotate(-35deg) scale(0.88);
   }
   100% {
     opacity: 1;
-    transform: translate(0, 0) scale(1);
+    transform: translate(0, 0) rotate(0deg) scale(1);
   }
 }
 
 @keyframes shiftIconInRight {
   0% {
     opacity: 0;
-    transform: translate(10px, -8px) scale(0.9);
+    transform: translate(12px, 9px) rotate(35deg) scale(0.88);
   }
   100% {
     opacity: 1;
-    transform: translate(0, 0) scale(1);
+    transform: translate(0, 0) rotate(0deg) scale(1);
   }
 }
 
