@@ -43,6 +43,7 @@ const isChiefPosition = (value) => {
   const text = normalizeRoleText(value)
   return text.includes('начальник смен') || text.includes('нс ктц') || text.includes('нсктц')
 }
+const isOperationalType = (value) => normalizeRoleText(value).includes('оператив')
 const isReserveWorkplace = (workplace) => {
   const text = normalizeRoleText([workplace?.name, workplace?.code, workplace?.section, workplace?.area].filter(Boolean).join(' '))
   return text.includes('резерв') || text.includes('без пост')
@@ -73,6 +74,45 @@ const employeeDivisionKey = (positionName) => {
   if (text.includes('котел') || text.includes('котель') || text.includes('ко ') || text.endsWith('ко') || text.includes('цтщупк')) return 'boiler'
   if (text.includes('турбин') || text.includes('то ') || text.endsWith('то') || text.includes('цтщупт')) return 'turbine'
   return 'other'
+}
+const getPositionWeight = (name) => {
+  const text = normalizeRoleText(name)
+  if (text.includes('начальник смены') && text.includes('ктц')) return 10
+  if (text.includes('старший машинист') && text.includes('котель')) return 20
+  if (text.includes('старший машинист') && text.includes('турбин')) return 20
+  if (text.includes('машинист щита')) return 30
+  if (text.includes('обходчик') && text.includes('6')) return 40
+  if (text.includes('обходчик') && text.includes('5')) return 50
+  if (text.includes('обходчик') && text.includes('4')) return 60
+  return 999
+}
+const splitRoleTokens = (value) => normalizeRoleText(value).split(' ').filter((token) => token.length > 2)
+const canEmployeeCoverWorkplace = (employeePosition, workplacePosition, allowedPositions = []) => {
+  const employeeText = normalizeRoleText(employeePosition)
+  const workplaceText = normalizeRoleText(workplacePosition)
+  if (!employeeText || !workplaceText) return false
+  if (employeeText === workplaceText || employeeText.includes(workplaceText) || workplaceText.includes(employeeText)) return true
+
+  const employeeTokens = splitRoleTokens(employeeText)
+  const workplaceTokens = splitRoleTokens(workplaceText)
+  const commonTokens = workplaceTokens.filter((token) =>
+    employeeTokens.some((employeeToken) => employeeToken === token || employeeToken.startsWith(token) || token.startsWith(employeeToken)),
+  ).length
+  if (commonTokens >= Math.max(2, Math.ceil(workplaceTokens.length * 0.6))) return true
+
+  const normalizedAllowed = (Array.isArray(allowedPositions) ? allowedPositions : [])
+    .map((name) => normalizeRoleText(name))
+    .filter(Boolean)
+  if (normalizedAllowed.some((name) => employeeText.includes(name))) return true
+
+  const isSenior = employeeText.includes('старш') && employeeText.includes('машинист')
+  const isLowerTarget =
+    workplaceText.includes('щит') ||
+    workplaceText.includes('обход') ||
+    (workplaceText.includes('машинист') && !workplaceText.includes('старш'))
+  if (isSenior && isLowerTarget) return true
+
+  return false
 }
 
 const compactControlPoint = (value) =>
@@ -304,11 +344,17 @@ function WorkplacePage() {
     byEmp.forEach((rows) => {
       if (!isEmployeeInShift(rows, date, type)) return
       const sample = rows[0]
+      const positionName = sample.employees?.positions?.name || ''
+      const positionType = sample.employees?.positions?.type || ''
+      if (!isChiefPosition(positionName) && !isOperationalType(positionType)) return
       candidates.push({
         id: sample.employee_id,
         positionId: sample.employees?.position_id ?? null,
-        positionName: sample.employees?.positions?.name || '',
+        positionName,
+        positionType,
+        weight: sample.employees?.positions?.sort_weight ?? getPositionWeight(positionName),
         label: [sample.employees?.last_name, sample.employees?.first_name, sample.employees?.middle_name].filter(Boolean).join(' ') || `ID ${sample.employee_id}`,
+        inShift: true,
       })
     })
     candidates.sort((a, b) => a.label.localeCompare(b.label, 'ru'))
@@ -319,15 +365,29 @@ function WorkplacePage() {
       .filter((wp) => !isChiefWorkplace(wp) && !isReserveWorkplace(wp))
       .forEach((wp) => {
         const wpPosId = wp?.position_id ?? null
-        const wpText = normalizeRoleText(wp?.position_name || wp?.position || wp?.name || '')
+        const wpPositionText = String(wp?.position_name || wp?.position || wp?.name || '')
+        const wpText = normalizeRoleText(wpPositionText)
+        const wpDivision = workplaceDivisionKey(wp)
+        const requiredWeight = getPositionWeight(wpPositionText)
+        const allowedPositions = Array.isArray(wp?.allowed_positions) ? wp.allowed_positions : []
+        const canFill = (emp) => {
+          if (!emp || used.has(String(emp.id))) return false
+          const empDivision = employeeDivisionKey(emp.positionName)
+          const divisionOk = wpDivision === 'other' ? empDivision === 'other' : empDivision === wpDivision || empDivision === 'other'
+          if (!divisionOk) return false
+          const empWeight = Number(emp.weight)
+          const rankOk = requiredWeight >= 900 || (Number.isFinite(empWeight) ? empWeight <= requiredWeight : true)
+          if (!rankOk) return false
+          return canEmployeeCoverWorkplace(emp.positionName, wpPositionText, allowedPositions)
+        }
         const candidate =
-          candidates.find((emp) => wpPosId && Number(emp.positionId) === Number(wpPosId) && !used.has(String(emp.id))) ||
+          candidates.find((emp) => wpPosId && Number(emp.positionId) === Number(wpPosId) && canFill(emp)) ||
           candidates.find((emp) => {
-            if (used.has(String(emp.id))) return false
+            if (!canFill(emp)) return false
             const pos = normalizeRoleText(emp.positionName)
             return wpText && pos && (pos.includes(wpText) || wpText.includes(pos))
           }) ||
-          candidates.find((emp) => !used.has(String(emp.id))) ||
+          candidates.find((emp) => canFill(emp)) ||
           null
         if (!candidate) return
         used.add(String(candidate.id))
@@ -767,6 +827,10 @@ function WorkplacePage() {
           String(candidate.id),
           {
             ...candidate,
+            positionType: candidate?.positionType || '',
+            weight: Number.isFinite(Number(candidate?.weight))
+              ? Number(candidate.weight)
+              : getPositionWeight(candidate?.positionName || ''),
             inShift: true,
           },
         ]),
@@ -774,13 +838,19 @@ function WorkplacePage() {
       ;(unitEmployeesRes?.data || []).forEach((emp) => {
         const id = String(emp?.id || '')
         if (!id) return
+        const positionName = String(emp?.positions?.name || '')
+        const positionType = String(emp?.positions?.type || '')
+        if (!isChiefPosition(positionName) && !isOperationalType(positionType)) return
         const fio = [emp.last_name, emp.first_name, emp.middle_name].filter(Boolean).join(' ') || `ID ${id}`
+        const empWeight = emp?.positions?.sort_weight ?? getPositionWeight(positionName)
         if (candidatesById.has(id)) {
           const current = candidatesById.get(id)
           candidatesById.set(id, {
             ...current,
             positionId: current?.positionId ?? emp?.position_id ?? null,
-            positionName: current?.positionName || emp?.positions?.name || '',
+            positionName: current?.positionName || positionName,
+            positionType: current?.positionType || positionType,
+            weight: Number.isFinite(Number(current?.weight)) ? Number(current.weight) : Number(empWeight),
             label: current?.label || fio,
             inShift: true,
           })
@@ -789,7 +859,9 @@ function WorkplacePage() {
         candidatesById.set(id, {
           id: emp.id,
           positionId: emp?.position_id ?? null,
-          positionName: emp?.positions?.name || '',
+          positionName,
+          positionType,
+          weight: Number(empWeight),
           label: `${fio} (вне графика)`,
           inShift: false,
         })
@@ -797,6 +869,8 @@ function WorkplacePage() {
       const candidatePool = Array.from(candidatesById.values()).sort((a, b) => {
         const byShift = Number(Boolean(b?.inShift)) - Number(Boolean(a?.inShift))
         if (byShift !== 0) return byShift
+        const byWeight = Number(a?.weight || 999) - Number(b?.weight || 999)
+        if (byWeight !== 0) return byWeight
         return String(a?.label || '').localeCompare(String(b?.label || ''), 'ru')
       })
       const resolvedDraft = Object.keys(nextDraft).length ? nextDraft : fallback.draft
@@ -1291,14 +1365,27 @@ function WorkplacePage() {
     const map = {}
     ;(chiefRowsByDivision.boiler || []).concat(chiefRowsByDivision.turbine || []).forEach((row) => {
       const division = row.division
-      const primary = []
-      const extra = []
-      ;(chiefCandidates || []).forEach((candidate) => {
-        const d = employeeDivisionKey(candidate.positionName)
-        const shouldBePrimary = Boolean(candidate?.inShift) || d === division || d === 'other'
-        if (shouldBePrimary) primary.push(candidate)
-        else extra.push(candidate)
+      const workplacePosition = String(row?.position_name || row?.position || row?.name || '')
+      const allowedPositions = Array.isArray(row?.allowed_positions) ? row.allowed_positions : []
+      const requiredWeight = getPositionWeight(workplacePosition)
+      const workplaceIsChief = isChiefPosition(workplacePosition)
+      const eligible = (chiefCandidates || []).filter((candidate) => {
+        const candidatePosition = String(candidate?.positionName || '')
+        const candidateIsChief = isChiefPosition(candidatePosition)
+        if (!workplaceIsChief && candidateIsChief) return false
+        const candidateDivision = employeeDivisionKey(candidatePosition)
+        const divisionOk = division === 'other'
+          ? candidateDivision === 'other'
+          : candidateDivision === division || candidateDivision === 'other'
+        if (!divisionOk) return false
+        const candidateWeight = Number(candidate?.weight)
+        const rankOk = requiredWeight >= 900 || (Number.isFinite(candidateWeight) ? candidateWeight <= requiredWeight : true)
+        if (!rankOk) return false
+        return canEmployeeCoverWorkplace(candidatePosition, workplacePosition, allowedPositions)
       })
+      const primary = eligible.filter((candidate) => Boolean(candidate?.inShift))
+      const primaryIds = new Set(primary.map((candidate) => String(candidate.id)))
+      const extra = eligible.filter((candidate) => !primaryIds.has(String(candidate.id)))
       map[row.id] = { primary, extra }
     })
     return map
@@ -1363,7 +1450,7 @@ function WorkplacePage() {
         const employeeId = String(employeeValue || '')
         if (!employeeId || used.has(employeeId)) return
         used.add(employeeId)
-        const source = chiefCandidates.find((c) => String(c.id) === employeeId)
+        const source = chiefCandidates.find((c) => String(c.id) === employeeId) || chiefCandidateById.get(employeeId) || null
         const fact = chiefFactDraftByWorkplace[workplaceKey] || defaultFactDraft(statementShiftType)
         const attendanceStatus = normalizeFactStatus(fact.attendance_status)
         const actualStart = attendanceStatus === 'absent' ? null : toDbTimeValue(fact.actual_start_time)
@@ -1731,8 +1818,7 @@ function WorkplacePage() {
                                           </select>
                                           {selectedId ? (
                                             <div className="mt-1 space-y-1">
-                                              <div className="flex items-center gap-2">
-                                                <p className="min-w-0 flex-1 truncate text-xs text-slate-100">{selectedLabel}</p>
+                                              <div className="flex items-center justify-end">
                                                 <button
                                                   type="button"
                                                   onClick={() =>
@@ -1748,11 +1834,6 @@ function WorkplacePage() {
                                                   </svg>
                                                 </button>
                                               </div>
-                                              <p className="text-[11px] text-slate-300">
-                                                Факт: {FACT_STATUS_LABELS[factStatus] || FACT_STATUS_LABELS.full}
-                                                {factHours ? ` · ${factHours} ч` : ''}
-                                                {factStart && factEnd ? ` · ${factStart}–${factEnd}` : ''}
-                                              </p>
                                               {isFactMenuOpen && (
                                                 <div className="space-y-1 rounded-md border border-white/10 bg-black/20 p-2">
                                                   <p className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Факт смены</p>
