@@ -34,6 +34,14 @@ const normalizeRoleText = (value) =>
     .replace(/[^a-zа-я0-9]+/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+const isChiefWorkplace = (workplace) => {
+  const text = normalizeRoleText([workplace?.name, workplace?.code, workplace?.position_name, workplace?.position].filter(Boolean).join(' '))
+  return text.includes('начальник смен') || text.includes('нс ктц') || text.includes('нсктц')
+}
+const isChiefPosition = (value) => {
+  const text = normalizeRoleText(value)
+  return text.includes('начальник смен') || text.includes('нс ктц') || text.includes('нсктц')
+}
 
 const compactControlPoint = (value) =>
   normalizeKey(value)
@@ -135,6 +143,7 @@ function WorkplacePage() {
     if (statementShiftDate !== currentShift.date) return true
     return currentShift.type === 'night'
   }, [statementShiftDate, currentShift.date, currentShift.type])
+  const isChiefWorkplaceView = useMemo(() => isChiefWorkplace(workplace), [workplace])
 
   useEffect(() => {
     if (iconDisplayShiftType === statementShiftType) return
@@ -371,6 +380,49 @@ function WorkplacePage() {
       }
       const assignmentsRes = await handoverService.fetchAssignments({ sessionId })
       if (!active) return
+      if (isChiefWorkplace(workplace)) {
+        const chiefEmployeeId = sessionRes?.data?.chief_employee_id
+        const chiefFromAssignments = (assignmentsRes?.data || []).find(
+          (row) =>
+            row?.is_present !== false &&
+            (Number(row?.employee_id) === Number(chiefEmployeeId) ||
+              isChiefPosition(row?.position_name || row?.employees?.positions?.name)),
+        )
+        if (chiefFromAssignments?.employees) {
+          const fio = [
+            chiefFromAssignments.employees.last_name,
+            chiefFromAssignments.employees.first_name,
+            chiefFromAssignments.employees.middle_name,
+          ]
+            .filter(Boolean)
+            .join(' ')
+          setAssignee({
+            id: chiefFromAssignments.employee_id,
+            fio: fio || `ID ${chiefFromAssignments.employee_id}`,
+            position: chiefFromAssignments.position_name || chiefFromAssignments.employees?.positions?.name || '',
+          })
+          return
+        }
+        if (chiefEmployeeId) {
+          const chiefEmpRes = await supabase
+            .from('employees')
+            .select('id, first_name, last_name, middle_name, positions:position_id(name)')
+            .eq('id', Number(chiefEmployeeId))
+            .maybeSingle()
+          if (!active) return
+          if (!chiefEmpRes.error && chiefEmpRes.data) {
+            const fio = [chiefEmpRes.data.last_name, chiefEmpRes.data.first_name, chiefEmpRes.data.middle_name]
+              .filter(Boolean)
+              .join(' ')
+            setAssignee({
+              id: chiefEmpRes.data.id,
+              fio: fio || `ID ${chiefEmpRes.data.id}`,
+              position: chiefEmpRes.data.positions?.name || '',
+            })
+            return
+          }
+        }
+      }
       const wpIdKey = normalizeKey(workplaceId)
       const wpCodeKey = normalizeKey(workplace?.code)
       const assignment = (assignmentsRes?.data || []).find((row) => {
@@ -424,6 +476,7 @@ function WorkplacePage() {
         const wpPositionId = workplace?.position_id ?? null
         const wpPositionText = normalizeRoleText(workplace?.position_name || workplace?.position || workplace?.name || '')
         const picked =
+          candidates.find((emp) => isChiefWorkplace(workplace) && isChiefPosition(emp.positionName)) ||
           candidates.find((emp) => wpPositionId && Number(emp.positionId) === Number(wpPositionId)) ||
           candidates.find((emp) => {
             const pos = normalizeRoleText(emp.positionName)
@@ -445,7 +498,7 @@ function WorkplacePage() {
     return () => {
       active = false
     }
-  }, [handoverService, scheduleService, unit, statementShiftDate, statementShiftType, workplace, workplaceId])
+  }, [handoverService, scheduleService, supabase, unit, statementShiftDate, statementShiftType, workplace, workplaceId])
 
   useEffect(() => {
     if (compareShiftSlots(statementShiftDate, statementShiftType, currentShift.date, currentShift.type) > 0) {
@@ -586,10 +639,11 @@ function WorkplacePage() {
       const shiftTypeTag = `shift_type:${statementShiftType}`
       const filtered = (data || []).filter((item) => {
         const tags = Array.isArray(item?.tags) ? item.tags : []
-        const sameWorkplace = tags.includes(workplaceTag) || (workplace?.code && tags.includes(workplaceCodeTag))
-        if (!sameWorkplace) return false
         const sameShift = tags.includes(shiftDateTag) && tags.includes(shiftTypeTag)
-        return sameShift
+        if (!sameShift) return false
+        if (isChiefWorkplaceView) return true
+        const sameWorkplace = tags.includes(workplaceTag) || (workplace?.code && tags.includes(workplaceCodeTag))
+        return sameWorkplace
       })
       setDailyEntries(
         [...filtered].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
@@ -599,7 +653,7 @@ function WorkplacePage() {
     return () => {
       active = false
     }
-  }, [journalId, supabase, unit, workplaceId, workplace?.code, statementShiftDate, statementShiftType])
+  }, [isChiefWorkplaceView, journalId, supabase, unit, workplaceId, workplace?.code, statementShiftDate, statementShiftType])
 
   const buildSnapshotPayload = (list) => {
     const payload = {}
@@ -657,9 +711,11 @@ function WorkplacePage() {
     const shiftTypeTag = `shift_type:${statementShiftType}`
     const filtered = (data || []).filter((item) => {
       const tags = Array.isArray(item?.tags) ? item.tags : []
+      const sameShift = tags.includes(shiftDateTag) && tags.includes(shiftTypeTag)
+      if (!sameShift) return false
+      if (isChiefWorkplaceView) return true
       const sameWorkplace = tags.includes(workplaceTag) || (workplace?.code && tags.includes(workplaceCodeTag))
-      if (!sameWorkplace) return false
-      return tags.includes(shiftDateTag) && tags.includes(shiftTypeTag)
+      return sameWorkplace
     })
     setDailyEntries(
       [...filtered].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
