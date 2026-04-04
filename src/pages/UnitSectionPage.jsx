@@ -13,6 +13,7 @@ import PersonnelSchedule from '../components/PersonnelSchedule'
 import EquipmentPage from './EquipmentPage'
 import { productionCalendar } from '../constants/productionCalendar'
 import { getMonthCalendarMeta } from '../lib/productionNorm'
+import ktcTurbineInstructionMd from '../content/ktc-turbine-instruction.md?raw'
 
 const iconCatalog = {
   work: {
@@ -1207,8 +1208,8 @@ function UnitSectionPage() {
       const found = chiefCandidates.find((emp) => String(emp.id) === manual)
       if (found) return found
     }
-    return currentRoster.chief || chiefCandidates[0] || null
-  }, [activeShiftDate, activeShiftType, assignmentKey, chiefCandidates, currentRoster.chief, manualChiefAssignments])
+    return null
+  }, [activeShiftDate, activeShiftType, assignmentKey, chiefCandidates, manualChiefAssignments])
   const resolvedCurrentRoster = useMemo(() => {
     const rows = [...(currentRoster.boiler || []), ...(currentRoster.turbine || [])]
     const used = new Set()
@@ -2070,6 +2071,25 @@ function UnitSectionPage() {
           <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
+                <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Инструкции КТЦ</p>
+                <h3 className="text-lg font-semibold text-white">Турбинное отделение</h3>
+                <p className="text-sm text-slate-300">ПИ БЭК У-ИТЭЦ.202.124-2023 (OCR → Markdown)</p>
+              </div>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase text-slate-200">
+                Markdown
+              </span>
+            </div>
+            <details className="mt-4 rounded-xl border border-white/10 bg-slate-950/55 p-3">
+              <summary className="cursor-pointer text-sm font-medium text-white">Открыть текст инструкции</summary>
+              <pre className="mt-3 max-h-[520px] overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-slate-950/70 p-3 text-xs leading-relaxed text-slate-200">
+                {ktcTurbineInstructionMd}
+              </pre>
+            </details>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
                 <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Журналы КТЦ</p>
                 <h3 className="text-lg font-semibold text-white">Распоряжения и ведомости</h3>
                 <p className="text-sm text-slate-300">Директивы, техтемы и суточные ведомости. Автор + ознакомления.</p>
@@ -2325,7 +2345,12 @@ function UnitSectionPage() {
                   </p>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-grayText">
-                  <span>Начальник смены:</span>
+                  <Link
+                    to={chiefWorkplaceId ? `/workplaces/${unit}/${chiefWorkplaceId}` : `/${unit}/personnel`}
+                    className="text-primary underline decoration-primary/50 underline-offset-2 hover:text-primary-hover"
+                  >
+                    Начальник смены:
+                  </Link>
                   <select
                     value={resolvedChief?.id ? String(resolvedChief.id) : ''}
                     onChange={(e) => {
@@ -2347,14 +2372,6 @@ function UnitSectionPage() {
                       </option>
                     ))}
                   </select>
-                  {resolvedChief?.id && (
-                    <Link
-                      to={chiefWorkplaceId ? `/workplaces/${unit}/${chiefWorkplaceId}` : `/${unit}/personnel`}
-                      className="text-primary underline decoration-primary/50 underline-offset-2"
-                    >
-                      Рабочее место НС КТЦ
-                    </Link>
-                  )}
                 </div>
               </div>
             </div>
