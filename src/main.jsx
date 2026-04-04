@@ -22,6 +22,7 @@ import ShiftTopicsPage from './pages/ShiftTopicsPage.jsx'
 import SocialHubPage from './pages/SocialHubPage.jsx'
 import EmployeeWorkspacePage from './pages/EmployeeWorkspacePage.jsx'
 import WorkplacePage from './pages/WorkplacePage.jsx'
+import TrainingPage from './pages/TrainingPage.jsx'
 
 const queryClient = new QueryClient()
 
@@ -71,6 +72,14 @@ createRoot(document.getElementById('root')).render(
                 element={
                   <ProtectedRoute>
                     <UnionPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="training"
+                element={
+                  <ProtectedRoute>
+                    <TrainingPage />
                   </ProtectedRoute>
                 }
               />

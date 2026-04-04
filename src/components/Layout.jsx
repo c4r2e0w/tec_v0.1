@@ -27,6 +27,10 @@ function Layout({ children }) {
     return unitMap[pathUnit] || null
   }, [location.pathname, unitMap])
   const mainOffset = 'md:ml-64'
+  const isEmbedMode = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    return params.get('embed') === '1'
+  }, [location.search])
   const sectionMap = useMemo(
     () => ({
       personnel: 'Персонал',
@@ -46,6 +50,7 @@ function Layout({ children }) {
     if (parts[0] === 'profile') return [...list, withLabel('/profile', 'Профиль')]
     if (parts[0] === 'hub') return [...list, withLabel('/hub', 'Лента')]
     if (parts[0] === 'union') return [...list, withLabel('/union', 'Профсоюз')]
+    if (parts[0] === 'training') return [...list, withLabel('/training', 'Обучение')]
     if (parts[0] === 'equipment') return [...list, withLabel('/equipment', 'База оборудования')]
     if (parts[0] === 'roster') return [...list, withLabel('/roster', 'График')]
     if (parts[0] === 'topics') return [...list, withLabel('/topics', 'Темы смен')]
@@ -225,6 +230,23 @@ function Layout({ children }) {
               </span>
             </NavLink>
             <NavLink
+              to="/training"
+              onClick={() => setMobileNavOpen(false)}
+              className={({ isActive }) =>
+                [
+                  'rounded-xl px-4 py-2 transition',
+                  isActive
+                    ? 'bg-primary/20 text-accent border border-accent/60 shadow-sm shadow-accent/10'
+                    : 'border border-border hover:border-accent/40 hover:text-accent',
+                ].join(' ')
+              }
+            >
+              <span className="flex items-center gap-2">
+                <span className="w-6 text-center text-base">🎓</span>
+                <span>Обучение</span>
+              </span>
+            </NavLink>
+            <NavLink
               to="/rounds/today"
               onClick={() => setMobileNavOpen(false)}
               className={({ isActive }) =>
@@ -263,6 +285,16 @@ function Layout({ children }) {
       )}
     </nav>
   )
+
+  if (isEmbedMode) {
+    return (
+      <div className="min-h-screen bg-background text-dark">
+        <main className="px-2 py-2">
+          <div className="mx-auto max-w-none">{children}</div>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="relative flex min-h-screen bg-background text-dark">
