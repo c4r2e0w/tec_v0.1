@@ -15,6 +15,27 @@ const pickByDayOfMonth = (rows, day) => pickLatestRow((rows || []).filter((row) 
 
 const emptyTopicResult = { data: null, error: null }
 
+const queryTopicByTemplateDate = async ({ supabase, unit, templateDate }) => {
+  let query = supabase
+    .from('briefing_topics')
+    .select(BRIEFING_TOPIC_FIELDS)
+    .eq('briefing_date', templateDate)
+    .limit(1)
+  if (unit) query = query.eq('unit', unit)
+  return query
+}
+
+const queryTopicsByDayOfMonth = async ({ supabase, unit }) => {
+  let query = supabase
+    .from('briefing_topics')
+    .select(BRIEFING_TOPIC_FIELDS)
+    .not('briefing_date', 'is', null)
+    .order('briefing_date', { ascending: false })
+    .limit(400)
+  if (unit) query = query.eq('unit', unit)
+  return query
+}
+
 export async function fetchBriefingTopicForDate({ supabase, unit, shiftDate }) {
   if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
   if (!shiftDate) return emptyTopicResult
@@ -22,25 +43,22 @@ export async function fetchBriefingTopicForDate({ supabase, unit, shiftDate }) {
   const day = Number(String(shiftDate || '').slice(8, 10)) || 1
   const templateDate = `2000-01-${String(Math.min(Math.max(day, 1), 31)).padStart(2, '0')}`
 
-  const byTemplate = await supabase
-    .from('briefing_topics')
-    .select(BRIEFING_TOPIC_FIELDS)
-    .eq('unit', unit)
-    .eq('briefing_date', templateDate)
-    .limit(1)
+  const byTemplate = await queryTopicByTemplateDate({ supabase, unit, templateDate })
   if (byTemplate.error) return { data: null, error: byTemplate.error }
   if (byTemplate.data?.length) return { data: byTemplate.data[0], error: null }
 
-  const byAnyMonth = await supabase
-    .from('briefing_topics')
-    .select(BRIEFING_TOPIC_FIELDS)
-    .eq('unit', unit)
-    .not('briefing_date', 'is', null)
-    .order('briefing_date', { ascending: false })
-    .limit(400)
+  const byAnyMonth = await queryTopicsByDayOfMonth({ supabase, unit })
   if (byAnyMonth.error) return { data: null, error: byAnyMonth.error }
   const anyMonthMatch = pickByDayOfMonth(byAnyMonth.data, day)
-  return { data: anyMonthMatch, error: null }
+  if (anyMonthMatch || !unit) return { data: anyMonthMatch, error: null }
+
+  const globalTemplate = await queryTopicByTemplateDate({ supabase, templateDate })
+  if (globalTemplate.error) return { data: null, error: globalTemplate.error }
+  if (globalTemplate.data?.length) return { data: globalTemplate.data[0], error: null }
+
+  const globalByAnyMonth = await queryTopicsByDayOfMonth({ supabase })
+  if (globalByAnyMonth.error) return { data: null, error: globalByAnyMonth.error }
+  return { data: pickByDayOfMonth(globalByAnyMonth.data, day), error: null }
 }
 
 export async function fetchBriefingTopicsRange({ supabase, unit, from, to }) {
