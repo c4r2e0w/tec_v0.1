@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 import { useProfile } from '../hooks/useProfile'
@@ -375,6 +375,7 @@ function UnitSectionPage() {
   const [workplaceSaveError, setWorkplaceSaveError] = useState('')
   const [confirmingWorkplaces, setConfirmingWorkplaces] = useState(false)
   const [confirmStatus, setConfirmStatus] = useState('idle')
+  const workplaceSelectRefs = useRef({})
 
   useEffect(() => {
     const saved = localStorage.getItem(pinStorageKey)
@@ -1983,11 +1984,27 @@ function UnitSectionPage() {
                 {editable ? (
                   <div className="mt-1">
                     <select
+                      ref={(node) => {
+                        if (node) workplaceSelectRefs.current[key] = node
+                        else delete workplaceSelectRefs.current[key]
+                      }}
                       value={selectedEmployee?.id ? String(selectedEmployee.id) : ''}
                       onChange={(e) => {
                         const nextValue = e.target.value
                         if (nextValue === '__more__') {
                           setExpandedWorkplaceSelects((prev) => ({ ...prev, [key]: true }))
+                          requestAnimationFrame(() => {
+                            const select = workplaceSelectRefs.current[key]
+                            if (!select) return
+                            select.focus()
+                            if (typeof select.showPicker === 'function') {
+                              try {
+                                select.showPicker()
+                              } catch {
+                                // Browser may block picker reopening without support.
+                              }
+                            }
+                          })
                           return
                         }
                         setManualWorkplaceAssignments((prev) => {
