@@ -392,7 +392,7 @@ function UnitSectionPage() {
         // ignore malformed
       }
     }
-  }, [pinStorageKey])
+  }, [])
 
   useEffect(() => {
     localStorage.setItem(

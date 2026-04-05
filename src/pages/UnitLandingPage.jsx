@@ -33,19 +33,6 @@ const addDaysLocalIso = (dateStr, days) => {
 }
 const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
 const SHIFT_CODES = ['А', 'Б', 'В', 'Г']
-const EMPTY_SHIFT_SUMMARY = {
-  loading: false,
-  error: '',
-  notice: '',
-  shiftCode: '—',
-  shiftType: 'day',
-  shiftDate: '',
-  chief: '',
-  chiefId: null,
-  chiefWorkplaceId: null,
-  boilerRows: [],
-  turbineRows: [],
-}
 
 const normalizeText = (value) => String(value || '').trim().toLowerCase()
 
@@ -122,8 +109,19 @@ function UnitLandingPage() {
   const scheduleService = useMemo(() => createScheduleService(supabase), [supabase])
   const handoverService = useMemo(() => createShiftHandoverService(supabase), [supabase])
   const data = units[unit]
-  const [shiftSummary, setShiftSummary] = useState(EMPTY_SHIFT_SUMMARY)
-  const displayShiftSummary = unit === 'ktc' ? shiftSummary : EMPTY_SHIFT_SUMMARY
+  const [shiftSummary, setShiftSummary] = useState({
+    loading: false,
+    error: '',
+    notice: '',
+    shiftCode: '—',
+    shiftType: 'day',
+    shiftDate: '',
+    chief: '',
+    chiefId: null,
+    chiefWorkplaceId: null,
+    boilerRows: [],
+    turbineRows: [],
+  })
 
   const getShiftCodeByDate = (dateStr, shiftType) => {
     const diffMs = parseIsoLocalDate(dateStr).getTime() - parseIsoLocalDate(SHIFT_ANCHOR_DATE).getTime()
@@ -134,7 +132,22 @@ function UnitLandingPage() {
   }
 
   useEffect(() => {
-    if (unit !== 'ktc') return
+    if (unit !== 'ktc') {
+      setShiftSummary({
+        loading: false,
+        error: '',
+        notice: '',
+        shiftCode: '—',
+        shiftType: 'day',
+        shiftDate: '',
+        chief: '',
+        chiefId: null,
+        chiefWorkplaceId: null,
+        boilerRows: [],
+        turbineRows: [],
+      })
+      return
+    }
     const load = async () => {
       const now = new Date()
       const currentDate = toIsoLocalDate(now)
@@ -355,26 +368,26 @@ function UnitLandingPage() {
           {unit === 'ktc' ? (
             <>
               <p className="mt-2 text-dark">
-                Сейчас на смене: вахта {displayShiftSummary.shiftCode} · {displayShiftSummary.shiftType === 'night' ? 'Ночь' : 'День'}
+                Сейчас на смене: вахта {shiftSummary.shiftCode} · {shiftSummary.shiftType === 'night' ? 'Ночь' : 'День'}
               </p>
               <p className="text-xs text-grayText">
-                {displayShiftSummary.chiefWorkplaceId ? (
-                  <Link to={`/workplaces/${unit}/${displayShiftSummary.chiefWorkplaceId}`} className="text-primary underline decoration-primary/50 underline-offset-2">
+                {shiftSummary.chiefWorkplaceId ? (
+                  <Link to={`/workplaces/${unit}/${shiftSummary.chiefWorkplaceId}`} className="text-primary underline decoration-primary/50 underline-offset-2">
                     Начальник смены
                   </Link>
                 ) : (
                   'Начальник смены'
                 )}{' '}
-                : <span className="text-dark">{displayShiftSummary.chief || 'не назначен'}</span>
+                : <span className="text-dark">{shiftSummary.chief || 'не назначен'}</span>
               </p>
               <div className="mt-2 grid gap-2">
                 <div className="rounded-lg border border-border bg-background p-2">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-grayText">Котельное</p>
-                  {displayShiftSummary.loading ? (
+                  {shiftSummary.loading ? (
                     <p className="text-xs text-dark">Загрузка...</p>
                   ) : (
                     <div className="space-y-1 text-xs text-dark">
-                      {(displayShiftSummary.boilerRows || []).map((row) => (
+                      {(shiftSummary.boilerRows || []).map((row) => (
                         <div key={row.workplaceId} className="flex items-start justify-between gap-2 rounded-md border border-border/70 bg-white/40 px-2 py-1">
                           <Link to={`/workplaces/${unit}/${row.workplaceId}`} className="text-grayText underline decoration-grayText/40 underline-offset-2">
                             {row.workplaceName}
@@ -382,17 +395,17 @@ function UnitLandingPage() {
                           <span className="text-right">{row.employeeName || '—'}</span>
                         </div>
                       ))}
-                      {!displayShiftSummary.boilerRows?.length && <p>—</p>}
+                      {!shiftSummary.boilerRows?.length && <p>—</p>}
                     </div>
                   )}
                 </div>
                 <div className="rounded-lg border border-border bg-background p-2">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-grayText">Турбинное</p>
-                  {displayShiftSummary.loading ? (
+                  {shiftSummary.loading ? (
                     <p className="text-xs text-dark">Загрузка...</p>
                   ) : (
                     <div className="space-y-1 text-xs text-dark">
-                      {(displayShiftSummary.turbineRows || []).map((row) => (
+                      {(shiftSummary.turbineRows || []).map((row) => (
                         <div key={row.workplaceId} className="flex items-start justify-between gap-2 rounded-md border border-border/70 bg-white/40 px-2 py-1">
                           <Link to={`/workplaces/${unit}/${row.workplaceId}`} className="text-grayText underline decoration-grayText/40 underline-offset-2">
                             {row.workplaceName}
@@ -400,13 +413,13 @@ function UnitLandingPage() {
                           <span className="text-right">{row.employeeName || '—'}</span>
                         </div>
                       ))}
-                      {!displayShiftSummary.turbineRows?.length && <p>—</p>}
+                      {!shiftSummary.turbineRows?.length && <p>—</p>}
                     </div>
                   )}
                 </div>
-                {displayShiftSummary.notice && <p className="text-[11px] text-grayText">{displayShiftSummary.notice}</p>}
+                {shiftSummary.notice && <p className="text-[11px] text-grayText">{shiftSummary.notice}</p>}
               </div>
-              {displayShiftSummary.error && <p className="mt-2 text-xs text-red-300">Ошибка: {displayShiftSummary.error}</p>}
+              {shiftSummary.error && <p className="mt-2 text-xs text-red-300">Ошибка: {shiftSummary.error}</p>}
             </>
           ) : (
             <p className="mt-2 text-dark">Состав, контакты, роли</p>
