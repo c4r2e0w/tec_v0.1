@@ -1,30 +1,41 @@
-import { StrictMode } from 'react'
+import { Suspense, StrictMode, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App.jsx'
-import StartPage from './pages/StartPage.jsx'
-import LoginPage from './pages/LoginPage.jsx'
-import EquipmentPage from './pages/EquipmentPage.jsx'
-import RosterPage from './pages/RosterPage.jsx'
 import { SupabaseProvider } from './context/SupabaseProvider.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
-import ProfilePage from './pages/ProfilePage.jsx'
-import UnitSectionPage from './pages/UnitSectionPage.jsx'
-import UnitLandingPage from './pages/UnitLandingPage.jsx'
-import UnionPage from './pages/UnionPage.jsx'
-import ShiftTodayPage from './pages/ShiftTodayPage.jsx'
-import RoundsTodayPage from './pages/RoundsTodayPage.jsx'
-import RoundRunPage from './pages/RoundRunPage.jsx'
-import RoundsHistoryPage from './pages/RoundsHistoryPage.jsx'
-import ShiftTopicsPage from './pages/ShiftTopicsPage.jsx'
-import SocialHubPage from './pages/SocialHubPage.jsx'
-import EmployeeWorkspacePage from './pages/EmployeeWorkspacePage.jsx'
-import WorkplacePage from './pages/WorkplacePage.jsx'
-import TrainingPage from './pages/TrainingPage.jsx'
+
+const StartPage = lazy(() => import('./pages/StartPage.jsx'))
+const LoginPage = lazy(() => import('./pages/LoginPage.jsx'))
+const EquipmentPage = lazy(() => import('./pages/EquipmentPage.jsx'))
+const RosterPage = lazy(() => import('./pages/RosterPage.jsx'))
+const ProfilePage = lazy(() => import('./pages/ProfilePage.jsx'))
+const UnitSectionPage = lazy(() => import('./pages/UnitSectionPage.jsx'))
+const UnitLandingPage = lazy(() => import('./pages/UnitLandingPage.jsx'))
+const UnionPage = lazy(() => import('./pages/UnionPage.jsx'))
+const ShiftTodayPage = lazy(() => import('./pages/ShiftTodayPage.jsx'))
+const RoundsTodayPage = lazy(() => import('./pages/RoundsTodayPage.jsx'))
+const RoundRunPage = lazy(() => import('./pages/RoundRunPage.jsx'))
+const RoundsHistoryPage = lazy(() => import('./pages/RoundsHistoryPage.jsx'))
+const ShiftTopicsPage = lazy(() => import('./pages/ShiftTopicsPage.jsx'))
+const SocialHubPage = lazy(() => import('./pages/SocialHubPage.jsx'))
+const EmployeeWorkspacePage = lazy(() => import('./pages/EmployeeWorkspacePage.jsx'))
+const WorkplacePage = lazy(() => import('./pages/WorkplacePage.jsx'))
+const TrainingPage = lazy(() => import('./pages/TrainingPage.jsx'))
 
 const queryClient = new QueryClient()
+const loadingFallback = (
+  <div className="flex min-h-[40vh] items-center justify-center">
+    <div className="rounded-full border border-border bg-white px-4 py-2 text-sm text-grayText shadow-sm">
+      Загрузка...
+    </div>
+  </div>
+)
+
+const withSuspense = (node) => <Suspense fallback={loadingFallback}>{node}</Suspense>
+const withProtectedSuspense = (node) => <ProtectedRoute>{withSuspense(node)}</ProtectedRoute>
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -33,127 +44,67 @@ createRoot(document.getElementById('root')).render(
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<App />}>
-              <Route index element={<StartPage />} />
-              <Route path="login" element={<LoginPage />} />
+              <Route index element={withSuspense(<StartPage />)} />
+              <Route path="login" element={withSuspense(<LoginPage />)} />
               <Route
                 path="hub"
-                element={
-                  <ProtectedRoute>
-                    <SocialHubPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<SocialHubPage />)}
               />
               <Route
                 path="equipment"
-                element={
-                  <ProtectedRoute>
-                    <EquipmentPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<EquipmentPage />)}
               />
               <Route
                 path="roster"
-                element={
-                  <ProtectedRoute>
-                    <RosterPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<RosterPage />)}
               />
               <Route
                 path="profile"
-                element={
-                  <ProtectedRoute>
-                    <ProfilePage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<ProfilePage />)}
               />
               <Route
                 path="union"
-                element={
-                  <ProtectedRoute>
-                    <UnionPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<UnionPage />)}
               />
               <Route
                 path="training"
-                element={
-                  <ProtectedRoute>
-                    <TrainingPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<TrainingPage />)}
               />
               <Route
                 path="people/:employeeId"
-                element={
-                  <ProtectedRoute>
-                    <EmployeeWorkspacePage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<EmployeeWorkspacePage />)}
               />
               <Route
                 path="workplaces/:unit/:workplaceId"
-                element={
-                  <ProtectedRoute>
-                    <WorkplacePage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<WorkplacePage />)}
               />
               <Route
                 path="shift/today"
-                element={
-                  <ProtectedRoute>
-                    <ShiftTodayPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<ShiftTodayPage />)}
               />
               <Route
                 path="rounds/today"
-                element={
-                  <ProtectedRoute>
-                    <RoundsTodayPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<RoundsTodayPage />)}
               />
               <Route
                 path="rounds/:id"
-                element={
-                  <ProtectedRoute>
-                    <RoundRunPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<RoundRunPage />)}
               />
               <Route
                 path="rounds/history"
-                element={
-                  <ProtectedRoute>
-                    <RoundsHistoryPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<RoundsHistoryPage />)}
               />
               <Route
                 path="topics"
-                element={
-                  <ProtectedRoute>
-                    <ShiftTopicsPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<ShiftTopicsPage />)}
               />
               <Route
                 path=":unit"
-                element={
-                  <ProtectedRoute>
-                    <UnitLandingPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<UnitLandingPage />)}
               />
               <Route
                 path=":unit/:section"
-                element={
-                  <ProtectedRoute>
-                    <UnitSectionPage />
-                  </ProtectedRoute>
-                }
+                element={withProtectedSuspense(<UnitSectionPage />)}
               />
             </Route>
           </Routes>
