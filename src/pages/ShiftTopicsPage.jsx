@@ -32,6 +32,18 @@ const getRoundTopicFromMaterials = (materials) => {
   return ''
 }
 
+const pickLatestByDay = (rows = []) => {
+  const byDay = new Map()
+  ;[...rows]
+    .sort((left, right) => String(right?.briefing_date || '').localeCompare(String(left?.briefing_date || '')))
+    .forEach((row) => {
+      const day = Number(String(row?.briefing_date || '').slice(8, 10))
+      if (!day || byDay.has(day)) return
+      byDay.set(day, row)
+    })
+  return byDay
+}
+
 function ShiftTopicsPage() {
   const supabase = useSupabase()
   const handover = useMemo(() => createShiftHandoverService(supabase), [supabase])
@@ -56,16 +68,17 @@ function ShiftTopicsPage() {
         setLoading(true)
         setError('')
         setMessage('')
-        const [templateRes, monthRes] = await Promise.all([
+        const [templateRes, monthRes, allRes] = await Promise.all([
           handover.fetchTopicsRange({
             unit,
             from: TOPIC_TEMPLATE_DATES[0],
             to: TOPIC_TEMPLATE_DATES[TOPIC_TEMPLATE_DATES.length - 1],
           }),
           handover.fetchTopicsRange({ unit, from: currentMonthRange.from, to: currentMonthRange.to }),
+          handover.fetchTopicsRange({ unit }),
         ])
-        if (templateRes.error && monthRes.error) {
-          setError(templateRes.error?.message || monthRes.error?.message || 'Не удалось загрузить темы')
+        if (templateRes.error && monthRes.error && allRes?.error) {
+          setError(templateRes.error?.message || monthRes.error?.message || allRes?.error?.message || 'Не удалось загрузить темы')
           setRows([])
           setBaselineRows([])
           setLoading(false)
@@ -78,9 +91,10 @@ function ShiftTopicsPage() {
           if (!day || byDayOfMonth.has(day)) return
           byDayOfMonth.set(day, row)
         })
+        const byLatestDay = pickLatestByDay(allRes?.data || [])
         const nextRows = TOPIC_TEMPLATE_DATES.map((date) => {
           const day = Number(String(date).slice(8, 10))
-          const item = byTemplateDate.get(date) || byDayOfMonth.get(day) || null
+          const item = byTemplateDate.get(date) || byDayOfMonth.get(day) || byLatestDay.get(day) || null
           return {
             date,
             topic: item?.topic || '',

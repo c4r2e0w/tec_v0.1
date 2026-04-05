@@ -1,33 +1,46 @@
+const BRIEFING_TOPIC_FIELDS = 'id, unit, month, briefing_date, topic, round_topic, materials, is_mandatory'
+
+const dayOfMonth = (value) => Number(String(value || '').slice(8, 10)) || 0
+
+const pickLatestRow = (rows) => {
+  if (!Array.isArray(rows) || !rows.length) return null
+  return [...rows].sort((left, right) => {
+    const byDate = String(right?.briefing_date || '').localeCompare(String(left?.briefing_date || ''))
+    if (byDate !== 0) return byDate
+    return String(right?.created_at || '').localeCompare(String(left?.created_at || ''))
+  })[0]
+}
+
+const pickByDayOfMonth = (rows, day) => pickLatestRow((rows || []).filter((row) => dayOfMonth(row?.briefing_date) === day))
+
+const emptyTopicResult = { data: null, error: null }
+
 export async function fetchBriefingTopicForDate({ supabase, unit, shiftDate }) {
   if (!supabase) return { data: null, error: new Error('Supabase не сконфигурирован') }
+  if (!shiftDate) return emptyTopicResult
+
   const day = Number(String(shiftDate || '').slice(8, 10)) || 1
   const templateDate = `2000-01-${String(Math.min(Math.max(day, 1), 31)).padStart(2, '0')}`
-  const month = shiftDate.slice(0, 8) + '01'
-
-  const byDay = await supabase
-    .from('briefing_topics')
-    .select('id, unit, month, briefing_date, topic, round_topic, materials, is_mandatory')
-    .eq('unit', unit)
-    .eq('briefing_date', shiftDate)
-    .maybeSingle()
-  if (!byDay.error && byDay.data) return byDay
 
   const byTemplate = await supabase
     .from('briefing_topics')
-    .select('id, unit, month, briefing_date, topic, round_topic, materials, is_mandatory')
+    .select(BRIEFING_TOPIC_FIELDS)
     .eq('unit', unit)
     .eq('briefing_date', templateDate)
-    .maybeSingle()
-  if (!byTemplate.error && byTemplate.data) return byTemplate
-
-  return supabase
-    .from('briefing_topics')
-    .select('id, unit, month, briefing_date, topic, round_topic, materials, is_mandatory')
-    .eq('unit', unit)
-    .eq('month', month)
-    .order('created_at', { ascending: false })
     .limit(1)
-    .maybeSingle()
+  if (byTemplate.error) return { data: null, error: byTemplate.error }
+  if (byTemplate.data?.length) return { data: byTemplate.data[0], error: null }
+
+  const byAnyMonth = await supabase
+    .from('briefing_topics')
+    .select(BRIEFING_TOPIC_FIELDS)
+    .eq('unit', unit)
+    .not('briefing_date', 'is', null)
+    .order('briefing_date', { ascending: false })
+    .limit(400)
+  if (byAnyMonth.error) return { data: null, error: byAnyMonth.error }
+  const anyMonthMatch = pickByDayOfMonth(byAnyMonth.data, day)
+  return { data: anyMonthMatch, error: null }
 }
 
 export async function fetchBriefingTopicsRange({ supabase, unit, from, to }) {
