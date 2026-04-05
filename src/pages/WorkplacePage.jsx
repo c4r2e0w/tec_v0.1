@@ -162,6 +162,27 @@ const compactControlPoint = (value) =>
     .replace(/_/g, '')
 
 const normalizeStationValue = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+const compareSystemNames = (left, right) => {
+  const a = String(left || '').trim()
+  const b = String(right || '').trim()
+  const taA = a.match(/^ТА\s*[-–]?\s*(\d+)/i)
+  const taB = b.match(/^ТА\s*[-–]?\s*(\d+)/i)
+  if (taA && taB) return Number(taA[1]) - Number(taB[1])
+  if (taA) return -1
+  if (taB) return 1
+
+  const kaA = a.match(/^КА\s*[-–]?\s*(\d+)/i)
+  const kaB = b.match(/^КА\s*[-–]?\s*(\d+)/i)
+  if (kaA && kaB) return Number(kaA[1]) - Number(kaB[1])
+  if (kaA) return -1
+  if (kaB) return 1
+
+  return a.localeCompare(b, 'ru', { numeric: true })
+}
+
+const compareStationValues = (left, right) =>
+  String(left || '').localeCompare(String(right || ''), 'ru', { numeric: true })
+
 const SHIFT_ANCHOR_DATE = '2026-02-09' // day shift = А
 const SHIFT_CODES = ['А', 'Б', 'В', 'Г']
 const SHIFT_TIME_ZONE = 'Asia/Irkutsk'
@@ -290,6 +311,7 @@ function WorkplacePage() {
   const [equipmentList, setEquipmentList] = useState([])
   const [equipmentSubsystems, setEquipmentSubsystems] = useState([])
   const [equipmentSystems, setEquipmentSystems] = useState([])
+  const [systemSubsystemLinks, setSystemSubsystemLinks] = useState([])
   const [equipmentMenuId, setEquipmentMenuId] = useState(null)
   const [equipmentMenuStep, setEquipmentMenuStep] = useState('status')
   const [equipmentSavingId, setEquipmentSavingId] = useState(null)
@@ -476,6 +498,21 @@ function WorkplacePage() {
     () => new Map((equipmentSystems || []).map((row) => [String(row.id), row])),
     [equipmentSystems],
   )
+  const subsystemOrderBySystemType = useMemo(() => {
+    const map = new Map()
+    const sortedLinks = [...(systemSubsystemLinks || [])].sort((a, b) => {
+      const orderA = Number.isFinite(Number(a?.display_order)) ? Number(a.display_order) : Number(a?.id || 0)
+      const orderB = Number.isFinite(Number(b?.display_order)) ? Number(b.display_order) : Number(b?.id || 0)
+      return orderA - orderB
+    })
+    sortedLinks.forEach((row, idx) => {
+      const systemId = String(row?.system_id || '')
+      const subsystemTypeId = String(row?.subsystem_type_id || '')
+      if (!systemId || !subsystemTypeId) return
+      map.set(`${systemId}:${subsystemTypeId}`, idx)
+    })
+    return map
+  }, [systemSubsystemLinks])
 
   const normalizeEquipmentStatus = (value) => {
     const text = normalizeKey(value)
@@ -492,8 +529,17 @@ function WorkplacePage() {
     return 'работа'
   }
 
+  const formatEquipmentUnitLabel = (item) => {
+    const subsystem = String(item?.subsystemName || '').trim()
+    const station = String(item?.stationNumber || item?.dispatchLabel || '').trim()
+    if (subsystem && station) return `${subsystem} ${station}`
+    if (subsystem) return subsystem
+    if (station) return station
+    return '—'
+  }
+
   const formatEquipmentStateLabel = (item) => {
-    const base = String(item.stationNumber || item.dispatchLabel || '').trim() || '—'
+    const base = formatEquipmentUnitLabel(item)
     const status = normalizeEquipmentStatus(item.status)
     if (status === 'Резерв') return `(${base})`
     if (status === 'Ремонт') return `[${base}]`
@@ -618,26 +664,25 @@ function WorkplacePage() {
     const systemMap = new Map()
     for (const item of equipmentViewList) {
       const systemName = item?.systemName || item?.equipment_system || 'Без системы'
-      const subsystemName = item?.subsystemName || 'Без подсистемы'
-      if (!systemMap.has(systemName)) systemMap.set(systemName, new Map())
-      const subsystemMap = systemMap.get(systemName)
-      if (!subsystemMap.has(subsystemName)) subsystemMap.set(subsystemName, [])
-      subsystemMap.get(subsystemName).push(item)
+      if (!systemMap.has(systemName)) systemMap.set(systemName, [])
+      systemMap.get(systemName).push(item)
     }
     return [...systemMap.entries()]
-      .map(([systemName, subsystemMap]) => ({
+      .map(([systemName, units]) => ({
         systemName,
-        subsystems: [...subsystemMap.entries()]
-          .map(([subsystemName, units]) => ({
-            subsystemName,
-            units: [...units].sort((a, b) =>
-              String(a.stationNumber || '').localeCompare(String(b.stationNumber || ''), 'ru', { numeric: true }),
-            ),
-          }))
-          .sort((a, b) => String(a.subsystemName).localeCompare(String(b.subsystemName), 'ru')),
+        units: [...units].sort((a, b) => {
+          const orderA = subsystemOrderBySystemType.get(`${String(a?.system_id || '')}:${String(a?.subsystem_type_id || '')}`) ?? 999999
+          const orderB = subsystemOrderBySystemType.get(`${String(b?.system_id || '')}:${String(b?.subsystem_type_id || '')}`) ?? 999999
+          if (orderA !== orderB) return orderA - orderB
+          const subA = String(a?.subsystemName || '')
+          const subB = String(b?.subsystemName || '')
+          const subsystemCmp = subA.localeCompare(subB, 'ru', { numeric: true })
+          if (subsystemCmp !== 0) return subsystemCmp
+          return compareStationValues(a?.stationNumber || a?.dispatchLabel || '', b?.stationNumber || b?.dispatchLabel || '')
+        }),
       }))
-      .sort((a, b) => String(a.systemName).localeCompare(String(b.systemName), 'ru'))
-  }, [equipmentViewList])
+      .sort((a, b) => compareSystemNames(a.systemName, b.systemName))
+  }, [equipmentViewList, subsystemOrderBySystemType])
 
   useEffect(() => {
     let active = true
@@ -1020,12 +1065,30 @@ function WorkplacePage() {
   useEffect(() => {
     let active = true
     async function loadSubsystems() {
-      const subsystemRes = await supabase
-        .from('subsystem_types')
-        .select('id, code, full_name')
-        .order('code', { ascending: true })
-        .limit(3000)
+      const [subsystemRes, systemsRes] = await Promise.all([
+        supabase
+          .from('subsystem_types')
+          .select('id, code, full_name')
+          .order('code', { ascending: true })
+          .limit(3000),
+        supabase.from('equipment_systems').select('id, name').order('name', { ascending: true }).limit(1000),
+      ])
+      let linksRes = await supabase
+        .from('system_subsystems')
+        .select('id, system_id, subsystem_type_id, display_order')
+        .order('id', { ascending: true })
+        .limit(10000)
+
+      if (linksRes.error && String(linksRes.error.message || '').toLowerCase().includes('display_order')) {
+        linksRes = await supabase
+          .from('system_subsystems')
+          .select('id, system_id, subsystem_type_id')
+          .order('id', { ascending: true })
+          .limit(10000)
+      }
+
       if (!active) return
+
       if (!subsystemRes.error) {
         setEquipmentSubsystems(
           (subsystemRes.data || []).map((row) => ({
@@ -1036,9 +1099,9 @@ function WorkplacePage() {
         )
       }
 
-      const systemsRes = await supabase.from('equipment_systems').select('id, name').order('name', { ascending: true }).limit(1000)
-      if (!active) return
       if (!systemsRes.error) setEquipmentSystems(systemsRes.data || [])
+      if (!linksRes.error) setSystemSubsystemLinks(linksRes.data || [])
+      else setSystemSubsystemLinks([])
     }
     void loadSubsystems()
     return () => {
@@ -1867,6 +1930,33 @@ function WorkplacePage() {
                                     : chiefAssignedByWorkplace.get(rowKey) || '—'
                                   const isExpanded = Boolean(chiefExpandedSelects[rowKey])
                                   const isFactMenuOpen = chiefFactMenuWorkplaceKey === rowKey
+                                  const applyChiefDraftSelection = (nextValue) => {
+                                    setChiefDraftByWorkplace((prev) => {
+                                      const next = { ...prev }
+                                      if (!nextValue) {
+                                        delete next[rowKey]
+                                        setChiefFactDraftByWorkplace((factsPrev) => {
+                                          const factsNext = { ...factsPrev }
+                                          delete factsNext[rowKey]
+                                          return factsNext
+                                        })
+                                        setChiefFactMenuWorkplaceKey((prevKey) => (prevKey === rowKey ? '' : prevKey))
+                                        return next
+                                      }
+                                      Object.keys(next).forEach((key) => {
+                                        if (key !== rowKey && String(next[key]) === nextValue) delete next[key]
+                                      })
+                                      next[rowKey] = nextValue
+                                      setChiefFactDraftByWorkplace((factsPrev) => {
+                                        if (factsPrev[rowKey]) return factsPrev
+                                        return {
+                                          ...factsPrev,
+                                          [rowKey]: defaultFactDraft(statementShiftType),
+                                        }
+                                      })
+                                      return next
+                                    })
+                                  }
                                   return (
                                     <div key={rowKey}>
                                       <Link
@@ -1880,36 +1970,7 @@ function WorkplacePage() {
                                           <select
                                             value={selectedId}
                                             onChange={(e) => {
-                                              const nextValue = String(e.target.value || '')
-                                              if (nextValue === '__more__') {
-                                                setChiefExpandedSelects((prev) => ({ ...prev, [rowKey]: true }))
-                                                return
-                                              }
-                                              setChiefDraftByWorkplace((prev) => {
-                                                const next = { ...prev }
-                                                if (!nextValue) {
-                                                  delete next[rowKey]
-                                                  setChiefFactDraftByWorkplace((factsPrev) => {
-                                                    const factsNext = { ...factsPrev }
-                                                    delete factsNext[rowKey]
-                                                    return factsNext
-                                                  })
-                                                  setChiefFactMenuWorkplaceKey((prev) => (prev === rowKey ? '' : prev))
-                                                  return next
-                                                }
-                                                Object.keys(next).forEach((key) => {
-                                                  if (key !== rowKey && String(next[key]) === nextValue) delete next[key]
-                                                })
-                                                next[rowKey] = nextValue
-                                                setChiefFactDraftByWorkplace((factsPrev) => {
-                                                  if (factsPrev[rowKey]) return factsPrev
-                                                  return {
-                                                    ...factsPrev,
-                                                    [rowKey]: defaultFactDraft(statementShiftType),
-                                                  }
-                                                })
-                                                return next
-                                              })
+                                              applyChiefDraftSelection(String(e.target.value || ''))
                                             }}
                                             className="w-full rounded-lg border border-white/15 bg-slate-900 px-2 py-1 text-xs text-slate-100"
                                           >
@@ -1922,14 +1983,30 @@ function WorkplacePage() {
                                                 {emp.label}
                                               </option>
                                             ))}
-                                            {!isExpanded && extra.length > 0 && <option value="__more__">Еще…</option>}
-                                            {isExpanded &&
-                                              extra.map((emp) => (
-                                                <option key={`extra-${emp.id}`} value={emp.id}>
-                                                  {emp.label}
-                                                </option>
-                                              ))}
                                           </select>
+                                          {!isExpanded && extra.length > 0 && (
+                                            <button
+                                              type="button"
+                                              onClick={() => setChiefExpandedSelects((prev) => ({ ...prev, [rowKey]: true }))}
+                                              className="mt-1 text-[11px] text-emerald-200 underline decoration-emerald-300/30 underline-offset-2"
+                                            >
+                                              Еще…
+                                            </button>
+                                          )}
+                                          {isExpanded && extra.length > 0 && (
+                                            <div className="mt-2 flex flex-wrap gap-1">
+                                              {extra.map((emp) => (
+                                                <button
+                                                  key={`extra-${emp.id}`}
+                                                  type="button"
+                                                  onClick={() => applyChiefDraftSelection(String(emp.id))}
+                                                  className="rounded-full border border-white/15 bg-slate-900 px-2 py-1 text-[11px] text-slate-100 transition hover:border-emerald-400/60 hover:text-emerald-100"
+                                                >
+                                                  {emp.label}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          )}
                                           {selectedId ? (
                                             <div className="mt-1 space-y-1">
                                               <div className="flex items-center justify-end">
@@ -2105,100 +2182,94 @@ function WorkplacePage() {
                   {!isChiefWorkplaceView && (
                     <div className="rounded-xl border border-white/10 bg-slate-950/70 p-2.5">
                       <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Состав оборудования</p>
+                      <p className="mt-0.5 text-[10px] text-slate-500">Формат: Подсистема + №. Порядок подсистем: по справочнику связей системы.</p>
                       <div className="mt-1.5 space-y-1.5">
                         {equipmentTree.map((system) => (
                           <div key={system.systemName} className="rounded-md border border-white/10 bg-white/5 p-1.5">
                             <p className="text-[11px] font-semibold text-slate-300">{system.systemName}</p>
-                            <div className="mt-1.5 space-y-1.5">
-                              {system.subsystems.map((sub) => (
-                                <div key={`${system.systemName}-${sub.subsystemName}`}>
-                                  <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{sub.subsystemName}</p>
-                                  <div className="mt-1 flex flex-wrap gap-1">
-                                    {sub.units.map((item) => (
-                                      <div key={item.id} className="relative">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))
-                                            setEquipmentMenuStep('status')
-                                          }}
-                                          className={`relative rounded border px-2 py-1 text-[11px] font-semibold text-slate-100 ${equipmentCellClass(item.status)}`}
-                                          title="Изменить состояние"
-                                        >
-                                          {formatEquipmentStateLabel(item)}
-                                          {normalizeEquipmentStatus(item.status) === 'Резерв' && reserveModeLabel(item.reserve_mode) && (
-                                            <span className="absolute -right-1 -top-1 rounded-full border border-white/30 bg-slate-900 px-1 text-[9px] leading-none text-emerald-200">
-                                              {reserveModeLabel(item.reserve_mode)}
-                                            </span>
-                                          )}
-                                        </button>
-                                        {equipmentMenuId === item.id && (
-                                          <div className="absolute left-0 top-8 z-20 w-28 rounded-md border border-white/15 bg-slate-900 p-1 shadow-xl">
-                                            {equipmentMenuStep === 'status' ? (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => void handleSetEquipmentStatus(item, 'Работа')}
-                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                                >
-                                                  🔴 Работа
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    if (isPumpEquipment(item)) setEquipmentMenuStep('reserve')
-                                                    else void handleSetEquipmentStatus(item, 'Резерв')
-                                                  }}
-                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                                >
-                                                  🟢 Резерв
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => void handleSetEquipmentStatus(item, 'Ремонт')}
-                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                                >
-                                                  ⚪️ Ремонт
-                                                </button>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'горячий')}
-                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                                >
-                                                  Г · Горячий
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'холодный')}
-                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                                >
-                                                  Х · Холодный
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'АВР')}
-                                                  className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
-                                                >
-                                                  А · АВР
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => setEquipmentMenuStep('status')}
-                                                  className="mt-1 block w-full rounded px-2 py-1 text-left text-[11px] text-slate-400 hover:bg-white/10"
-                                                >
-                                                  ← Назад
-                                                </button>
-                                              </>
-                                            )}
-                                          </div>
-                                        )}
-                                        {equipmentSavingId === item.id && <span className="ml-1 text-[10px] text-slate-400">...</span>}
-                                      </div>
-                                    ))}
-                                  </div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {system.units.map((item) => (
+                                <div key={item.id} className="relative">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEquipmentMenuId((prev) => (prev === item.id ? null : item.id))
+                                      setEquipmentMenuStep('status')
+                                    }}
+                                    className={`relative inline-flex whitespace-nowrap rounded border px-2 py-1 text-[11px] font-semibold text-slate-100 ${equipmentCellClass(item.status)}`}
+                                    title="Изменить состояние"
+                                  >
+                                    {formatEquipmentStateLabel(item)}
+                                    {normalizeEquipmentStatus(item.status) === 'Резерв' && reserveModeLabel(item.reserve_mode) && (
+                                      <span className="absolute -right-1 -top-1 rounded-full border border-white/30 bg-slate-900 px-1 text-[9px] leading-none text-emerald-200">
+                                        {reserveModeLabel(item.reserve_mode)}
+                                      </span>
+                                    )}
+                                  </button>
+                                  {equipmentMenuId === item.id && (
+                                    <div className="absolute left-0 top-8 z-20 w-28 rounded-md border border-white/15 bg-slate-900 p-1 shadow-xl">
+                                      {equipmentMenuStep === 'status' ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleSetEquipmentStatus(item, 'Работа')}
+                                            className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                          >
+                                            🔴 Работа
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (isPumpEquipment(item)) setEquipmentMenuStep('reserve')
+                                              else void handleSetEquipmentStatus(item, 'Резерв')
+                                            }}
+                                            className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                          >
+                                            🟢 Резерв
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleSetEquipmentStatus(item, 'Ремонт')}
+                                            className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                          >
+                                            ⚪️ Ремонт
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'горячий')}
+                                            className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                          >
+                                            Г · Горячий
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'холодный')}
+                                            className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                          >
+                                            Х · Холодный
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleSetEquipmentStatus(item, 'Резерв', 'АВР')}
+                                            className="block w-full rounded px-2 py-1 text-left text-[11px] text-slate-200 hover:bg-white/10"
+                                          >
+                                            А · АВР
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEquipmentMenuStep('status')}
+                                            className="mt-1 block w-full rounded px-2 py-1 text-left text-[11px] text-slate-400 hover:bg-white/10"
+                                          >
+                                            ← Назад
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  )}
+                                  {equipmentSavingId === item.id && <span className="ml-1 text-[10px] text-slate-400">...</span>}
                                 </div>
                               ))}
                             </div>
