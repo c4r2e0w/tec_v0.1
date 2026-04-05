@@ -1210,6 +1210,26 @@ function UnitSectionPage() {
     }
     return null
   }, [activeShiftDate, activeShiftType, assignmentKey, chiefCandidates, manualChiefAssignments])
+
+  const applyManualWorkplaceAssignment = useCallback(
+    (key, nextValue) => {
+      setManualWorkplaceAssignments((prev) => {
+        const next = { ...prev }
+        if (!nextValue) delete next[key]
+        else {
+          const slotPrefix = `${activeShiftDate}|${activeShiftType}|`
+          Object.keys(next).forEach((k) => {
+            if (k !== key && k.startsWith(slotPrefix) && String(next[k]) === String(nextValue)) {
+              delete next[k]
+            }
+          })
+          next[key] = nextValue
+        }
+        return next
+      })
+    },
+    [activeShiftDate, activeShiftType],
+  )
   const resolvedCurrentRoster = useMemo(() => {
     const rows = [...(currentRoster.boiler || []), ...(currentRoster.turbine || [])]
     const used = new Set()
@@ -1985,25 +2005,7 @@ function UnitSectionPage() {
                     <select
                       value={selectedEmployee?.id ? String(selectedEmployee.id) : ''}
                       onChange={(e) => {
-                        const nextValue = e.target.value
-                        if (nextValue === '__more__') {
-                          setExpandedWorkplaceSelects((prev) => ({ ...prev, [key]: true }))
-                          return
-                        }
-                        setManualWorkplaceAssignments((prev) => {
-                          const next = { ...prev }
-                          if (!nextValue) delete next[key]
-                          else {
-                            const slotPrefix = `${activeShiftDate}|${activeShiftType}|`
-                            Object.keys(next).forEach((k) => {
-                              if (k !== key && k.startsWith(slotPrefix) && String(next[k]) === String(nextValue)) {
-                                delete next[k]
-                              }
-                            })
-                            next[key] = nextValue
-                          }
-                          return next
-                        })
+                        applyManualWorkplaceAssignment(key, e.target.value)
                       }}
                       className="w-full rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
                     >
@@ -2016,14 +2018,30 @@ function UnitSectionPage() {
                           {emp.label}
                         </option>
                       ))}
-                      {!isExpanded && extraCandidates.length > 0 && <option value="__more__">Еще…</option>}
-                      {isExpanded &&
-                        extraCandidates.map((emp) => (
-                          <option key={`extra-${emp.id}`} value={emp.id}>
-                            {emp.label}
-                          </option>
-                        ))}
                     </select>
+                    {!isExpanded && extraCandidates.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedWorkplaceSelects((prev) => ({ ...prev, [key]: true }))}
+                        className="mt-1 text-[11px] text-primary underline decoration-primary/40 underline-offset-2"
+                      >
+                        Еще…
+                      </button>
+                    )}
+                    {isExpanded && extraCandidates.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {extraCandidates.map((emp) => (
+                          <button
+                            key={`extra-${emp.id}`}
+                            type="button"
+                            onClick={() => applyManualWorkplaceAssignment(key, String(emp.id))}
+                            className="rounded-full border border-border bg-white px-2 py-1 text-[11px] text-dark transition hover:border-accent/50 hover:text-accent"
+                          >
+                            {emp.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-xs text-dark">{row.employee?.label || '—'}</p>
@@ -2038,6 +2056,7 @@ function UnitSectionPage() {
   }, [
     activeShiftDate,
     activeShiftType,
+    applyManualWorkplaceAssignment,
     assignmentKey,
     expandedWorkplaceSelects,
     unit,
