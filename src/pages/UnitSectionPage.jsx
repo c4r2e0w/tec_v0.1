@@ -392,7 +392,7 @@ function UnitSectionPage() {
         // ignore malformed
       }
     }
-  }, [])
+  }, [pinStorageKey])
 
   useEffect(() => {
     localStorage.setItem(
@@ -1230,6 +1230,61 @@ function UnitSectionPage() {
     },
     [activeShiftDate, activeShiftType],
   )
+  const renderAssignmentPicker = ({
+    pickerKey,
+    selectedEmployee,
+    candidates = [],
+    extraCandidates = [],
+    onSelect,
+    buttonClassName = 'mt-1 text-[11px] text-primary underline decoration-primary/40 underline-offset-2',
+    containerClassName = 'mt-1',
+    chipsClassName = 'mt-2 flex flex-wrap gap-1',
+  }) => {
+    const isExpanded = Boolean(expandedWorkplaceSelects[pickerKey])
+    const selectedInPrimary = selectedEmployee ? candidates.some((emp) => String(emp.id) === String(selectedEmployee.id)) : false
+    return (
+      <div className={containerClassName}>
+        <select
+          value={selectedEmployee?.id ? String(selectedEmployee.id) : ''}
+          onChange={(e) => onSelect(String(e.target.value || ''))}
+          className="w-full rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
+        >
+          <option value="">—</option>
+          {selectedEmployee && !selectedInPrimary && (
+            <option value={selectedEmployee.id}>{selectedEmployee.label}</option>
+          )}
+          {candidates.map((emp) => (
+            <option key={emp.id} value={emp.id}>
+              {emp.label}
+            </option>
+          ))}
+        </select>
+        {!isExpanded && extraCandidates.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpandedWorkplaceSelects((prev) => ({ ...prev, [pickerKey]: true }))}
+            className={buttonClassName}
+          >
+            Еще…
+          </button>
+        )}
+        {isExpanded && extraCandidates.length > 0 && (
+          <div className={chipsClassName}>
+            {extraCandidates.map((emp) => (
+              <button
+                key={`extra-${pickerKey}-${emp.id}`}
+                type="button"
+                onClick={() => onSelect(String(emp.id))}
+                className="rounded-full border border-border bg-white px-2 py-1 text-[11px] text-dark transition hover:border-accent/50 hover:text-accent"
+              >
+                {emp.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
   const resolvedCurrentRoster = useMemo(() => {
     const rows = [...(currentRoster.boiler || []), ...(currentRoster.turbine || [])]
     const used = new Set()
@@ -1976,7 +2031,7 @@ function UnitSectionPage() {
     })
   }
 
-  const renderRosterColumn = useCallback((title, rows, editable = false) => {
+  const renderRosterColumn = (title, rows, editable = false) => {
     return (
       <div className="rounded-xl border border-border bg-background/70 p-3">
         <p className="text-[11px] uppercase tracking-[0.2em] text-grayText">{title}</p>
@@ -1985,9 +2040,7 @@ function UnitSectionPage() {
             const key = assignmentKey(activeShiftDate, activeShiftType, row.workplaceId)
             const candidates = row.candidates || []
             const extraCandidates = row.extraCandidates || []
-            const isExpanded = Boolean(expandedWorkplaceSelects[key])
             const selectedEmployee = row.selectedEmployee || null
-            const selectedInPrimary = selectedEmployee ? candidates.some((emp) => String(emp.id) === String(selectedEmployee.id)) : false
             return (
               <div key={row.workplaceId}>
                 {String(row.workplaceId || '').startsWith('emp-') ? (
@@ -2001,48 +2054,13 @@ function UnitSectionPage() {
                   </Link>
                 )}
                 {editable ? (
-                  <div className="mt-1">
-                    <select
-                      value={selectedEmployee?.id ? String(selectedEmployee.id) : ''}
-                      onChange={(e) => {
-                        applyManualWorkplaceAssignment(key, e.target.value)
-                      }}
-                      className="w-full rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
-                    >
-                      <option value="">—</option>
-                      {selectedEmployee && !selectedInPrimary && (
-                        <option value={selectedEmployee.id}>{selectedEmployee.label}</option>
-                      )}
-                      {candidates.map((emp) => (
-                        <option key={emp.id} value={emp.id}>
-                          {emp.label}
-                        </option>
-                      ))}
-                    </select>
-                    {!isExpanded && extraCandidates.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setExpandedWorkplaceSelects((prev) => ({ ...prev, [key]: true }))}
-                        className="mt-1 text-[11px] text-primary underline decoration-primary/40 underline-offset-2"
-                      >
-                        Еще…
-                      </button>
-                    )}
-                    {isExpanded && extraCandidates.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {extraCandidates.map((emp) => (
-                          <button
-                            key={`extra-${emp.id}`}
-                            type="button"
-                            onClick={() => applyManualWorkplaceAssignment(key, String(emp.id))}
-                            className="rounded-full border border-border bg-white px-2 py-1 text-[11px] text-dark transition hover:border-accent/50 hover:text-accent"
-                          >
-                            {emp.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  renderAssignmentPicker({
+                    pickerKey: key,
+                    selectedEmployee,
+                    candidates,
+                    extraCandidates,
+                    onSelect: (value) => applyManualWorkplaceAssignment(key, value),
+                  })
                 ) : (
                   <p className="text-xs text-dark">{row.employee?.label || '—'}</p>
                 )}
@@ -2053,14 +2071,7 @@ function UnitSectionPage() {
         </div>
       </div>
     )
-  }, [
-    activeShiftDate,
-    activeShiftType,
-    applyManualWorkplaceAssignment,
-    assignmentKey,
-    expandedWorkplaceSelects,
-    unit,
-  ])
+  }
 
   if (!unitData || !sectionLabel) {
     return (
@@ -2370,27 +2381,25 @@ function UnitSectionPage() {
                   >
                     Начальник смены:
                   </Link>
-                  <select
-                    value={resolvedChief?.id ? String(resolvedChief.id) : ''}
-                    onChange={(e) => {
-                      const key = assignmentKey(activeShiftDate, activeShiftType, 'chief')
-                      const value = String(e.target.value || '')
-                      setManualChiefAssignments((prev) => {
-                        const next = { ...prev }
-                        if (!value) delete next[key]
-                        else next[key] = value
-                        return next
-                      })
-                    }}
-                    className="rounded-lg border border-border bg-surface px-2 py-1 text-xs text-dark"
-                  >
-                    <option value="">—</option>
-                    {chiefCandidates.map((emp) => (
-                      <option key={`chief-${emp.id}`} value={emp.id}>
-                        {emp.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="min-w-[16rem] flex-1">
+                    {renderAssignmentPicker({
+                      pickerKey: assignmentKey(activeShiftDate, activeShiftType, 'chief'),
+                      selectedEmployee: resolvedChief,
+                      candidates: chiefCandidates,
+                      extraCandidates: [],
+                      onSelect: (value) => {
+                        const key = assignmentKey(activeShiftDate, activeShiftType, 'chief')
+                        setManualChiefAssignments((prev) => {
+                          const next = { ...prev }
+                          if (!value) delete next[key]
+                          else next[key] = value
+                          return next
+                        })
+                      },
+                      containerClassName: '',
+                      chipsClassName: 'mt-2 flex flex-wrap gap-1',
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
