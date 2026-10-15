@@ -76,7 +76,11 @@ function EquipmentPage() {
     return () => { active = false; listener.subscription.unsubscribe() }
   }, [supabase])
 
-  useEffect(() => { if (session?.user?.id) void reload() }, [reload, session?.user?.id])
+  useEffect(() => {
+    if (!session?.user?.id) return
+    const task = Promise.resolve().then(() => reload())
+    void task
+  }, [reload, session?.user?.id])
 
   const typeById = useMemo(() => new Map(types.map(t => [t.id, t])), [types])
   const workplaceById = useMemo(() => new Map(workplaces.map(w => [w.id, w])), [workplaces])
