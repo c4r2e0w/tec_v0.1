@@ -42,6 +42,7 @@ function EquipmentPage() {
   const [drafts, setDrafts] = useState({})
   const [newRow, setNewRow] = useState(newEquipment)
   const [session, setSession] = useState(null)
+  const [authReady, setAuthReady] = useState(false)
   const [email, setEmail] = useState('')
   const [authMessage, setAuthMessage] = useState('')
 
@@ -71,9 +72,15 @@ function EquipmentPage() {
 
   useEffect(() => {
     let active = true
-    supabase.auth.getSession().then(({ data }) => { if (active) setSession(data.session) })
+    supabase.auth.getSession().then(({ data, error: sessionError }) => {
+      if (active) {
+        setSession(data?.session || null)
+        setAuthReady(true)
+        if (sessionError) setAuthMessage(sessionError.message)
+      }
+    })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (active) setSession(nextSession)
+      if (active) { setSession(nextSession); setAuthReady(true) }
     })
     return () => { active = false; listener.subscription.unsubscribe() }
   }, [supabase])
@@ -201,6 +208,8 @@ function EquipmentPage() {
     })
     setAuthMessage(authError ? authError.message : 'Проверьте почту для входа.')
   }
+
+  if (!authReady) return <p className="p-6 text-sm text-grayText">Проверка авторизации…</p>
 
   if (!session) {
     return <div className="rounded-2xl border border-border bg-white p-6 shadow-lg space-y-3">
