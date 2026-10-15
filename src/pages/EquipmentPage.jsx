@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useSupabase } from '../context/SupabaseProvider'
 
@@ -45,7 +45,7 @@ function EquipmentPage() {
   const [email, setEmail] = useState('')
   const [authMessage, setAuthMessage] = useState('')
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     setLoading(true)
     setError('')
     const requests = await Promise.all([
@@ -67,7 +67,7 @@ function EquipmentPage() {
     setMemberships(requests[3].data || [])
     setWorkplaces(requests[4].data || [])
     setLoading(false)
-  }
+  }, [supabase])
 
   useEffect(() => {
     let active = true
@@ -78,10 +78,9 @@ function EquipmentPage() {
     return () => { active = false; listener.subscription.unsubscribe() }
   }, [supabase])
 
-  useEffect(() => { if (session) void reload() }, [supabase, session])
+  useEffect(() => { if (session?.user?.id) void reload() }, [reload, session?.user?.id])
 
   const typeById = useMemo(() => new Map(types.map(t => [t.id, t])), [types])
-  const systemById = useMemo(() => new Map(systems.map(s => [s.id, s])), [systems])
   const workplaceById = useMemo(() => new Map(workplaces.map(w => [w.id, w])), [workplaces])
   const primarySystemByEquipment = useMemo(() => {
     const map = new Map()
