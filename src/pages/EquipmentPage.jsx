@@ -112,16 +112,31 @@ function EquipmentPage() {
     // Memberships are a separate UUID join table. Never write equipment.system_id.
     const previous = primarySystemByEquipment.get(row.id) || ''
     if (draft.system_id !== previous) {
-      if (previous) {
-        const { error: unlinkError } = await supabase.from('equipment_systems')
-          .delete().eq('equipment_id', row.id).eq('system_id', previous).eq('is_primary', true)
-        if (unlinkError) { setError('Оборудование сохранено, но связь не обновлена: ' + unlinkError.message); setSavingId(null); await reload(); return }
-      }
-      if (draft.system_id) {
+      const oldPrimary = memberships.find(link => link.equipment_id === row.id && link.is_primary)
+      if (oldPrimary && draft.system_id) {
+        const { error: linkError } = await supabase.from('equipment_systems')
+          .update({ system_id: draft.system_id })
+          .eq('equipment_id', row.id)
+          .eq('system_id', oldPrimary.system_id)
+          .eq('role', oldPrimary.role)
+        if (linkError) {
+          setError('Оборудование сохранено, но связь не обновлена: ' + linkError.message)
+          setSavingId(null)
+          return
+        }
+      } else if (!oldPrimary && draft.system_id) {
         const { error: linkError } = await supabase.from('equipment_systems').insert({
           equipment_id: row.id, system_id: draft.system_id, role: 'primary', is_primary: true,
         })
-        if (linkError) setError('Оборудование сохранено, но привязка системы не создана: ' + linkError.message)
+        if (linkError) {
+          setError('Оборудование сохранено, но связь не создана: ' + linkError.message)
+          setSavingId(null)
+          return
+        }
+      } else if (oldPrimary && !draft.system_id) {
+        setError('Удаление привязки к системе требует отдельной проверки технологической схемы.')
+        setSavingId(null)
+        return
       }
     }
     setSavingId(null)
@@ -168,6 +183,7 @@ function EquipmentPage() {
         <p className="text-xs uppercase tracking-[0.2em] text-grayText">Оборудование · MyTEC</p>
         <h1 className="text-xl font-semibold text-dark">База оборудования{unit ? ` · ${unit.toUpperCase()}` : ''}</h1>
         <p className="mt-2 text-sm text-grayText">{loading ? 'Загрузка…' : `Записей: ${rows.length}`}</p>
+        <p className="mt-2 text-xs text-grayText">Статусы оборудования в каталоге не подтверждают фактическую оперативную обстановку.</p>
         {error && <p role="alert" className="mt-2 text-sm text-rose-600">Ошибка: {error}</p>}
       </div>
       <div className="rounded-2xl border border-border bg-white p-4 shadow-lg space-y-3">
