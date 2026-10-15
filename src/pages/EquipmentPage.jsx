@@ -41,6 +41,9 @@ function EquipmentPage() {
   const [adding, setAdding] = useState(false)
   const [drafts, setDrafts] = useState({})
   const [newRow, setNewRow] = useState(newEquipment)
+  const [session, setSession] = useState(null)
+  const [email, setEmail] = useState('')
+  const [authMessage, setAuthMessage] = useState('')
 
   const reload = async () => {
     setLoading(true)
@@ -66,7 +69,16 @@ function EquipmentPage() {
     setLoading(false)
   }
 
-  useEffect(() => { void reload() }, [supabase])
+  useEffect(() => {
+    let active = true
+    supabase.auth.getSession().then(({ data }) => { if (active) setSession(data.session) })
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (active) setSession(nextSession)
+    })
+    return () => { active = false; listener.subscription.unsubscribe() }
+  }, [supabase])
+
+  useEffect(() => { if (session) void reload() }, [supabase, session])
 
   const typeById = useMemo(() => new Map(types.map(t => [t.id, t])), [types])
   const systemById = useMemo(() => new Map(systems.map(s => [s.id, s])), [systems])
@@ -182,6 +194,27 @@ function EquipmentPage() {
     if (membershipError) setError(membershipError)
   }
 
+  const requestLogin = async () => {
+    setAuthMessage('')
+    const { error: authError } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { shouldCreateUser: false },
+    })
+    setAuthMessage(authError ? authError.message : 'Проверьте почту для входа.')
+  }
+
+  if (!session) {
+    return <div className="rounded-2xl border border-border bg-white p-6 shadow-lg space-y-3">
+      <h1 className="text-xl font-semibold">Каталог MyTEC · вход</h1>
+      <p className="text-sm text-grayText">Каталог доступен только авторизованным пользователям.</p>
+      <input type="email" aria-label="Электронная почта" placeholder="Электронная почта" value={email}
+        onChange={e => setEmail(e.target.value)} className="w-full max-w-sm rounded border p-2" />
+      <button onClick={() => void requestLogin()} disabled={!email.includes('@')}
+        className="rounded-full bg-primary px-4 py-2 text-white disabled:opacity-60">Получить ссылку для входа</button>
+      {authMessage && <p role="status" className="text-sm">{authMessage}</p>}
+    </div>
+  }
+
   const systemOptions = systems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
   const workplaceOptions = workplaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)
   const statusOptions = STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)
@@ -195,6 +228,7 @@ function EquipmentPage() {
         {error && <p role="alert" className="mt-2 text-sm text-rose-600">Ошибка: {error}</p>}
       </div>
       <div className="rounded-2xl border border-border bg-white p-4 shadow-lg space-y-3">
+        <p className="text-sm text-grayText">Редактирование пока закрыто: отдельные права записи ещё не настроены.</p>
         <h2 className="text-sm font-semibold">Добавить оборудование</h2>
         <div className="grid gap-2 md:grid-cols-3">
           <select aria-label="Тип оборудования" value={newRow.equipment_type_id} onChange={e => setNewRow(p => ({...p,equipment_type_id:e.target.value}))} className="rounded border p-2">
@@ -207,7 +241,7 @@ function EquipmentPage() {
           <select aria-label="Рабочее место" value={newRow.primary_workplace_id} onChange={e => setNewRow(p => ({...p,primary_workplace_id:e.target.value}))} className="rounded border p-2"><option value="">Без рабочего места</option>{workplaceOptions}</select>
           <select aria-label="Статус" value={newRow.status} onChange={e => setNewRow(p => ({...p,status:e.target.value}))} className="rounded border p-2">{statusOptions}</select>
         </div>
-        <button disabled={adding} onClick={() => void add()} className="rounded-full bg-primary px-4 py-2 text-sm text-white disabled:opacity-60">{adding ? 'Добавление…' : 'Добавить'}</button>
+        <button disabled={true} onClick={() => void add()} className="rounded-full bg-primary px-4 py-2 text-sm text-white disabled:opacity-60">{adding ? 'Добавление…' : 'Добавить'}</button>
       </div>
       <div className="rounded-2xl border border-border bg-white p-4 shadow-lg overflow-x-auto">
         <table className="min-w-full text-sm">
@@ -221,7 +255,7 @@ function EquipmentPage() {
               <td className="p-2"><select aria-label={`Система ${row.code}`} value={d.system_id} onChange={e => edit(row,'system_id',e.target.value)} className="w-40 rounded border p-1"><option value="">—</option>{systemOptions}</select></td>
               <td className="p-2"><select aria-label={`Рабочее место ${row.code}`} value={d.primary_workplace_id} onChange={e => edit(row,'primary_workplace_id',e.target.value)} className="w-40 rounded border p-1"><option value="">—</option>{workplaceOptions}</select></td>
               <td className="p-2"><select aria-label={`Статус ${row.code}`} value={d.status} onChange={e => edit(row,'status',e.target.value)} className="rounded border p-1">{statusOptions}</select></td>
-              <td className="p-2"><button disabled={savingId === row.id} onClick={() => void save(row)} className="rounded-full border px-3 py-1 disabled:opacity-60">{savingId === row.id ? '…' : 'Сохранить'}</button></td>
+              <td className="p-2"><button disabled={true} onClick={() => void save(row)} className="rounded-full border px-3 py-1 disabled:opacity-60">{savingId === row.id ? '…' : 'Сохранить'}</button></td>
             </tr>
           })}</tbody>
         </table>
