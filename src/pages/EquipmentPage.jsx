@@ -146,15 +146,17 @@ function EquipmentPage() {
       primary_workplace_id: newRow.primary_workplace_id || null,
     }).select('id').single()
     if (insertError) { setError(insertError.message); setAdding(false); return }
+    let membershipError = ''
     if (newRow.system_id) {
       const { error: linkError } = await supabase.from('equipment_systems').insert({
         equipment_id: data.id, system_id: newRow.system_id, role: 'primary', is_primary: true,
       })
-      if (linkError) setError('Оборудование создано, но связь с системой не создана: ' + linkError.message)
+      if (linkError) membershipError = 'Оборудование создано, но связь с системой не создана: ' + linkError.message
     }
     setNewRow(newEquipment())
     setAdding(false)
     await reload()
+    if (membershipError) setError(membershipError)
   }
 
   const systemOptions = systems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
