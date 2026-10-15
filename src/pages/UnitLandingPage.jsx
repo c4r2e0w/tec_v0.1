@@ -133,7 +133,7 @@ function UnitLandingPage() {
 
   useEffect(() => {
     if (unit !== 'ktc') {
-      setShiftSummary({
+      Promise.resolve().then(() => setShiftSummary({
         loading: false,
         error: '',
         notice: '',
@@ -145,7 +145,7 @@ function UnitLandingPage() {
         chiefWorkplaceId: null,
         boilerRows: [],
         turbineRows: [],
-      })
+      }))
       return
     }
     const load = async () => {
