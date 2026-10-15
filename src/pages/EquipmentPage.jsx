@@ -100,6 +100,15 @@ function EquipmentPage() {
     const draft = draftFor(row)
     const stationNumber = numberOrNull(draft.station_number)
     if (Number.isNaN(stationNumber)) { setError('Станционный номер должен быть целым неотрицательным числом.'); return }
+    const previous = primarySystemByEquipment.get(row.id) || ''
+    if (previous && !draft.system_id) {
+      setError('Нельзя снять привязку к системе из каталога: требуется сверка схемы.')
+      return
+    }
+    if (!draft.name.trim()) {
+      setError('Название оборудования не может быть пустым.')
+      return
+    }
     setSavingId(row.id)
     setError('')
     const { error: updateError } = await supabase.from('equipment').update({
@@ -110,7 +119,6 @@ function EquipmentPage() {
     }).eq('id', row.id)
     if (updateError) { setError(updateError.message); setSavingId(null); return }
     // Memberships are a separate UUID join table. Never write equipment.system_id.
-    const previous = primarySystemByEquipment.get(row.id) || ''
     if (draft.system_id !== previous) {
       const oldPrimary = memberships.find(link => link.equipment_id === row.id && link.is_primary)
       if (oldPrimary && draft.system_id) {
