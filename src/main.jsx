@@ -23,6 +23,7 @@ import SocialHubPage from './pages/SocialHubPage.jsx'
 import EmployeeWorkspacePage from './pages/EmployeeWorkspacePage.jsx'
 import WorkplacePage from './pages/WorkplacePage.jsx'
 import TrainingPage from './pages/TrainingPage.jsx'
+import SchemePage from './pages/SchemePage.jsx'
 
 const queryClient = new QueryClient()
 
@@ -34,6 +35,7 @@ createRoot(document.getElementById('root')).render(
           <Routes>
             <Route path="/" element={<App />}>
               <Route index element={<StartPage />} />
+              <Route path="scheme" element={<SchemePage />} />
               <Route path="login" element={<LoginPage />} />
               <Route
                 path="hub"
