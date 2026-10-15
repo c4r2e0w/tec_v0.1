@@ -61,7 +61,17 @@ function EquipmentPage() {
       }
     })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (active) { setSession(nextSession); setAuthReady(true) }
+      if (active) {
+        setSession(nextSession)
+        setAuthReady(true)
+        if (!nextSession) {
+          setEquipment([])
+          setTypes([])
+          setSystems([])
+          setMemberships([])
+          setWorkplaces([])
+        }
+      }
     })
     return () => { active = false; listener.subscription.unsubscribe() }
   }, [supabase])
@@ -130,7 +140,7 @@ function EquipmentPage() {
             </tr>
           ))}</tbody>
         </table>
-        {!loading && rows.length === 0 && <p className="p-3 text-sm text-grayText">Нет оборудования для выбранного фильтра или отсутствует доступ по RLS.</p>}
+        {!loading && !error && rows.length === 0 && <p className="p-3 text-sm text-grayText">Нет доступных записей для выбранного фильтра. Проверьте рабочее место и права доступа.</p>}
       </div>
     </div>
   )
